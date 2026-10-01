@@ -11,7 +11,8 @@
     "test:isolation": "node scripts/test-rls-isolation.mjs",
     "test:omniengine": "node scripts/test-omniengine.mjs",
     "test:agent-core": "node scripts/test-agent-core.mjs",
-    "test:agent-tools": "node scripts/test-agent-tools.mjs"
+    "test:agent-tools": "node scripts/test-agent-tools.mjs",
+    "test:tool-registry": "node scripts/test-tool-registry.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

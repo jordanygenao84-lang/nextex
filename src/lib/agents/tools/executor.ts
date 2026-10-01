@@ -1,51 +1,57 @@
 /**
- * NEXTEХ Agent Core — Tool Executor en Sandbox Seguro (Fase 4.2)
- * Ejecución controlada con timeouts, validación de parámetros, sanitización y captura canónica.
+ * NEXTEХ Agent Core — Tool Executor en Sandbox Seguro (Fase 4.3)
+ * Ejecución controlada con validación estricta de esquemas, timeouts, sanitización y normalización de salida.
  */
 
-import { ToolExecutionContext, ToolDefinition } from "./types";
+import { ToolExecutionContext, ToolDefinition, NormalizedToolOutput } from "./types";
 import { defaultToolRegistry, ToolRegistry } from "./registry";
+import { SchemaValidator } from "./validator";
 import { AgentError, AgentErrorCodes } from "../types/errors";
 import { sanitizeText } from "@/lib/omniengine/security/sanitizer";
-
-export interface ToolExecutionResult {
-  toolId: string;
-  result: any;
-  metadata?: Record<string, any>;
-  durationMs: number;
-}
 
 export class ToolExecutor {
   constructor(private registry: ToolRegistry = defaultToolRegistry) {}
 
   /**
-   * Ejecuta una herramienta dentro de un sandbox seguro con timeout y sanitización.
+   * Ejecuta una herramienta dentro del sandbox seguro.
+   * La herramienta ya debe haber pasado por PermissionEngine.
    */
   public async execute(
-    toolId: string,
+    toolIdentifier: string,
     params: Record<string, any>,
     context: ToolExecutionContext
-  ): Promise<ToolExecutionResult> {
+  ): Promise<NormalizedToolOutput> {
     const startTime = Date.now();
-    const tool = this.registry.getTool(toolId);
+    const tool = this.registry.getTool(toolIdentifier);
 
     if (!tool) {
       throw new AgentError({
         code: AgentErrorCodes.TOOL_NOT_FOUND,
-        message: `Herramienta '${toolId}' no encontrada en el ToolRegistry.`,
+        message: `Herramienta '${toolIdentifier}' no encontrada en el ToolRegistry.`,
         statusCode: 404,
-        toolId,
+        toolId: toolIdentifier,
         runId: context.runId,
         agentId: context.agentId,
       });
     }
 
-    if (!tool.enabled) {
+    if (tool.status === "disabled") {
       throw new AgentError({
-        code: AgentErrorCodes.TOOL_NOT_ALLOWED,
+        code: AgentErrorCodes.TOOL_DISABLED,
         message: `La herramienta '${tool.name}' está deshabilitada en la plataforma.`,
         statusCode: 403,
-        toolId,
+        toolId: tool.id,
+        runId: context.runId,
+        agentId: context.agentId,
+      });
+    }
+
+    if (tool.status === "draft") {
+      throw new AgentError({
+        code: AgentErrorCodes.TOOL_NOT_ALLOWED,
+        message: `La herramienta '${tool.name}' está en estado 'draft' y no es ejecutable.`,
+        statusCode: 403,
+        toolId: tool.id,
         runId: context.runId,
         agentId: context.agentId,
       });
@@ -54,28 +60,27 @@ export class ToolExecutor {
     if (!tool.handler) {
       throw new AgentError({
         code: AgentErrorCodes.TOOL_EXECUTION_FAILED,
-        message: `La herramienta '${tool.name}' no posee un ejecutor (handler) implementado.`,
+        message: `La herramienta '${tool.name}' no posee un ejecutor implementado.`,
         statusCode: 501,
-        toolId,
+        toolId: tool.id,
         runId: context.runId,
         agentId: context.agentId,
       });
     }
 
-    // 1. Validar parámetros obligatorios
-    this.validateParameters(tool, params);
+    // 1. VALIDACIÓN ESTRICTA DE ESQUEMA DE ENTRADA (SchemaValidator)
+    SchemaValidator.validate(tool, params);
 
     // 2. Control de Timeout por herramienta
     const timeoutMs = tool.timeoutMs || 5000;
     const timeoutController = new AbortController();
 
-    // Si ya viene una señal externa de cancelación del agente
     if (context.signal?.aborted) {
       throw new AgentError({
         code: AgentErrorCodes.AGENT_CANCELLED,
-        message: "Ejecución de la herramienta abortada antes de iniciar.",
+        message: "Ejecución de la herramienta cancelada antes de iniciar.",
         statusCode: 499,
-        toolId,
+        toolId: tool.id,
         runId: context.runId,
         agentId: context.agentId,
       });
@@ -86,7 +91,6 @@ export class ToolExecutor {
     }, timeoutMs);
 
     try {
-      // Ejecución con timeout
       const executionPromise = tool.handler(params, {
         ...context,
         signal: timeoutController.signal,
@@ -99,7 +103,7 @@ export class ToolExecutor {
               code: AgentErrorCodes.TOOL_EXECUTION_FAILED,
               message: `Timeout en herramienta '${tool.name}': excedió el límite de ${timeoutMs}ms.`,
               statusCode: 504,
-              toolId,
+              toolId: tool.id,
               runId: context.runId,
               agentId: context.agentId,
             })
@@ -111,17 +115,20 @@ export class ToolExecutor {
       clearTimeout(timer);
 
       // 3. Sanitizar resultado para evitar fuga de tokens o secretos
-      const sanitizedResult = this.sanitizeOutput(outcome.result);
+      const sanitizedData = this.sanitizeOutput(outcome.result);
 
+      // 4. Normalizar la salida con NormalizedToolOutput
       return {
-        toolId,
-        result: sanitizedResult,
+        success: true,
+        data: sanitizedData,
         metadata: {
-          ...outcome.metadata,
+          toolId: tool.id,
+          version: tool.version,
           durationMs: Date.now() - startTime,
           riskLevel: tool.riskLevel,
+          category: tool.category,
+          ...outcome.metadata,
         },
-        durationMs: Date.now() - startTime,
       };
     } catch (err: any) {
       clearTimeout(timer);
@@ -134,25 +141,10 @@ export class ToolExecutor {
         code: AgentErrorCodes.TOOL_EXECUTION_FAILED,
         message: `Error al ejecutar herramienta '${tool.name}': ${err?.message || "Fallo inesperado"}`,
         statusCode: 500,
-        toolId,
+        toolId: tool.id,
         runId: context.runId,
         agentId: context.agentId,
       });
-    }
-  }
-
-  private validateParameters(tool: ToolDefinition, params: Record<string, any>) {
-    if (!tool.parameters) return;
-
-    for (const [paramName, paramDef] of Object.entries(tool.parameters)) {
-      if (paramDef.required && (params[paramName] === undefined || params[paramName] === null || params[paramName] === "")) {
-        throw new AgentError({
-          code: AgentErrorCodes.TOOL_EXECUTION_FAILED,
-          message: `El parámetro '${paramName}' es requerido para la herramienta '${tool.name}'.`,
-          statusCode: 400,
-          toolId: tool.id,
-        });
-      }
     }
   }
 

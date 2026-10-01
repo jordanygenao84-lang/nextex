@@ -1,6 +1,6 @@
 /**
- * NEXTEХ Agent Core — Tool Registry Central (Fase 4.2)
- * Catálogo canónico de herramientas con niveles de riesgo y ejecutores en sandbox.
+ * NEXTEХ Agent Core — Advanced Tool Registry Central (Fase 4.3)
+ * Catálogo canónico de herramientas con versionado semántico, taxonomía y ciclo de vida.
  */
 
 import { ToolDefinition } from "./types";
@@ -13,12 +13,28 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
     id: "calculator",
     name: "Calculadora de Precisión",
     description: "Evaluación matemática de operaciones aritméticas y financieras sin eval().",
+    version: "1.0.0",
+    category: "utility",
     riskLevel: "read",
     requiresApproval: false,
+    status: "active",
     enabled: true,
     timeoutMs: 3000,
     parameters: {
-      expression: { type: "string", description: "Expresión matemática a evaluar", required: true },
+      expression: {
+        type: "string",
+        description: "Expresión matemática a evaluar",
+        required: true,
+        pattern: "^[0-9+\\-*/%^().,\\s\\w]+$",
+      },
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        expression: { type: "string" },
+        result: { type: "number" },
+        formatted: { type: "string" },
+      },
     },
     handler: calculatorToolHandler,
   },
@@ -26,15 +42,46 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
     id: "database_read",
     name: "Lector de Datos del Workspace",
     description: "Consulta segura de registros vinculados al workspace actual bajo RLS.",
+    version: "1.0.0",
+    category: "database",
     riskLevel: "read",
     requiresApproval: false,
+    status: "active",
     enabled: true,
     timeoutMs: 5000,
     parameters: {
-      table: { type: "string", description: "Tabla destino (conversations, ai_usage, agents, etc.)", required: true },
-      limit: { type: "number", description: "Límite de registros (máximo 50)", required: false },
-      filterField: { type: "string", description: "Campo a filtrar", required: false },
-      filterValue: { type: "string", description: "Valor del filtro", required: false },
+      table: {
+        type: "string",
+        description: "Tabla destino (conversations, ai_usage, agents, agent_runs, etc.)",
+        required: true,
+        enum: ["workspaces", "profiles", "workspace_members", "conversations", "ai_usage", "agents", "agent_runs", "agent_run_steps"],
+      },
+      limit: {
+        type: "number",
+        description: "Límite de registros (máximo 50)",
+        required: false,
+        minimum: 1,
+        maximum: 50,
+      },
+      filterField: {
+        type: "string",
+        description: "Campo de la tabla a filtrar",
+        required: false,
+      },
+      filterValue: {
+        type: "string",
+        description: "Valor exacto para el filtro",
+        required: false,
+      },
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        table: { type: "string" },
+        workspace_id: { type: "string" },
+        count: { type: "number" },
+        records: { type: "array" },
+      },
     },
     handler: databaseReadToolHandler,
   },
@@ -42,15 +89,45 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
     id: "database_write",
     name: "Escritura de Registros",
     description: "Creación o actualización de entidades del workspace. Requiere confirmación humana.",
+    version: "1.0.0",
+    category: "database",
     riskLevel: "write",
     requiresApproval: true,
+    status: "active",
     enabled: true,
     timeoutMs: 5000,
     parameters: {
-      table: { type: "string", description: "Tabla destino", required: true },
-      operation: { type: "string", description: "Operación: 'insert' o 'update'", required: false },
-      data: { type: "object", description: "Payload estructurado a guardar", required: true },
-      recordId: { type: "string", description: "ID del registro a actualizar (solo si operation=update)", required: false },
+      table: {
+        type: "string",
+        description: "Tabla destino autorizada para mutaciones",
+        required: true,
+        enum: ["conversations", "ai_usage", "agents"],
+      },
+      operation: {
+        type: "string",
+        description: "Operación: 'insert' o 'update'",
+        required: false,
+        enum: ["insert", "update"],
+      },
+      data: {
+        type: "object",
+        description: "Payload estructurado a guardar",
+        required: true,
+      },
+      recordId: {
+        type: "string",
+        description: "ID del registro a actualizar (obligatorio solo si operation=update)",
+        required: false,
+      },
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        operation: { type: "string" },
+        table: { type: "string" },
+        workspace_id: { type: "string" },
+        status: { type: "string" },
+      },
     },
     handler: databaseWriteToolHandler,
   },
@@ -58,8 +135,11 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
     id: "web_search",
     name: "Búsqueda Web Segura",
     description: "Consulta externa de información pública en internet.",
+    version: "1.0.0",
+    category: "web",
     riskLevel: "external",
     requiresApproval: false,
+    status: "disabled",
     enabled: false,
     parameters: {
       query: { type: "string", description: "Término de búsqueda", required: true },
@@ -69,8 +149,11 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
     id: "email",
     name: "Canal Email",
     description: "Envío y redacción de correos electrónicos corporativos.",
+    version: "1.0.0",
+    category: "communication",
     riskLevel: "external",
     requiresApproval: true,
+    status: "disabled",
     enabled: false,
     parameters: {
       to: { type: "string", description: "Destinatario", required: true },
@@ -82,8 +165,11 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
     id: "whatsapp",
     name: "Canal WhatsApp",
     description: "Notificaciones y mensajería instantánea transaccional.",
+    version: "1.0.0",
+    category: "communication",
     riskLevel: "external",
     requiresApproval: true,
+    status: "disabled",
     enabled: false,
     parameters: {
       phone: { type: "string", description: "Número de teléfono con código de país", required: true },
@@ -94,8 +180,11 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
     id: "sms",
     name: "Canal SMS",
     description: "Despacho de mensajes cortos de texto para alertas.",
+    version: "1.0.0",
+    category: "communication",
     riskLevel: "external",
     requiresApproval: true,
+    status: "disabled",
     enabled: false,
     parameters: {
       phone: { type: "string", description: "Número destino", required: true },
@@ -106,33 +195,101 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
 
 export class ToolRegistry {
   private tools = new Map<string, ToolDefinition>();
+  private versionedTools = new Map<string, Map<string, ToolDefinition>>();
 
   constructor(initialTools = CANONICAL_TOOLS) {
     for (const tool of initialTools) {
-      this.tools.set(tool.id, tool);
+      this.registerTool(tool);
     }
   }
 
-  public getTool(id: string): ToolDefinition | null {
-    return this.tools.get(id) || null;
+  public registerTool(tool: ToolDefinition): void {
+    const baseId = tool.id.split("@")[0].toLowerCase().trim();
+    this.tools.set(baseId, tool);
+
+    if (!this.versionedTools.has(baseId)) {
+      this.versionedTools.set(baseId, new Map());
+    }
+
+    const versions = this.versionedTools.get(baseId)!;
+    versions.set(tool.version, tool);
+
+    // Mapeo también para alias de versión mayor: e.g. "1" para "1.0.0"
+    const majorVersion = tool.version.split(".")[0];
+    if (!versions.has(majorVersion)) {
+      versions.set(majorVersion, tool);
+    }
+  }
+
+  /**
+   * Resuelve una herramienta a partir de un identificador base o versionado.
+   * Soporta: "calculator", "calculator@1", "calculator@1.0.0".
+   */
+  public getTool(identifier: string): ToolDefinition | null {
+    if (!identifier) return null;
+
+    const parts = identifier.toLowerCase().trim().split("@");
+    const baseId = parts[0];
+    const version = parts[1];
+
+    if (!this.versionedTools.has(baseId)) {
+      return null;
+    }
+
+    const versions = this.versionedTools.get(baseId)!;
+
+    if (version) {
+      return versions.get(version) || null;
+    }
+
+    // Si no se especificó versión, retornar la versión activa o más reciente
+    const defaultTool = this.tools.get(baseId);
+    if (defaultTool) return defaultTool;
+
+    // Fallback al primer registro disponible
+    const allVersions = Array.from(versions.values());
+    const activeOne = allVersions.find((t) => t.status === "active");
+    return activeOne || allVersions[0] || null;
   }
 
   public getAll(): ToolDefinition[] {
     return Array.from(this.tools.values());
   }
 
-  public isRegistered(id: string): boolean {
-    return this.tools.has(id);
+  public listActive(): ToolDefinition[] {
+    return Array.from(this.tools.values()).filter((t) => t.status === "active");
   }
 
-  public isEnabled(id: string): boolean {
-    const t = this.getTool(id);
-    return Boolean(t && t.enabled);
+  public isRegistered(identifier: string): boolean {
+    return Boolean(this.getTool(identifier));
   }
 
-  public requiresApproval(id: string): boolean {
-    const t = this.getTool(id);
-    return Boolean(t && t.requiresApproval);
+  public isEnabled(identifier: string): boolean {
+    const t = this.getTool(identifier);
+    return Boolean(t && t.status === "active");
+  }
+
+  public requiresApproval(identifier: string): boolean {
+    const t = this.getTool(identifier);
+    return Boolean(t && (t.requiresApproval || t.riskLevel === "write" || t.riskLevel === "destructive"));
+  }
+
+  /**
+   * Retorna exclusivamente las herramientas asignadas al agente que estén disponibles para uso.
+   * Tool Discovery Filtrado para evitar sobreexposición del catálogo.
+   */
+  public getToolsForAgent(assignedToolIds: string[]): ToolDefinition[] {
+    if (!assignedToolIds || !Array.isArray(assignedToolIds)) return [];
+
+    const result: ToolDefinition[] = [];
+    for (const toolId of assignedToolIds) {
+      const tool = this.getTool(toolId);
+      // Solo incluimos herramientas activas o en deprecación soportada
+      if (tool && (tool.status === "active" || tool.status === "deprecated")) {
+        result.push(tool);
+      }
+    }
+    return result;
   }
 }
 

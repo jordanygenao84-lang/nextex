@@ -1,7 +1,8 @@
 /**
- * NEXTEХ Agent Core — Agent Runtime (Fase 4.2)
+ * NEXTEХ Agent Core — Agent Runtime (Fase 4.3)
  * Orquestador central de ejecución segura de agentes autónomos.
- * Integra Tool Execution Engine, Sandboxing y Aprobación Humana (Human-in-the-Loop).
+ * Integra Tool Discovery filtrado, validación previa de esquemas y
+ * serialización atómica anti-replay / anti-tampering en persistencia.
  */
 
 import { defaultAIGateway } from "@/lib/omniengine/gateway/gateway";
@@ -9,6 +10,7 @@ import { defaultQuotaManager } from "@/lib/omniengine/quotas/quota-manager";
 import { defaultPermissionEngine } from "./permission";
 import { defaultToolRegistry } from "../tools/registry";
 import { defaultToolExecutor } from "../tools/executor";
+import { computeApprovalPayloadHash } from "../tools/hash";
 import {
   Agent,
   AgentRun,
@@ -26,7 +28,7 @@ export interface ExecutionResult {
 
 export class AgentRuntime {
   /**
-   * Ejecuta un Agent Run con gobernanza de límites, RLS, OmniEngine y Tool Execution.
+   * Ejecuta un Agent Run con gobernanza de límites, RLS, OmniEngine y Tool Discovery filtrado.
    */
   public async executeRun(
     agent: Agent,
@@ -163,10 +165,21 @@ export class AgentRuntime {
     }
 
     try {
-      // 8. Ciclo de Ejecución de Pasos Operativos
+      // 8. Tool Discovery Filtrado: Solo inyectar herramientas activas asignadas a este agente
+      const assignedTools = defaultToolRegistry.getToolsForAgent(agent.tools || []);
+      const toolDocumentation = assignedTools
+        .map(
+          (t) =>
+            `- ${t.id}@${t.version} (${t.name}): ${t.description} [Riesgo: ${t.riskLevel.toUpperCase()}]`
+        )
+        .join("\n");
+
+      const enrichedSystemPrompt = assignedTools.length > 0
+        ? `${agent.system_instructions}\n\n[HERRAMIENTAS AUTORIZADAS PARA ESTE AGENTE]:\n${toolDocumentation}\n\nPara invocar una herramienta autorizada, responde con el formato estructurado:\n[TOOL_CALL: id_herramienta]\n{\n  "parametro": "valor"\n}\n[/TOOL_CALL]`
+        : agent.system_instructions;
+
       let currentStepNumber = 1;
 
-      // Verificar cancelación o timeout previo
       if (abortController.signal.aborted) {
         throw new AgentError({
           code: AgentErrorCodes.AGENT_CANCELLED,
@@ -177,7 +190,7 @@ export class AgentRuntime {
         });
       }
 
-      // Paso 1: AI_REQUEST inicial
+      // Paso 1: Inferencia con AI Gateway
       const stepId1 = `step-${run.id}-${currentStepNumber}`;
       const aiStep: AgentRunStep = {
         id: stepId1,
@@ -186,7 +199,7 @@ export class AgentRuntime {
         step_number: currentStepNumber,
         step_type: "AI_REQUEST",
         status: "running",
-        input: { prompt: dto.input, instructions: agent.system_instructions },
+        input: { prompt: dto.input, instructions: enrichedSystemPrompt },
         output: null,
         started_at: new Date().toISOString(),
         created_at: new Date().toISOString(),
@@ -199,7 +212,7 @@ export class AgentRuntime {
           userId: dto.user_id,
           model: agent.model_id,
           messages: [
-            { role: "system", content: agent.system_instructions },
+            { role: "system", content: enrichedSystemPrompt },
             { role: "user", content: dto.input },
           ],
           options: {
@@ -231,16 +244,26 @@ export class AgentRuntime {
       steps.push(aiStep);
       currentStepNumber++;
 
-      // Evaluar si se debe invocar una herramienta (forzada o inferida por comandos)
+      // Detectar llamada a herramienta
       const toolCall = dto.forced_tool_call || this.detectToolCall(dto.input, aiResponse.content);
 
       if (toolCall && currentStepNumber <= effectiveMaxSteps) {
-        // Validar permisos de la herramienta
+        // Validar permisos y ciclo de vida de la herramienta en PermissionEngine
         const tool = defaultPermissionEngine.validateToolAccess(toolCall.tool_id, agent.tools || []);
 
-        // 9. Verificar Aprobación Humana (Human-in-the-Loop)
+        // 9. Verificar Aprobación Humana (Human-in-the-Loop) con Hash Criptográfico Anti-Replay
         if (tool.requiresApproval || tool.riskLevel === "write" || tool.riskLevel === "destructive") {
           const approvalStepId = `step-${run.id}-${currentStepNumber}`;
+
+          // Generación de firma criptográfica inmutable
+          const payloadHash = computeApprovalPayloadHash(
+            run.id,
+            approvalStepId,
+            tool.id,
+            tool.version,
+            toolCall.params
+          );
+
           const approvalStep: AgentRunStep = {
             id: approvalStepId,
             run_id: run.id,
@@ -249,7 +272,14 @@ export class AgentRuntime {
             step_type: "APPROVAL_REQUEST",
             status: "pending",
             tool_id: tool.id,
-            input: { tool_id: tool.id, params: toolCall.params, riskLevel: tool.riskLevel },
+            input: {
+              tool_id: tool.id,
+              tool_version: tool.version,
+              params: toolCall.params,
+              riskLevel: tool.riskLevel,
+              category: tool.category,
+              payload_hash: payloadHash,
+            },
             output: null,
             started_at: new Date().toISOString(),
             created_at: new Date().toISOString(),
@@ -258,7 +288,7 @@ export class AgentRuntime {
           steps.push(approvalStep);
           run.steps_count++;
           run.status = "waiting_approval";
-          run.output = `[HUMAN-IN-THE-LOOP]: El agente solicita aprobación para ejecutar la herramienta '${tool.name}' (Riesgo: ${tool.riskLevel.toUpperCase()}).`;
+          run.output = `[HUMAN-IN-THE-LOOP]: El agente solicita aprobación para ejecutar la herramienta '${tool.name}@${tool.version}' (Riesgo: ${tool.riskLevel.toUpperCase()}).`;
           run.updated_at = new Date().toISOString();
 
           if (supabase) {
@@ -288,7 +318,7 @@ export class AgentRuntime {
           return { run, steps, needsApproval: true, approvalStep };
         }
 
-        // Si no requiere aprobación, ejecutar la herramienta de inmediato
+        // Si no requiere aprobación (read), ejecutar con validación previa de esquema en ToolExecutor
         const toolStepId = `step-${run.id}-${currentStepNumber}`;
         const toolStep: AgentRunStep = {
           id: toolStepId,
@@ -315,7 +345,7 @@ export class AgentRuntime {
         toolStep.status = "completed";
         toolStep.step_type = "TOOL_RESULT";
         toolStep.completed_at = new Date().toISOString();
-        toolStep.output = execOutcome.result;
+        toolStep.output = execOutcome.data;
         steps.push(toolStep);
 
         run.tool_calls_count++;
@@ -332,8 +362,7 @@ export class AgentRuntime {
           });
         }
 
-        // Sintetizar respuesta final
-        run.output = `${aiResponse.content}\n\n[Resultado de ${tool.name}]: ${JSON.stringify(execOutcome.result, null, 2)}`;
+        run.output = `${aiResponse.content}\n\n[Resultado de ${tool.name}@${tool.version}]: ${JSON.stringify(execOutcome.data, null, 2)}`;
       } else {
         run.output = aiResponse.content;
       }
@@ -386,7 +415,7 @@ export class AgentRuntime {
   }
 
   /**
-   * Resuelve una solicitud de aprobación humana pendiente y reanuda el ciclo del agente.
+   * Resuelve una solicitud de aprobación humana pendiente con PROTECCIÓN ATÓMICA en persistencia.
    */
   public async resumeRunWithApproval(
     runId: string,
@@ -399,12 +428,12 @@ export class AgentRuntime {
     if (!supabase) {
       throw new AgentError({
         code: AgentErrorCodes.INTERNAL_AGENT_ERROR,
-        message: "Se requiere conexión a base de datos para resolver la aprobación.",
+        message: "Se requiere conexión a base de datos para resolver la aprobación de forma atómica.",
         statusCode: 500,
       });
     }
 
-    // 1. Obtener Run y Step
+    // 1. Obtener Run
     const { data: run, error: runErr } = await (supabase.from("agent_runs") as any)
       .select("*")
       .eq("id", runId)
@@ -426,6 +455,7 @@ export class AgentRuntime {
       });
     }
 
+    // 2. Obtener el Step original para reconstruir el hash criptográfico
     const { data: step, error: stepErr } = await (supabase.from("agent_run_steps") as any)
       .select("*")
       .eq("id", stepId)
@@ -440,21 +470,77 @@ export class AgentRuntime {
       });
     }
 
+    if (step.step_type !== "APPROVAL_REQUEST") {
+      throw new AgentError({
+        code: AgentErrorCodes.TOOL_APPROVAL_INVALID,
+        message: "El paso seleccionado no corresponde a una solicitud de aprobación.",
+        statusCode: 400,
+      });
+    }
+
+    // Anti-replay inmediato en lectura
+    if (step.status !== "pending") {
+      throw new AgentError({
+        code: AgentErrorCodes.TOOL_APPROVAL_REPLAY,
+        message: "Esta solicitud de aprobación ya fue procesada previamente.",
+        statusCode: 409,
+      });
+    }
+
     const toolId = step.tool_id || step.input?.tool_id;
+    const toolVersion = step.input?.tool_version || "1.0.0";
     const toolParams = step.input?.params || {};
+    const recordedHash = step.input?.payload_hash;
+
+    // 3. Validación de integridad criptográfica (Anti-Tampering)
+    const expectedHash = computeApprovalPayloadHash(
+      run.id,
+      stepId,
+      toolId,
+      toolVersion,
+      toolParams
+    );
+
+    if (recordedHash && recordedHash !== expectedHash) {
+      throw new AgentError({
+        code: AgentErrorCodes.TOOL_APPROVAL_INVALID,
+        message: "La firma criptográfica del payload no coincide. Posible alteración en vuelo.",
+        statusCode: 400,
+      });
+    }
+
+    // 4. TRANSICIÓN ATÓMICA EN PERSISTENCIA (SERIALIZACIÓN ANTI-RACE CONDITION)
+    // El filtro atómico `status = 'pending'` en PostgreSQL garantiza que si entran dos peticiones
+    // simultáneas, solo una puede actualizar la fila. La otra recibe 0 registros afectados.
+    const { data: updatedStep, error: updateErr } = await (supabase.from("agent_run_steps") as any)
+      .update({
+        status: decision === "approve" ? "completed" : "failed",
+        completed_at: new Date().toISOString(),
+        output: {
+          decision,
+          approved_by: userId,
+          payload_hash: expectedHash,
+          comment: comment || null,
+          resolved_at: new Date().toISOString(),
+        },
+      })
+      .eq("id", stepId)
+      .eq("run_id", runId)
+      .eq("status", "pending") // <--- ATOMICIDAD DIRECTA EN POSTGRESQL
+      .eq("step_type", "APPROVAL_REQUEST")
+      .select()
+      .maybeSingle();
+
+    if (updateErr || !updatedStep) {
+      // Si la actualización no afectó ninguna fila, otra solicitud concurrente ya la transicionó
+      throw new AgentError({
+        code: AgentErrorCodes.TOOL_APPROVAL_REPLAY,
+        message: "Conflicto de concurrencia: la solicitud ya fue resuelta por otra transacción.",
+        statusCode: 409,
+      });
+    }
 
     if (decision === "reject") {
-      // Registrar paso como rechazado
-      await (supabase.from("agent_run_steps") as any)
-        .update({
-          status: "failed",
-          output: { decision: "rejected", comment: comment || "Rechazado por el operador" },
-          error_code: "APPROVAL_REJECTED",
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", stepId);
-
-      // Finalizar run con estado completado informando del rechazo
       const finalOutput = `[ACCION DENEGADA]: El operador humano rechazó la ejecución de la herramienta '${toolId}'. Motivo: ${comment || "Sin comentario adicional"}. No se realizaron cambios.`;
 
       const { data: updatedRun } = await (supabase.from("agent_runs") as any)
@@ -475,15 +561,7 @@ export class AgentRuntime {
       return { run: updatedRun, steps: allSteps || [] };
     }
 
-    // Decisión: APPROVE -> Ejecutar la herramienta en sandbox
-    await (supabase.from("agent_run_steps") as any)
-      .update({
-        status: "completed",
-        output: { decision: "approved", approved_by: userId },
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", stepId);
-
+    // Decisión: APPROVE -> Ejecución en Sandbox con ToolExecutor y SchemaValidator
     const execOutcome = await defaultToolExecutor.execute(toolId, toolParams, {
       agentId: run.agent_id,
       runId: run.id,
@@ -492,7 +570,7 @@ export class AgentRuntime {
       supabaseClient: supabase,
     });
 
-    // Insertar paso de TOOL_RESULT
+    // Registrar paso TOOL_RESULT
     const nextStepNumber = (run.steps_count || 1) + 1;
     const resultStepId = `step-${run.id}-${nextStepNumber}`;
     await (supabase.from("agent_run_steps") as any).insert({
@@ -504,12 +582,12 @@ export class AgentRuntime {
       status: "completed",
       tool_id: toolId,
       input: toolParams,
-      output: execOutcome.result,
+      output: execOutcome.data,
       started_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),
     });
 
-    const finalOutput = `[AUTORIZADO]: La herramienta '${toolId}' fue aprobada y ejecutada exitosamente en el workspace.\n\nResultado:\n${JSON.stringify(execOutcome.result, null, 2)}`;
+    const finalOutput = `[AUTORIZADO]: La herramienta '${toolId}@${toolVersion}' fue aprobada y ejecutada exitosamente en el workspace.\n\nResultado:\n${JSON.stringify(execOutcome.data, null, 2)}`;
 
     const { data: completedRun } = await (supabase.from("agent_runs") as any)
       .update({
@@ -535,8 +613,7 @@ export class AgentRuntime {
    * Helper determinista para detectar llamadas estructuradas a tools en el texto o prompt.
    */
   private detectToolCall(input: string, content: string): { tool_id: string; params: Record<string, any> } | null {
-    // 1. Detectar patrón explícito: [TOOL_CALL: tool_id] { ... }
-    const match = content.match(/\[TOOL_CALL:\s*([a-zA-Z0-9_]+)\]\s*(\{[\s\S]*?\})/i);
+    const match = content.match(/\[TOOL_CALL:\s*([a-zA-Z0-9_@.-]+)\]\s*(\{[\s\S]*?\})/i);
     if (match) {
       try {
         const tool_id = match[1].toLowerCase().trim();
@@ -547,7 +624,6 @@ export class AgentRuntime {
       }
     }
 
-    // 2. Heurística segura para expresiones matemáticas
     const mathMatch = input.match(/(?:calcula|calcule|cu[aá]nto es|evalua)\s*[:=]?\s*([0-9+\-*/%^().,\s]+)/i);
     if (mathMatch && mathMatch[1].trim().length >= 3) {
       return {
