@@ -57,7 +57,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           id: currentUser.id,
           full_name: currentUser.user_metadata?.full_name || currentUser.email?.split("@")[0] || "Usuario NEXTEХ",
           avatar_url: null,
-          plan: (currentUser.user_metadata?.selected_plan as any) || "free",
+          plan: "free",
           status: "active",
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),

@@ -27,7 +27,6 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [plan, setPlan] = useState<"free" | "pro" | "enterprise">("free");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [oauthNote, setOauthNote] = useState<string | null>(null);
@@ -66,6 +65,7 @@ export default function RegisterPage() {
       const supabase = createClient();
       const origin = window.location.origin;
 
+      // Todo nuevo registro comienza estrictamente en plan = free
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -73,13 +73,12 @@ export default function RegisterPage() {
           emailRedirectTo: `${origin}/auth/callback`,
           data: {
             full_name: name.trim(),
-            selected_plan: plan,
           },
         },
       });
 
       if (signUpError) {
-        if (signUpError.message.includes("already registered") || signUpError.status === 400 && signUpError.message.toLowerCase().includes("user")) {
+        if (signUpError.message.includes("already registered") || (signUpError.status === 400 && signUpError.message.toLowerCase().includes("user"))) {
           setError("Este correo electrónico ya se encuentra registrado. Por favor inicia sesión.");
         } else if (signUpError.message.includes("Password")) {
           setError("La contraseña no cumple los requisitos mínimos de seguridad.");
@@ -169,57 +168,18 @@ export default function RegisterPage() {
             </span>
           </div>
 
-          {/* Plan Selector Bar */}
-          <div className="space-y-1.5 mb-5">
-            <label className="text-xs font-medium text-texter-text-secondary">
-              Selecciona tu plan inicial de desarrollo
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => setPlan("free")}
-                className={`p-2.5 rounded-xl border text-left transition-all ${
-                  plan === "free"
-                    ? "bg-texter-cyan/15 border-cyan-500/40 text-white shadow-sm"
-                    : "bg-texter-surface-subtle border-texter-border text-texter-text-muted hover:border-texter-border-hover"
-                }`}
-              >
-                <div className="text-xs font-bold text-white">Free</div>
-                <div className="text-[10px] text-texter-text-dim mt-0.5 font-mono">Para inicio</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setPlan("pro")}
-                className={`p-2.5 rounded-xl border text-left transition-all ${
-                  plan === "pro"
-                    ? "bg-texter-indigo/15 border-indigo-500/40 text-white shadow-sm"
-                    : "bg-texter-surface-subtle border-texter-border text-texter-text-muted hover:border-texter-border-hover"
-                }`}
-              >
-                <div className="text-xs font-bold text-white flex items-center justify-between">
-                  Pro
-                  <span className="text-[9px] px-1 py-0.2 rounded bg-texter-indigo/20 text-indigo-300">★</span>
-                </div>
-                <div className="text-[10px] text-texter-text-dim mt-0.5 font-mono">Agentes Ilimitados</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setPlan("enterprise")}
-                className={`p-2.5 rounded-xl border text-left transition-all ${
-                  plan === "enterprise"
-                    ? "bg-purple-500/15 border-purple-500/40 text-white shadow-sm"
-                    : "bg-texter-surface-subtle border-texter-border text-texter-text-muted hover:border-texter-border-hover"
-                }`}
-              >
-                <div className="text-xs font-bold text-white">Enterprise</div>
-                <div className="text-[10px] text-texter-text-dim mt-0.5 font-mono">Dedicado</div>
-              </button>
+          {/* Plan Inicial Informativo Inmutable */}
+          <div className="p-3.5 rounded-xl bg-texter-surface-subtle border border-texter-border flex items-center justify-between text-xs mb-5">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <span className="text-texter-text-secondary font-medium">Plan inicial asignado:</span>
+                <Badge variant="cyan" size="sm">Free</Badge>
+              </div>
+              <p className="text-[11px] text-texter-text-dim">
+                Comienza sin costo. Cambios a Pro o Enterprise se gestionan mediante suscripción.
+              </p>
             </div>
-            <p className="text-[10px] text-texter-text-dim">
-              * La activación efectiva de cuotas se rige por políticas del backend.
-            </p>
+            <ShieldCheck className="w-4 h-4 text-texter-cyan shrink-0" />
           </div>
 
           {error && (
