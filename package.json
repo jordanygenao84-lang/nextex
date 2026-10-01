@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test:isolation": "node scripts/test-rls-isolation.mjs"
+    "test:isolation": "node scripts/test-rls-isolation.mjs",
+    "test:omniengine": "node scripts/test-omniengine.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
