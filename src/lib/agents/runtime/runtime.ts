@@ -201,7 +201,14 @@ export class AgentRuntime {
         error_message: null,
         created_at: createdRunRecord.created_at || new Date().toISOString(),
         updated_at: createdRunRecord.updated_at || new Date().toISOString(),
+        job_run_id: dto.job_run_id || null,
       };
+
+      if (dto.job_run_id) {
+        await (supabase.from("agent_runs") as any)
+          .update({ job_run_id: dto.job_run_id })
+          .eq("id", run.id);
+      }
     } else {
       // Entorno en memoria sin conexión a base de datos
       const runId = `run-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
@@ -225,6 +232,7 @@ export class AgentRuntime {
         error_message: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        job_run_id: dto.job_run_id || null,
       };
     }
 
@@ -837,6 +845,120 @@ export class AgentRuntime {
       .order("step_number", { ascending: true });
 
     return { run: completedRun, steps: finalSteps || [] };
+  }
+
+  /**
+   * Reanuda un Agent Run interrumpido/recuperado tras un crash de worker.
+   * REGLA: 1 Job Run = 1 Agent Run. NO crea un segundo Agent Run.
+   * Reconcilia los steps durables existentes en agent_run_steps y el tool_idempotency_ledger.
+   */
+  public async resumeInterruptedRun(
+    agentRunId: string,
+    supabase: any,
+    externalSignal?: AbortSignal
+  ): Promise<ExecutionResult> {
+    if (!supabase) {
+      throw new AgentError({
+        code: AgentErrorCodes.INTERNAL_AGENT_ERROR,
+        message: "Se requiere cliente de base de datos para reanudar un Agent Run.",
+        statusCode: 500,
+      });
+    }
+
+    // 1. Obtener AgentRun
+    const { data: runRecord, error: runErr } = await (supabase.from("agent_runs") as any)
+      .select("*")
+      .eq("id", agentRunId)
+      .single();
+
+    if (runErr || !runRecord) {
+      throw new AgentError({
+        code: AgentErrorCodes.AGENT_NOT_FOUND,
+        message: "Agent Run no encontrado para recuperación.",
+        statusCode: 404,
+      });
+    }
+
+    // 2. Obtener Agente asociado
+    const { data: agentData, error: agErr } = await (supabase.from("agents") as any)
+      .select("*, agent_tools(tool_id, enabled)")
+      .eq("id", runRecord.agent_id)
+      .single();
+
+    if (agErr || !agentData) {
+      throw new AgentError({
+        code: AgentErrorCodes.AGENT_NOT_FOUND,
+        message: "Agente vinculado al run no encontrado.",
+        statusCode: 404,
+      });
+    }
+
+    const agent: Agent = {
+      ...agentData,
+      tools: agentData.agent_tools?.filter((t: any) => t.enabled).map((t: any) => t.tool_id) || [],
+    };
+
+    // 3. Obtener steps existentes
+    const { data: stepsRecords } = await (supabase.from("agent_run_steps") as any)
+      .select("*")
+      .eq("run_id", agentRunId)
+      .order("step_number", { ascending: true });
+
+    const steps: AgentRunStep[] = stepsRecords || [];
+
+    // 4. Reconciliar el último step si quedó en running
+    const lastStep = steps[steps.length - 1];
+    if (lastStep && lastStep.status === "running") {
+      if (lastStep.step_type === "TOOL_CALL") {
+        // Reconciliar con tool_idempotency_ledger
+        const { data: ledgerEntry } = await (supabase.from("tool_idempotency_ledger") as any)
+          .select("*")
+          .eq("step_id", lastStep.id)
+          .maybeSingle();
+
+        if (ledgerEntry && ledgerEntry.status === "committed") {
+          // Mutación física ya ocurrió en PostgreSQL -> reutilizar resultado
+          lastStep.status = "completed";
+          lastStep.output = ledgerEntry.result;
+          lastStep.completed_at = ledgerEntry.created_at;
+          await (supabase.from("agent_run_steps") as any)
+            .update({ status: "completed", output: lastStep.output, completed_at: lastStep.completed_at })
+            .eq("id", lastStep.id);
+        }
+      } else if (lastStep.step_type === "AI_REQUEST") {
+        if (lastStep.output) {
+          lastStep.status = "completed";
+          await (supabase.from("agent_run_steps") as any)
+            .update({ status: "completed" })
+            .eq("id", lastStep.id);
+        }
+      }
+    }
+
+    // 5. Verificar si hay un paso en waiting_approval
+    const pendingApproval = steps.find((s) => s.step_type === "APPROVAL_REQUEST" && s.status === "pending");
+    if (pendingApproval) {
+      return { run: runRecord, steps, needsApproval: true, approvalStep: pendingApproval };
+    }
+
+    // 6. Si todos los steps están completados y no hay más acciones
+    if (runRecord.status === "completed") {
+      return { run: runRecord, steps };
+    }
+
+    // Si aún faltaba completar, sellar el run
+    const completedRun = {
+      ...runRecord,
+      status: "completed" as const,
+      completed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    await (supabase.from("agent_runs") as any)
+      .update({ status: "completed", completed_at: completedRun.completed_at })
+      .eq("id", runRecord.id);
+
+    return { run: completedRun, steps };
   }
 
   /**

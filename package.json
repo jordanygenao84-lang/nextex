@@ -15,7 +15,8 @@
     "test:tool-registry": "node scripts/test-tool-registry.mjs",
     "test:idempotency": "node scripts/test-idempotency-fencing.mjs",
     "test:governance": "node scripts/test-permissions-governance.mjs",
-    "test:memory": "node scripts/test-agent-memory.mjs"
+    "test:memory": "node scripts/test-agent-memory.mjs",
+    "test:jobs": "node scripts/test-durable-jobs.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

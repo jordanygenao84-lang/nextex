@@ -57,6 +57,7 @@ export interface AgentRun {
   error_message: string | null;
   created_at: string;
   updated_at: string;
+  job_run_id?: string | null;
 }
 
 export type StepType =
@@ -143,7 +144,22 @@ export type CanonicalPermissionKey =
   | "memory.read"
   | "memory.write"
   | "memory.delete"
-  | "memory.manage";
+  | "memory.manage"
+  | "jobs.read"
+  | "jobs.create"
+  | "jobs.update"
+  | "jobs.delete"
+  | "jobs.activate"
+  | "jobs.pause"
+  | "jobs.archive"
+  | "jobs.run"
+  | "automations.read"
+  | "automations.create"
+  | "automations.update"
+  | "automations.delete"
+  | "automations.activate"
+  | "automations.pause"
+  | "automations.archive";
 
 export type PermissionCategory =
   | "agents"
@@ -151,7 +167,9 @@ export type PermissionCategory =
   | "tools"
   | "approvals"
   | "workspace"
-  | "memory";
+  | "memory"
+  | "jobs"
+  | "automations";
 
 export interface Permission {
   id: string;
@@ -317,6 +335,7 @@ export interface ExecuteAgentRunDTO {
     tool_id: string;
     params: Record<string, any>;
   };
+  job_run_id?: string;
 }
 
 export interface RunApprovalDTO {

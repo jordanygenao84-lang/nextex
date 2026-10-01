@@ -37,6 +37,21 @@ export const CANONICAL_PERMISSIONS_CATALOG: Permission[] = [
   { id: "memory.write", key: "memory.write", category: "memory", description: "Persistir y consolidar nuevos recuerdos de agentes", created_at: "2026-10-01T00:00:00Z" },
   { id: "memory.delete", key: "memory.delete", category: "memory", description: "Eliminar físicamente recuerdos y ejecutar olvido de datos", created_at: "2026-10-01T00:00:00Z" },
   { id: "memory.manage", key: "memory.manage", category: "memory", description: "Administrar retención, cuotas y cuarentenas de memoria", created_at: "2026-10-01T00:00:00Z" },
+  { id: "jobs.read", key: "jobs.read", category: "jobs", description: "Visualizar jobs y configuraciones en el workspace", created_at: "2026-10-01T00:00:00Z" },
+  { id: "jobs.create", key: "jobs.create", category: "jobs", description: "Registrar nuevos jobs autónomos durables", created_at: "2026-10-01T00:00:00Z" },
+  { id: "jobs.update", key: "jobs.update", category: "jobs", description: "Modificar instrucciones, reintentos y timeouts de jobs", created_at: "2026-10-01T00:00:00Z" },
+  { id: "jobs.delete", key: "jobs.delete", category: "jobs", description: "Eliminar o archivar jobs del workspace", created_at: "2026-10-01T00:00:00Z" },
+  { id: "jobs.activate", key: "jobs.activate", category: "jobs", description: "Activar jobs para permitir su ejecución o programación", created_at: "2026-10-01T00:00:00Z" },
+  { id: "jobs.pause", key: "jobs.pause", category: "jobs", description: "Pausar jobs suspendiendo nuevas ejecuciones", created_at: "2026-10-01T00:00:00Z" },
+  { id: "jobs.archive", key: "jobs.archive", category: "jobs", description: "Archivar jobs preservando su historial inmutable", created_at: "2026-10-01T00:00:00Z" },
+  { id: "jobs.run", key: "jobs.run", category: "jobs", description: "Disparar ejecución manual inmediata de un job", created_at: "2026-10-01T00:00:00Z" },
+  { id: "automations.read", key: "automations.read", category: "automations", description: "Visualizar programaciones y calendarios de automations", created_at: "2026-10-01T00:00:00Z" },
+  { id: "automations.create", key: "automations.create", category: "automations", description: "Registrar nuevas automations y reglas cron", created_at: "2026-10-01T00:00:00Z" },
+  { id: "automations.update", key: "automations.update", category: "automations", description: "Modificar reglas cron, timezone y políticas de overlap", created_at: "2026-10-01T00:00:00Z" },
+  { id: "automations.delete", key: "automations.delete", category: "automations", description: "Eliminar programaciones de automation", created_at: "2026-10-01T00:00:00Z" },
+  { id: "automations.activate", key: "automations.activate", category: "automations", description: "Habilitar disparo programado de automations", created_at: "2026-10-01T00:00:00Z" },
+  { id: "automations.pause", key: "automations.pause", category: "automations", description: "Pausar programaciones suspendiendo generación de occurrences", created_at: "2026-10-01T00:00:00Z" },
+  { id: "automations.archive", key: "automations.archive", category: "automations", description: "Archivar automations preservando historial", created_at: "2026-10-01T00:00:00Z" },
 ];
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<WorkspaceRole, CanonicalPermissionKey[]> = {
@@ -47,7 +62,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<WorkspaceRole, CanonicalPermission
     "approvals.read", "approvals.approve", "approvals.reject",
     "workspace.members.read", "workspace.members.manage",
     "workspace.settings.read", "workspace.settings.update",
-    "memory.read", "memory.write", "memory.delete", "memory.manage"
+    "memory.read", "memory.write", "memory.delete", "memory.manage",
+    "jobs.read", "jobs.create", "jobs.update", "jobs.delete", "jobs.activate", "jobs.pause", "jobs.archive", "jobs.run",
+    "automations.read", "automations.create", "automations.update", "automations.delete", "automations.activate", "automations.pause", "automations.archive"
   ],
   admin: [
     "agents.read", "agents.create", "agents.update", "agents.delete", "agents.activate", "agents.pause",
@@ -56,7 +73,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<WorkspaceRole, CanonicalPermission
     "approvals.read", "approvals.approve", "approvals.reject",
     "workspace.members.read",
     "workspace.settings.read",
-    "memory.read", "memory.write", "memory.delete", "memory.manage"
+    "memory.read", "memory.write", "memory.delete", "memory.manage",
+    "jobs.read", "jobs.create", "jobs.update", "jobs.delete", "jobs.activate", "jobs.pause", "jobs.archive", "jobs.run",
+    "automations.read", "automations.create", "automations.update", "automations.delete", "automations.activate", "automations.pause", "automations.archive"
   ],
   member: [
     "agents.read",
@@ -65,7 +84,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<WorkspaceRole, CanonicalPermission
     "approvals.read",
     "workspace.members.read",
     "memory.read",
-    "memory.write"
+    "memory.write",
+    "jobs.read",
+    "jobs.run",
+    "automations.read"
   ],
 };
 
