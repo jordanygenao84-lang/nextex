@@ -47,7 +47,7 @@ create index if not exists idx_tool_ledger_step on public.tool_idempotency_ledge
 create index if not exists idx_tool_ledger_target on public.tool_idempotency_ledger (target_table, target_record_id);
 create index if not exists idx_tool_ledger_execution on public.tool_idempotency_ledger (execution_id);
 
--- Trigger de updated_at para tool_idempotency_ledger
+-- Trigger de updated_at para tool_idempotency_ledger (Idempotente)
 drop trigger if exists tr_tool_idempotency_ledger_updated_at on public.tool_idempotency_ledger;
 create trigger tr_tool_idempotency_ledger_updated_at
   before update on public.tool_idempotency_ledger
@@ -56,17 +56,17 @@ create trigger tr_tool_idempotency_ledger_updated_at
 -- 3. RLS ESTRICTO PARA tool_idempotency_ledger
 alter table public.tool_idempotency_ledger enable row level security;
 
+-- Política de lectura para auditoría exclusiva de miembros del workspace
 drop policy if exists "tool_idempotency_ledger_select_member" on public.tool_idempotency_ledger;
 create policy "tool_idempotency_ledger_select_member"
   on public.tool_idempotency_ledger
   for select
   using (public.is_workspace_member(workspace_id, auth.uid()));
 
+-- REGLA DE SEGURIDAD (Bloqueante 6): ELIMINAR política de inserción directa para usuarios.
+-- El ledger NO puede ser escrito directamente por clientes ni llamadas REST.
+-- La inserción es realizada exclusivamente por la función SECURITY DEFINER execute_authorized_database_write.
 drop policy if exists "tool_idempotency_ledger_insert_member" on public.tool_idempotency_ledger;
-create policy "tool_idempotency_ledger_insert_member"
-  on public.tool_idempotency_ledger
-  for insert
-  with check (public.is_workspace_member(workspace_id, auth.uid()));
 
 -- 4. TRIGGER DE INMUTABILIDAD DE PASO AUTORIZADO (Anti-Tampering en Base de Datos)
 create or replace function public.protect_immutable_step_payload()
@@ -76,14 +76,19 @@ security definer
 set search_path = pg_catalog, public, pg_temp
 as $$
 begin
-  -- Prohibir alteración de input una vez que el paso entró en running o completed
-  if old.status in ('running', 'completed') and (old.input is distinct from new.input) then
-    raise exception 'TOOL_PAYLOAD_IMMUTABLE: El payload del paso ya ha sido bloqueado y no puede ser modificado.';
+  -- Prohibir cualquier alteración del payload autorizado (input) tras el registro del paso
+  if old.input is distinct from new.input then
+    raise exception 'TOOL_PAYLOAD_IMMUTABLE: El payload del paso es inmutable y no puede ser modificado tras su registro.';
   end if;
 
   -- Prohibir alteración de asociaciones estructurales
   if old.run_id is distinct from new.run_id or old.workspace_id is distinct from new.workspace_id or old.tool_id is distinct from new.tool_id then
     raise exception 'TOOL_STRUCTURE_IMMUTABLE: La vinculación estructural del paso es inmutable.';
+  end if;
+
+  -- Prohibir reabrir o degradar un paso que ya fue completado
+  if old.status = 'completed' and new.status <> 'completed' then
+    raise exception 'TOOL_STATUS_IMMUTABLE: Un paso completado no puede ser reabierto ni degradado.';
   end if;
 
   return new;
@@ -95,7 +100,7 @@ create trigger tr_protect_immutable_step
   before update on public.agent_run_steps
   for each row execute function public.protect_immutable_step_payload();
 
--- 5. FUNCIÓN DETERMINISTA DE CANONICAL JSON (RFC 8785)
+-- 5. FUNCIÓN DE CANONICALIZACIÓN DETERMINÍSTICA INTERNA
 create or replace function public.canonical_json(p_val jsonb)
 returns text
 language plpgsql
@@ -133,6 +138,8 @@ begin
 end;
 $$;
 
+comment on function public.canonical_json(jsonb) is 'Canonicalización JSON determinística interna para generación unificada de bindings';
+
 -- 6. FUNCIÓN DE HASH CANÓNICO DE BINDING
 create or replace function public.compute_tool_payload_hash(
   p_run_id text,
@@ -154,6 +161,8 @@ begin
   return encode(digest(convert_to(v_binding, 'UTF8'), 'sha256'), 'hex');
 end;
 $$;
+
+comment on function public.compute_tool_payload_hash(text, text, text, text, jsonb) is 'Calcula el SHA-256 del binding canónico inmutable de un paso operativo';
 
 -- 7. RPC: RECLAMO INICIAL DE EJECUCIÓN (pending -> running con token y lease)
 create or replace function public.claim_agent_step_execution(
@@ -297,6 +306,9 @@ revoke execute on function public.claim_agent_step_takeover(uuid, uuid, uuid, in
 grant execute on function public.claim_agent_step_takeover(uuid, uuid, uuid, integer) to authenticated, service_role;
 
 -- 9. RPC CORE: MUTACIÓN AUTORIZADA DE BASE DE DATOS CON IDEMPOTENCY LEDGER Y FENCING
+-- Drop previo en caso de que existiese alguna firma previa
+drop function if exists public.execute_authorized_database_write(uuid, uuid, uuid, bigint, text);
+
 create or replace function public.execute_authorized_database_write(
   p_run_id uuid,
   p_step_id uuid,
@@ -342,13 +354,18 @@ begin
     return jsonb_build_object('success', false, 'error_code', 'AGENT_RUN_NOT_FOUND', 'error_message', 'Run de agente no encontrado.');
   end if;
 
-  -- 3. Validar membresía y permisos en workspace_members
+  -- 3. Validar membresía y rol de autorización en workspace_members (Bloqueante 8)
   select role into v_member_role
   from public.workspace_members
   where workspace_id = v_run.workspace_id and user_id = v_auth_user;
 
   if not found then
     return jsonb_build_object('success', false, 'error_code', 'AGENT_PERMISSION_DENIED', 'El usuario no pertenece al workspace.');
+  end if;
+
+  -- Validación de roles activos en el modelo actual de NEXTEХ ('owner', 'admin', 'member')
+  if v_member_role not in ('owner', 'admin', 'member') then
+    return jsonb_build_object('success', false, 'error_code', 'TOOL_UNAUTHORIZED_MUTATION', 'error_message', 'Rol de workspace no autorizado para ejecutar mutaciones.');
   end if;
 
   -- 4. SERIALIZACIÓN: Bloqueo exclusivo de fila sobre agent_run_steps
@@ -361,36 +378,18 @@ begin
     return jsonb_build_object('success', false, 'error_code', 'STEP_NOT_FOUND', 'error_message', 'Paso de ejecución no encontrado en este run.');
   end if;
 
-  -- 5. Validar pertenencia de tenant
+  -- 5. Validar pertenencia estricta de tenant
   if v_step.workspace_id <> v_run.workspace_id then
     return jsonb_build_object('success', false, 'error_code', 'TOOL_CROSS_TENANT_ACCESS', 'error_message', 'El paso no pertenece al workspace del run.');
   end if;
 
-  -- 6. CONSULTA AL IDEMPOTENCY LEDGER (LEDGER HIT)
-  select * into v_ledger
-  from public.tool_idempotency_ledger
-  where step_id = p_step_id;
-
-  if found then
-    -- Retorno seguro del snapshot sellado sin volver a ejecutar mutaciones físicas
-    return jsonb_build_object(
-      'success', true,
-      'status', v_ledger.status,
-      'ledger_id', v_ledger.id,
-      'execution_id', v_ledger.execution_id,
-      'fencing_token', v_ledger.fencing_token,
-      'payload_hash', v_ledger.payload_hash,
-      'data', v_ledger.result,
-      'cached', true
-    );
-  end if;
-
-  -- 7. VALIDACIÓN ESTRICTA DE ESTADO, FENCING Y LEASE
-  if v_step.status <> 'running' then
+  -- 6. VALIDACIÓN DE EJECUTOR Y FENCING TOKEN ANTES DE CONSULTAR EL LEDGER (Bloqueante 7 & 12)
+  -- Un ejecutor antiguo o con token menor NUNCA debe acceder al resultado ni eludir fencing.
+  if v_step.executor_id <> p_execution_id then
     return jsonb_build_object(
       'success', false,
-      'error_code', 'TOOL_STATUS_INVALID',
-      'error_message', 'El paso no se encuentra en estado running para persistencia.'
+      'error_code', 'TOOL_FENCING_REJECTED',
+      'error_message', 'Execution ID no coincide con el executor activo.'
     );
   end if;
 
@@ -402,23 +401,27 @@ begin
     );
   end if;
 
-  if v_step.executor_id <> p_execution_id then
+  -- 7. VALIDACIÓN DE ESTADO Y LEASE
+  if v_step.status not in ('running', 'completed') then
     return jsonb_build_object(
       'success', false,
-      'error_code', 'TOOL_FENCING_REJECTED',
-      'error_message', 'Execution ID no coincide con el executor activo.'
+      'error_code', 'TOOL_STATUS_INVALID',
+      'error_message', 'El paso no se encuentra en estado running ni completed.'
     );
   end if;
 
-  if v_step.lease_expires_at is null or v_step.lease_expires_at <= clock_timestamp() then
-    return jsonb_build_object(
-      'success', false,
-      'error_code', 'TOOL_LEASE_EXPIRED',
-      'error_message', 'El lease temporal del paso ha expirado.'
-    );
+  -- Si el paso sigue en running, el lease no debe haber expirado
+  if v_step.status = 'running' then
+    if v_step.lease_expires_at is null or v_step.lease_expires_at <= clock_timestamp() then
+      return jsonb_build_object(
+        'success', false,
+        'error_code', 'TOOL_LEASE_EXPIRED',
+        'error_message', 'El lease temporal del paso ha expirado.'
+      );
+    end if;
   end if;
 
-  -- 8. OBTENCIÓN DEL PAYLOAD AUTORIZADO INMUTABLE
+  -- 8. OBTENCIÓN Y VALIDACIÓN CRIPTOGRÁFICA DEL PAYLOAD AUTORIZADO (ANTI-TAMPERING)
   v_authorized_params := coalesce(v_step.input->'params', v_step.input);
   if v_authorized_params is null or jsonb_typeof(v_authorized_params) <> 'object' then
     return jsonb_build_object(
@@ -431,7 +434,6 @@ begin
   v_tool_id := coalesce(v_step.tool_id, v_step.input->>'tool_id', 'database_write');
   v_tool_version := coalesce(v_step.input->>'tool_version', '1.0.0');
 
-  -- 9. VALIDACIÓN CRIPTOGRÁFICA DE HASH CANÓNICO (ANTI-TAMPERING)
   v_computed_hash := public.compute_tool_payload_hash(
     p_run_id::text,
     p_step_id::text,
@@ -456,7 +458,36 @@ begin
     );
   end if;
 
-  -- 10. RESTRICCIÓN DE TABLA DESTINO Y OPERACIÓN
+  -- 9. CONSULTA AL IDEMPOTENCY LEDGER (LEDGER HIT)
+  -- Se evalúa una vez que el ejecutor, fencing, lease y payload han sido comprobados exitosamente.
+  select * into v_ledger
+  from public.tool_idempotency_ledger
+  where step_id = p_step_id;
+
+  if found then
+    -- Retorno seguro del snapshot sellado sin volver a ejecutar mutaciones físicas
+    return jsonb_build_object(
+      'success', true,
+      'status', v_ledger.status,
+      'ledger_id', v_ledger.id,
+      'execution_id', v_ledger.execution_id,
+      'fencing_token', v_ledger.fencing_token,
+      'payload_hash', v_ledger.payload_hash,
+      'data', v_ledger.result,
+      'cached', true
+    );
+  end if;
+
+  -- Si el paso ya figuraba como completed pero no se encontró en el ledger, existe inconsistencia
+  if v_step.status = 'completed' then
+    return jsonb_build_object(
+      'success', false,
+      'error_code', 'TOOL_IDEMPOTENCY_CONFLICT',
+      'error_message', 'El paso figura como completado pero no existe registro previo en el ledger.'
+    );
+  end if;
+
+  -- 10. RESTRICCIÓN ESTRICTA DE TABLA DESTINO Y OPERACIÓN (Bloqueante 14)
   v_operation := lower(trim(coalesce(v_authorized_params->>'operation', 'insert')));
   v_target_table := lower(trim(coalesce(v_authorized_params->>'table', '')));
 
@@ -464,7 +495,7 @@ begin
     return jsonb_build_object(
       'success', false,
       'error_code', 'TOOL_UNAUTHORIZED_MUTATION',
-      'error_message', 'Tabla destino no autorizada. ai_usage y otras tablas están prohibidas.'
+      'error_message', 'Tabla destino no autorizada. ai_usage y otras tablas están estrictamente prohibidas.'
     );
   end if;
 
@@ -501,6 +532,7 @@ begin
         return jsonb_build_object('success', false, 'error_code', 'TOOL_SCHEMA_INVALID', 'error_message', 'recordId es requerido para update.');
       end if;
 
+      -- En conversations update, ÚNICAMENTE el campo title es mutable
       update public.conversations
       set title = coalesce(v_authorized_params->'data'->>'title', v_authorized_params->>'title', title),
           updated_at = clock_timestamp()
@@ -537,6 +569,7 @@ begin
     end if;
 
   elsif v_target_table = 'agents' then
+    -- En agents, EXCLUSIVAMENTE 'insert' está permitido
     if v_operation <> 'insert' then
       return jsonb_build_object(
         'success', false,
@@ -564,7 +597,7 @@ begin
       coalesce(v_authorized_params->'data'->>'description', v_authorized_params->>'description'),
       coalesce(v_authorized_params->'data'->>'system_instructions', v_authorized_params->>'system_instructions', 'Instrucciones del agente'),
       coalesce(v_authorized_params->'data'->>'model_id', v_authorized_params->>'model_id', 'gpt-4o'),
-      'draft', -- <--- OBLIGATORIO STATUS = 'draft'
+      'draft', -- <--- OBLIGATORIO STATUS = 'draft' (Bloqueante 13)
       coalesce((coalesce(v_authorized_params->'data'->>'max_steps', v_authorized_params->>'max_steps'))::integer, 10),
       coalesce((coalesce(v_authorized_params->'data'->>'max_tokens', v_authorized_params->>'max_tokens'))::integer, 8000),
       coalesce((coalesce(v_authorized_params->'data'->>'timeout_seconds', v_authorized_params->>'timeout_seconds'))::integer, 60),

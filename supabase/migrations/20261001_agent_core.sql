@@ -90,11 +90,13 @@ create index if not exists idx_agent_runs_status on public.agent_runs(status);
 create index if not exists idx_agent_run_steps_run on public.agent_run_steps(run_id);
 create index if not exists idx_agent_run_steps_workspace on public.agent_run_steps(workspace_id);
 
--- Triggers de actualización de updated_at
+-- Triggers de actualización de updated_at (Idempotentes con drop trigger if exists)
+drop trigger if exists tr_agents_updated_at on public.agents;
 create trigger tr_agents_updated_at
   before update on public.agents
   for each row execute function public.handle_updated_at();
 
+drop trigger if exists tr_agent_runs_updated_at on public.agent_runs;
 create trigger tr_agent_runs_updated_at
   before update on public.agent_runs
   for each row execute function public.handle_updated_at();

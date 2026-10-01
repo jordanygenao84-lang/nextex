@@ -1,8 +1,9 @@
 /**
- * NEXTEХ Agent Core — Agent Runtime (Fase 4.3)
+ * NEXTEХ Agent Core — Agent Runtime (Fase 4.4)
  * Orquestador central de ejecución segura de agentes autónomos.
- * Integra Tool Discovery filtrado, validación previa de esquemas y
- * serialización atómica anti-replay / anti-tampering en persistencia.
+ * Integra AuthorizationEngine, PolicyEngine, Tool Discovery filtrado,
+ * validación previa de esquemas, Human-in-the-Loop desacoplado (APPROVED != COMPLETED)
+ * y serialización atómica anti-replay / anti-tampering en persistencia.
  */
 
 import { defaultAIGateway } from "@/lib/omniengine/gateway/gateway";
@@ -11,6 +12,9 @@ import { defaultPermissionEngine } from "./permission";
 import { defaultToolRegistry } from "../tools/registry";
 import { defaultToolExecutor } from "../tools/executor";
 import { computeApprovalPayloadHash } from "../tools/hash";
+import { defaultAuthorizationEngine } from "../governance/authorization";
+import { defaultApprovalGovernance } from "../governance/approval";
+import { defaultPolicyEngine } from "../governance/policies";
 import {
   Agent,
   AgentRun,
@@ -28,7 +32,7 @@ export interface ExecutionResult {
 
 export class AgentRuntime {
   /**
-   * Ejecuta un Agent Run con gobernanza de límites, RLS, OmniEngine y Tool Discovery filtrado.
+   * Ejecuta un Agent Run con gobernanza de límites, cuotas, AuthorizationEngine y Tool Discovery filtrado.
    */
   public async executeRun(
     agent: Agent,
@@ -65,21 +69,46 @@ export class AgentRuntime {
       });
     }
 
-    // 4. Validar autorización de membresía en el workspace si hay cliente Supabase
+    // 4. AUTORIZACIÓN CENTRALIZADA: AuthorizationEngine evalúa permiso 'runs.execute' y políticas
+    const initialAuthz = await defaultAuthorizationEngine.evaluate(
+      {
+        userId: dto.user_id,
+        workspaceId: dto.workspace_id,
+        agentId: agent.id,
+      },
+      {
+        agent,
+        supabaseClient: supabase,
+      }
+    );
+
+    if (initialAuthz.decision === "deny") {
+      throw new AgentError({
+        code: AgentErrorCodes.AGENT_PERMISSION_DENIED,
+        message: initialAuthz.reason,
+        statusCode: 403,
+        agentId: agent.id,
+      });
+    }
+
+    // 5. CONTROL DE CONCURRENCIA (max_concurrent_runs)
     let userPlan: "free" | "pro" | "enterprise" = "free";
     if (supabase) {
-      const { data: member, error: memberErr } = await supabase
-        .from("workspace_members")
-        .select("role")
-        .eq("workspace_id", dto.workspace_id)
-        .eq("user_id", dto.user_id)
-        .maybeSingle();
+      // Conteo de runs activos: 'queued', 'running', 'waiting_approval'
+      const { count: activeCount } = await supabase
+        .from("agent_runs")
+        .select("*", { count: "exact", head: true })
+        .eq("agent_id", agent.id)
+        .in("status", ["queued", "running", "waiting_approval"]);
 
-      if (memberErr || !member) {
+      const policy = defaultPolicyEngine.getDefaultPolicy(agent.id, agent.workspace_id);
+      const concurrencyCheck = defaultPolicyEngine.evaluateConcurrency(activeCount || 0, policy);
+      if (!concurrencyCheck.allowed) {
         throw new AgentError({
-          code: AgentErrorCodes.AGENT_PERMISSION_DENIED,
-          message: "No tienes autorización para ejecutar agentes en este workspace.",
-          statusCode: 403,
+          code: AgentErrorCodes.AGENT_CONCURRENCY_LIMIT,
+          message: concurrencyCheck.reason || "Límite de concurrencia alcanzado.",
+          statusCode: 429,
+          agentId: agent.id,
         });
       }
 
@@ -92,7 +121,7 @@ export class AgentRuntime {
       userPlan = (profile?.plan as any) || "free";
     }
 
-    // 5. Jerarquía de límites: el límite más restrictivo siempre prevalece
+    // 6. Jerarquía de límites: el límite más restrictivo siempre prevalece
     const quotaPolicy = defaultQuotaManager.getPolicy(userPlan);
     const effectiveMaxTokens = Math.min(
       quotaPolicy.maxTokensPerRequest,
@@ -108,7 +137,7 @@ export class AgentRuntime {
       dto.override_max_steps || agent.max_steps
     );
 
-    // 6. Preparar Timeout y Cancelación
+    // 7. Preparar Timeout y Cancelación
     const abortController = new AbortController();
     const timeoutHandle = setTimeout(() => {
       abortController.abort(new Error("AGENT_TIMEOUT"));
@@ -120,7 +149,7 @@ export class AgentRuntime {
       });
     }
 
-    // 7. Instanciar Run en memoria
+    // 8. Instanciar Run en memoria
     const runId = `run-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const run: AgentRun = {
       id: runId,
@@ -165,7 +194,7 @@ export class AgentRuntime {
     }
 
     try {
-      // 8. Tool Discovery Filtrado: Solo inyectar herramientas activas asignadas a este agente
+      // 9. Tool Discovery Filtrado: Solo inyectar herramientas activas asignadas a este agente
       const assignedTools = defaultToolRegistry.getToolsForAgent(agent.tools || []);
       const toolDocumentation = assignedTools
         .map(
@@ -190,7 +219,7 @@ export class AgentRuntime {
         });
       }
 
-      // Paso 1: Inferencia con AI Gateway
+      // Inferencia con AI Gateway
       const stepId1 = `step-${run.id}-${currentStepNumber}`;
       const aiStep: AgentRunStep = {
         id: stepId1,
@@ -248,14 +277,40 @@ export class AgentRuntime {
       const toolCall = dto.forced_tool_call || this.detectToolCall(dto.input, aiResponse.content);
 
       if (toolCall && currentStepNumber <= effectiveMaxSteps) {
-        // Validar permisos y ciclo de vida de la herramienta en PermissionEngine
+        // 10. EVALUACIÓN FORMAL EN AuthorizationEngine
         const tool = defaultPermissionEngine.validateToolAccess(toolCall.tool_id, agent.tools || []);
 
-        // 9. Verificar Aprobación Humana (Human-in-the-Loop) con Hash Criptográfico Anti-Replay
-        if (tool.requiresApproval || tool.riskLevel === "write" || tool.riskLevel === "destructive") {
+        const authzDecision = await defaultAuthorizationEngine.evaluate(
+          {
+            userId: dto.user_id,
+            workspaceId: dto.workspace_id,
+            agentId: agent.id,
+            toolId: tool.id,
+            toolVersion: tool.version,
+            params: toolCall.params,
+            runId: run.id,
+          },
+          {
+            agent,
+            supabaseClient: supabase,
+          }
+        );
+
+        if (authzDecision.decision === "deny") {
+          throw new AgentError({
+            code: AgentErrorCodes.TOOL_NOT_ALLOWED,
+            message: `Acción denegada por AuthorizationEngine: ${authzDecision.reason}`,
+            statusCode: 403,
+            toolId: tool.id,
+            runId: run.id,
+          });
+        }
+
+        // 11. GOBERNANZA HITL: Si requiere aprobación, suspender y crear ApprovalRequest
+        if (authzDecision.decision === "approval_required") {
           const approvalStepId = `step-${run.id}-${currentStepNumber}`;
 
-          // Generación de firma criptográfica inmutable
+          // Generación de firma criptográfica inmutable RFC 8785
           const payloadHash = computeApprovalPayloadHash(
             run.id,
             approvalStepId,
@@ -292,6 +347,7 @@ export class AgentRuntime {
           run.updated_at = new Date().toISOString();
 
           if (supabase) {
+            // Persistir paso en agent_run_steps
             await (supabase.from("agent_run_steps") as any).insert({
               id: approvalStep.id,
               run_id: approvalStep.run_id,
@@ -302,6 +358,33 @@ export class AgentRuntime {
               tool_id: approvalStep.tool_id,
               input: approvalStep.input,
               started_at: approvalStep.started_at,
+            });
+
+            // Persistir entidad formal en approval_requests (Fase 4.4)
+            const formalApproval = defaultApprovalGovernance.createApprovalRequest(
+              run.workspace_id,
+              run.id,
+              approvalStep.id,
+              tool.id,
+              tool.version,
+              run.user_id,
+              tool.riskLevel,
+              toolCall.params
+            );
+
+            await (supabase.from("approval_requests") as any).insert({
+              id: formalApproval.id,
+              workspace_id: formalApproval.workspace_id,
+              run_id: formalApproval.run_id,
+              step_id: formalApproval.step_id,
+              tool_id: formalApproval.tool_id,
+              tool_version: formalApproval.tool_version,
+              requester_id: formalApproval.requester_id,
+              required_permission: formalApproval.required_permission,
+              risk_level: formalApproval.risk_level,
+              payload_hash: formalApproval.payload_hash,
+              status: formalApproval.status,
+              expires_at: formalApproval.expires_at,
             });
 
             await (supabase.from("agent_runs") as any)
@@ -318,7 +401,7 @@ export class AgentRuntime {
           return { run, steps, needsApproval: true, approvalStep };
         }
 
-        // Si no requiere aprobación (read), ejecutar con validación previa de esquema en ToolExecutor
+        // 12. SI LA HERRAMIENTA ESTÁ AUTORIZADA DIRECTAMENTE (ALLOW)
         const toolStepId = `step-${run.id}-${currentStepNumber}`;
         const toolStep: AgentRunStep = {
           id: toolStepId,
@@ -418,7 +501,8 @@ export class AgentRuntime {
   }
 
   /**
-   * Resuelve una solicitud de aprobación humana pendiente con PROTECCIÓN ATÓMICA en persistencia.
+   * Resuelve una solicitud de aprobación humana pendiente con JIT REVALIDATION y ejecución desacoplada.
+   * REGLA: APPROVED NO SIGNIFICA COMPLETED. La herramienta se ejecuta en ToolExecutor tras la aprobación.
    */
   public async resumeRunWithApproval(
     runId: string,
@@ -431,7 +515,7 @@ export class AgentRuntime {
     if (!supabase) {
       throw new AgentError({
         code: AgentErrorCodes.INTERNAL_AGENT_ERROR,
-        message: "Se requiere conexión a base de datos para resolver la aprobación de forma atómica.",
+        message: "Se requiere conexión a base de datos para resolver la aprobación.",
         statusCode: 500,
       });
     }
@@ -458,7 +542,7 @@ export class AgentRuntime {
       });
     }
 
-    // 2. Obtener el Step original para reconstruir el hash criptográfico
+    // 2. Obtener Step y ApprovalRequest correspondiente
     const { data: step, error: stepErr } = await (supabase.from("agent_run_steps") as any)
       .select("*")
       .eq("id", stepId)
@@ -473,85 +557,136 @@ export class AgentRuntime {
       });
     }
 
-    if (step.step_type !== "APPROVAL_REQUEST") {
-      throw new AgentError({
-        code: AgentErrorCodes.TOOL_APPROVAL_INVALID,
-        message: "El paso seleccionado no corresponde a una solicitud de aprobación.",
-        statusCode: 400,
-      });
-    }
-
-    // Anti-replay inmediato en lectura
-    if (step.status !== "pending") {
-      throw new AgentError({
-        code: AgentErrorCodes.TOOL_APPROVAL_REPLAY,
-        message: "Esta solicitud de aprobación ya fue procesada previamente.",
-        statusCode: 409,
-      });
-    }
+    const { data: approvalRecord } = await (supabase.from("approval_requests") as any)
+      .select("*")
+      .eq("step_id", stepId)
+      .maybeSingle();
 
     const toolId = step.tool_id || step.input?.tool_id;
     const toolVersion = step.input?.tool_version || "1.0.0";
     const toolParams = step.input?.params || {};
-    const recordedHash = step.input?.payload_hash;
+    const expectedHash = computeApprovalPayloadHash(run.id, stepId, toolId, toolVersion, toolParams);
 
-    // 3. Validación de integridad criptográfica (Anti-Tampering)
-    const expectedHash = computeApprovalPayloadHash(
-      run.id,
-      stepId,
-      toolId,
-      toolVersion,
-      toolParams
-    );
-
-    if (recordedHash && recordedHash !== expectedHash) {
-      throw new AgentError({
-        code: AgentErrorCodes.TOOL_APPROVAL_INVALID,
-        message: "La firma criptográfica del payload no coincide. Posible alteración en vuelo.",
-        statusCode: 400,
+    // 3. RESOLVER APROBACIÓN MEDIANTE RPC TRANSACCIONAL V2 (JIT REVALIDATION)
+    if (approvalRecord) {
+      const jitResult = await defaultApprovalGovernance.resolveApproval({
+        approvalId: approvalRecord.id,
+        approverId: userId || "",
+        expectedPayloadHash: expectedHash,
+        decision,
+        comment,
+        supabaseClient: supabase,
       });
+
+      if (decision === "reject") {
+        const finalOutput = `[ACCION DENEGADA]: El operador humano rechazó la ejecución de la herramienta '${toolId}'. Motivo: ${comment || "Sin comentario adicional"}.`;
+        const { data: updatedRun } = await (supabase.from("agent_runs") as any)
+          .update({
+            status: "completed",
+            output: finalOutput,
+            completed_at: new Date().toISOString(),
+          })
+          .eq("id", runId)
+          .select()
+          .single();
+
+        const { data: allSteps } = await (supabase.from("agent_run_steps") as any)
+          .select("*")
+          .eq("run_id", runId)
+          .order("step_number", { ascending: true });
+
+        return { run: updatedRun, steps: allSteps || [] };
+      }
+
+      // Si fue aprobado: APPROVED NO SIGNIFICA COMPLETED.
+      // El step ya está en 'running'. Ahora se procede a la ejecución física en ToolExecutor.
+      const executionId = `exec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      let execOutcome: any;
+      try {
+        execOutcome = await defaultToolExecutor.execute(toolId, toolParams, {
+          agentId: run.agent_id,
+          runId: run.id,
+          workspaceId: run.workspace_id,
+          userId: run.user_id,
+          supabaseClient: supabase,
+          stepId: stepId,
+          executionId: executionId,
+          fencingToken: jitResult.fencingToken || 1,
+          expectedPayloadHash: expectedHash,
+        });
+      } catch (execErr: any) {
+        // Si la herramienta falla tras la aprobación, el step pasa a failed
+        await (supabase.from("agent_run_steps") as any)
+          .update({
+            status: "failed",
+            error_code: execErr?.code || AgentErrorCodes.TOOL_EXECUTION_FAILED,
+            completed_at: new Date().toISOString(),
+          })
+          .eq("id", stepId);
+
+        throw execErr;
+      }
+
+      // Ejecución física concluida: sella step como completed
+      await (supabase.from("agent_run_steps") as any)
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+          output: execOutcome.data,
+        })
+        .eq("id", stepId);
+
+      const finalOutput = `[AUTORIZADO]: La herramienta '${toolId}@${toolVersion}' fue aprobada y ejecutada exitosamente.\n\nResultado:\n${JSON.stringify(execOutcome.data, null, 2)}`;
+
+      const { data: completedRun } = await (supabase.from("agent_runs") as any)
+        .update({
+          status: "completed",
+          output: finalOutput,
+          tool_calls_count: (run.tool_calls_count || 0) + 1,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", run.id)
+        .select()
+        .single();
+
+      const { data: finalSteps } = await (supabase.from("agent_run_steps") as any)
+        .select("*")
+        .eq("run_id", runId)
+        .order("step_number", { ascending: true });
+
+      return { run: completedRun, steps: finalSteps || [] };
     }
 
-    // 4. TRANSICIÓN ATÓMICA EN PERSISTENCIA (SERIALIZACIÓN ANTI-RACE CONDITION)
-    // El filtro atómico `status = 'pending'` en PostgreSQL garantiza que si entran dos peticiones
-    // simultáneas, solo una puede actualizar la fila. La otra recibe 0 registros afectados.
+    // Fallback de retrocompatibilidad directa
     const { data: updatedStep, error: updateErr } = await (supabase.from("agent_run_steps") as any)
       .update({
-        status: decision === "approve" ? "completed" : "failed",
-        completed_at: new Date().toISOString(),
+        status: decision === "approve" ? "running" : "failed",
+        completed_at: decision === "reject" ? new Date().toISOString() : null,
         output: {
           decision,
           approved_by: userId,
           payload_hash: expectedHash,
           comment: comment || null,
-          resolved_at: new Date().toISOString(),
         },
       })
       .eq("id", stepId)
       .eq("run_id", runId)
-      .eq("status", "pending") // <--- ATOMICIDAD DIRECTA EN POSTGRESQL
-      .eq("step_type", "APPROVAL_REQUEST")
+      .eq("status", "pending")
       .select()
       .maybeSingle();
 
     if (updateErr || !updatedStep) {
-      // Si la actualización no afectó ninguna fila, otra solicitud concurrente ya la transicionó
       throw new AgentError({
         code: AgentErrorCodes.TOOL_APPROVAL_REPLAY,
-        message: "Conflicto de concurrencia: la solicitud ya fue resuelta por otra transacción.",
+        message: "Conflicto de concurrencia: la solicitud ya fue resuelta.",
         statusCode: 409,
       });
     }
 
     if (decision === "reject") {
-      const finalOutput = `[ACCION DENEGADA]: El operador humano rechazó la ejecución de la herramienta '${toolId}'. Motivo: ${comment || "Sin comentario adicional"}. No se realizaron cambios.`;
-
+      const finalOutput = `[ACCION DENEGADA]: El operador humano rechazó la ejecución de la herramienta '${toolId}'.`;
       const { data: updatedRun } = await (supabase.from("agent_runs") as any)
-        .update({
-          status: "completed",
-          output: finalOutput,
-          completed_at: new Date().toISOString(),
-        })
+        .update({ status: "completed", output: finalOutput, completed_at: new Date().toISOString() })
         .eq("id", runId)
         .select()
         .single();
@@ -564,7 +699,7 @@ export class AgentRuntime {
       return { run: updatedRun, steps: allSteps || [] };
     }
 
-    // Decisión: APPROVE -> Ejecución en Sandbox con ToolExecutor y SchemaValidator
+    // Ejecutar herramienta
     const executionId = `exec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const execOutcome = await defaultToolExecutor.execute(toolId, toolParams, {
       agentId: run.agent_id,
@@ -578,31 +713,20 @@ export class AgentRuntime {
       expectedPayloadHash: expectedHash,
     });
 
-    // Registrar paso TOOL_RESULT
-    const nextStepNumber = (run.steps_count || 1) + 1;
-    const resultStepId = `step-${run.id}-${nextStepNumber}`;
-    await (supabase.from("agent_run_steps") as any).insert({
-      id: resultStepId,
-      run_id: run.id,
-      workspace_id: run.workspace_id,
-      step_number: nextStepNumber,
-      step_type: "TOOL_RESULT",
-      status: "completed",
-      tool_id: toolId,
-      input: toolParams,
-      output: execOutcome.data,
-      started_at: new Date().toISOString(),
-      completed_at: new Date().toISOString(),
-    });
+    await (supabase.from("agent_run_steps") as any)
+      .update({
+        status: "completed",
+        completed_at: new Date().toISOString(),
+        output: execOutcome.data,
+      })
+      .eq("id", stepId);
 
-    const finalOutput = `[AUTORIZADO]: La herramienta '${toolId}@${toolVersion}' fue aprobada y ejecutada exitosamente en el workspace.\n\nResultado:\n${JSON.stringify(execOutcome.data, null, 2)}`;
-
+    const finalOutput = `[AUTORIZADO]: La herramienta '${toolId}@${toolVersion}' fue ejecutada.\n\nResultado:\n${JSON.stringify(execOutcome.data, null, 2)}`;
     const { data: completedRun } = await (supabase.from("agent_runs") as any)
       .update({
         status: "completed",
         output: finalOutput,
         tool_calls_count: (run.tool_calls_count || 0) + 1,
-        steps_count: nextStepNumber,
         completed_at: new Date().toISOString(),
       })
       .eq("id", run.id)
@@ -632,7 +756,7 @@ export class AgentRuntime {
       }
     }
 
-    const mathMatch = input.match(/(?:calcula|calcule|cu[aá]nto es|evalua)\s*[:=]?\s*([0-9+\-*/%^().,\s]+)/i);
+    const mathMatch = input.match(/(?:calcula|calcule|cu[aá]nto es|evalua)\s*[:=]?\s*([0-9+\-*\/%^().,\s]+)/i);
     if (mathMatch && mathMatch[1].trim().length >= 3) {
       return {
         tool_id: "calculator",

@@ -225,37 +225,24 @@ class TransactionalEngine {
       throw new AgentError({ code: AgentErrorCodes.TOOL_CROSS_TENANT_ACCESS, message: "Violación cross-tenant.", statusCode: 403 });
     }
 
-    // 6. Consultar Idempotency Ledger primero (LEDGER HIT)
-    const existingLedgerId = this.ledgerByStepId.get(stepId);
-    if (existingLedgerId) {
-      const entry = this.toolIdempotencyLedger.get(existingLedgerId);
-      return {
-        success: true,
-        status: entry.status,
-        ledger_id: entry.id,
-        execution_id: entry.execution_id,
-        fencing_token: entry.fencing_token,
-        payload_hash: entry.payload_hash,
-        data: entry.result,
-        cached: true,
-      };
-    }
-
-    // 7. Validar estado, fencing y lease
-    if (step.status !== "running") {
-      throw new AgentError({ code: AgentErrorCodes.TOOL_STATUS_INVALID, message: "Step no está running.", statusCode: 400 });
+    // 6. Validar executor_id y fencing_token antes de consultar el ledger (Bloqueante 7 & 12)
+    if (step.executor_id !== executionId) {
+      throw new AgentError({ code: AgentErrorCodes.TOOL_FENCING_REJECTED, message: "Executor ID no coincide.", statusCode: 409 });
     }
 
     if (Number(step.fencing_token) !== Number(fencingToken)) {
       throw new AgentError({ code: AgentErrorCodes.TOOL_FENCING_REJECTED, message: "Fencing token obsoleto o menor.", statusCode: 409 });
     }
 
-    if (step.executor_id !== executionId) {
-      throw new AgentError({ code: AgentErrorCodes.TOOL_FENCING_REJECTED, message: "Executor ID no coincide.", statusCode: 409 });
+    // 7. Validar estado y lease
+    if (step.status !== "running" && step.status !== "completed") {
+      throw new AgentError({ code: AgentErrorCodes.TOOL_STATUS_INVALID, message: "Step no está running ni completed.", statusCode: 400 });
     }
 
-    if (!step.lease_expires_at || step.lease_expires_at <= Date.now()) {
-      throw new AgentError({ code: AgentErrorCodes.TOOL_LEASE_EXPIRED, message: "Lease expirado.", statusCode: 410 });
+    if (step.status === "running") {
+      if (!step.lease_expires_at || step.lease_expires_at <= Date.now()) {
+        throw new AgentError({ code: AgentErrorCodes.TOOL_LEASE_EXPIRED, message: "Lease expirado.", statusCode: 410 });
+      }
     }
 
     // 8. Payload inmutable
@@ -270,6 +257,22 @@ class TransactionalEngine {
     }
     if (step.input?.payload_hash && step.input.payload_hash !== computedHash) {
       throw new AgentError({ code: AgentErrorCodes.TOOL_PAYLOAD_HASH_MISMATCH, message: "Hash almacenado alterado.", statusCode: 400 });
+    }
+
+    // 10. Consultar Idempotency Ledger (LEDGER HIT)
+    const existingLedgerId = this.ledgerByStepId.get(stepId);
+    if (existingLedgerId) {
+      const entry = this.toolIdempotencyLedger.get(existingLedgerId);
+      return {
+        success: true,
+        status: entry.status,
+        ledger_id: entry.id,
+        execution_id: entry.execution_id,
+        fencing_token: entry.fencing_token,
+        payload_hash: entry.payload_hash,
+        data: entry.result,
+        cached: true,
+      };
     }
 
     // 10. Validar tablas autorizadas y operaciones

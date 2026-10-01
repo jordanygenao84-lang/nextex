@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/context/AuthContext";
-import { Agent, AgentRun, AgentRunStep } from "@/lib/agents/types";
+import { Agent, AgentRun, AgentRunStep, ApprovalRequest } from "@/lib/agents/types";
 import { CANONICAL_MODELS } from "@/lib/omniengine/registry/models";
 import {
   Bot,
@@ -25,6 +25,8 @@ import {
   Check,
   Ban,
   Loader2,
+  Clock,
+  ShieldAlert,
 } from "lucide-react";
 
 export default function AgentsPage() {
@@ -53,52 +55,28 @@ export default function AgentsPage() {
   const [runError, setRunError] = useState<string | null>(null);
   const [isApproving, setIsApproving] = useState(false);
 
-  // Cargar agentes iniciales
+  // Gobernanza HITL (Fase 4.4): Bandeja de aprobaciones
+  const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
+  const [activeTab, setActiveTab] = useState<"agents" | "approvals">("agents");
+
+  // Cargar agentes y aprobaciones
   useEffect(() => {
-    async function loadAgents() {
+    async function loadData() {
       if (!workspace?.id) return;
       try {
-        const res = await fetch(`/api/agents?workspaceId=${workspace.id}`);
-        if (res.ok) {
-          const json = await res.json();
+        const [agentsRes, apprRes] = await Promise.all([
+          fetch(`/api/agents?workspaceId=${workspace.id}`),
+          fetch(`/api/approvals?workspaceId=${workspace.id}&status=pending`),
+        ]);
+
+        if (agentsRes.ok) {
+          const json = await agentsRes.json();
           setAgents(json.agents || []);
-        } else {
-          setAgents([
-            {
-              id: "ag-default-1",
-              workspace_id: workspace.id,
-              name: "Auditor RLS & Base de Datos",
-              description: "Verifica permisos, integridad referencial y anomalías en tablas multi-inquilino.",
-              system_instructions: "Eres el agente de auditoría de NEXTEХ. Revisa la consistencia de los datos.",
-              model_id: "nextex-simulation",
-              status: "active",
-              max_steps: 10,
-              max_tokens: 8000,
-              timeout_seconds: 60,
-              max_tool_calls: 5,
-              created_by: "user-1",
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              tools: ["calculator", "database_read", "database_write"],
-            },
-            {
-              id: "ag-default-2",
-              workspace_id: workspace.id,
-              name: "Sintetizador de Telemetría",
-              description: "Agrupa y analiza métricas de tokens, latencias y consumo por modelo.",
-              system_instructions: "Analiza el uso acumulado del sistema y propone optimizaciones de cuota.",
-              model_id: "gemini-1.5-flash",
-              status: "draft",
-              max_steps: 5,
-              max_tokens: 4000,
-              timeout_seconds: 30,
-              max_tool_calls: 2,
-              created_by: "user-1",
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              tools: ["calculator", "database_read"],
-            },
-          ]);
+        }
+
+        if (apprRes.ok) {
+          const json = await apprRes.json();
+          setApprovals(json.approvals || []);
         }
       } catch {
         // Fallback
@@ -107,7 +85,7 @@ export default function AgentsPage() {
       }
     }
 
-    loadAgents();
+    loadData();
   }, [workspace?.id]);
 
   const handleCreateAgent = async (e: React.FormEvent) => {
@@ -185,6 +163,15 @@ export default function AgentsPage() {
 
       setCurrentRun(json.data.run);
       setCurrentSteps(json.data.steps || []);
+
+      // Si el run quedó en waiting_approval, refrescar bandeja
+      if (json.data.needsApproval && workspace?.id) {
+        const apprRes = await fetch(`/api/approvals?workspaceId=${workspace.id}&status=pending`);
+        if (apprRes.ok) {
+          const apprJson = await apprRes.json();
+          setApprovals(apprJson.approvals || []);
+        }
+      }
     } catch (err: any) {
       setRunError(err?.message || "Ocurrió un error inesperado.");
     } finally {
@@ -192,14 +179,13 @@ export default function AgentsPage() {
     }
   };
 
-  const handleApprovalAction = async (stepId: string, action: "approve" | "reject") => {
-    if (!activeAgent || !currentRun) return;
+  const handleResolveApproval = async (approvalId: string, action: "approve" | "reject") => {
     setIsApproving(true);
     try {
-      const res = await fetch(`/api/agents/${activeAgent.id}/runs/${currentRun.id}/approval`, {
+      const res = await fetch(`/api/approvals/${approvalId}/${action}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ step_id: stepId, action }),
+        body: JSON.stringify({ comment: `Resuelto vía Dashboard como ${action}` }),
       });
 
       const json = await res.json();
@@ -207,10 +193,15 @@ export default function AgentsPage() {
         throw new Error(json.error?.message || "Error al procesar la aprobación.");
       }
 
-      setCurrentRun(json.data.run);
-      setCurrentSteps(json.data.steps || []);
+      // Remover de la lista activa
+      setApprovals((prev) => prev.filter((a) => a.id !== approvalId));
+
+      if (currentRun && json.data?.run) {
+        setCurrentRun(json.data.run);
+        setCurrentSteps(json.data.steps || []);
+      }
     } catch (err: any) {
-      setRunError(err?.message || "Error al resolver aprobación.");
+      setRunError(err?.message || "Error al resolver la aprobación.");
     } finally {
       setIsApproving(false);
     }
@@ -232,23 +223,36 @@ export default function AgentsPage() {
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <span className="text-lg font-bold text-white tracking-tight">
-                NEXTEХ Agent Core v4.2
+                NEXTEХ Agent Core v4.4
               </span>
               <Badge variant="cyan" size="sm">
-                Sandbox & HITL Activo
+                Permissions & Governance
               </Badge>
+              {approvals.length > 0 && (
+                <Badge variant="warning" size="sm" dot>
+                  {approvals.length} Aprobación(es) Pendiente(s)
+                </Badge>
+              )}
             </div>
-            <p className="text-xs text-texter-text-muted flex items-center gap-2">
-              <span>Gobernanza de herramientas con Human-in-the-Loop</span>
+            <p className="text-xs text-texter-text-muted flex items-center gap-2 flex-wrap">
+              <span>Gobernanza con Human-in-the-Loop desacoplada</span>
               <span className="text-texter-border">•</span>
               <span className="text-emerald-400 flex items-center gap-1 font-mono">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                Aislamiento RLS en Agentes y Runs
+                JIT Revalidation & Fencing Activos
               </span>
             </p>
           </div>
 
           <div className="flex items-center gap-2">
+            <Button
+              variant={activeTab === "approvals" ? "primary" : "outline"}
+              size="md"
+              leftIcon={<Clock className="w-4 h-4" />}
+              onClick={() => setActiveTab(activeTab === "approvals" ? "agents" : "approvals")}
+            >
+              Bandeja HITL ({approvals.length})
+            </Button>
             <Button
               variant="primary"
               size="md"
@@ -260,138 +264,223 @@ export default function AgentsPage() {
           </div>
         </div>
 
-        {/* Barra de Filtros */}
-        <div className="flex items-center justify-between gap-4 flex-wrap border-b border-texter-border/50 pb-3">
-          <div className="flex items-center gap-2">
-            {[
-              { id: "all", label: "Activos & Borradores" },
-              { id: "active", label: "Solo Activos" },
-              { id: "draft", label: "Borradores" },
-              { id: "paused", label: "Pausados" },
-            ].map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setStatusFilter(f.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
-                  statusFilter === f.id
-                    ? "bg-texter-indigo text-white shadow-sm"
-                    : "bg-texter-surface-subtle text-texter-text-muted hover:text-white border border-texter-border"
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+        {/* VISTA 1: BANDEJA DE APROBACIONES HITL (Fase 4.4) */}
+        {activeTab === "approvals" ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-texter-border pb-3">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="w-5 h-5 text-texter-amber" />
+                <h3 className="text-sm font-bold text-white">
+                  Solicitudes de Aprobación Humana Pendientes (HITL)
+                </h3>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setActiveTab("agents")}>
+                Volver a Agentes
+              </Button>
+            </div>
 
-          <span className="text-xs font-mono text-texter-text-dim">
-            Total: {filteredAgents.length} agente(s)
-          </span>
-        </div>
-
-        {/* Grid de Agentes */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredAgents.map((agent) => {
-            const isActive = agent.status === "active";
-            const isPaused = agent.status === "paused";
-
-            return (
-              <Card
-                key={agent.id}
-                variant="elevated"
-                padding="md"
-                className="border-texter-border/80 flex flex-col justify-between hover:border-texter-indigo/40 transition-all shadow-md group"
-              >
-                <div className="space-y-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-texter-surface-subtle border border-texter-border flex items-center justify-center text-texter-cyan">
-                        <Bot className="w-4 h-4" />
-                      </div>
+            {approvals.length === 0 ? (
+              <Card variant="elevated" padding="lg" className="text-center py-12">
+                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2 opacity-80" />
+                <p className="text-sm font-semibold text-white">No hay solicitudes pendientes</p>
+                <p className="text-xs text-texter-text-muted mt-1">
+                  Todas las ejecuciones protegidas han sido resueltas o no requieren intervención humana.
+                </p>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {approvals.map((req) => (
+                  <Card key={req.id} variant="elevated" padding="md" className="border-amber-500/30 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
                       <div>
-                        <h3 className="text-sm font-bold text-white group-hover:text-texter-cyan transition-colors">
-                          {agent.name}
-                        </h3>
-                        <span className="text-[10px] font-mono text-texter-text-dim flex items-center gap-1">
-                          <Cpu className="w-3 h-3 text-texter-indigo" />
-                          {agent.model_id}
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-white font-mono">
+                            Herramienta: {req.tool_id}@{req.tool_version}
+                          </span>
+                          <Badge variant="warning" size="sm">
+                            {req.risk_level.toUpperCase()}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-texter-text-muted mt-1 font-mono">
+                          ID Solicitud: {req.id} • Expira: {new Date(req.expires_at).toLocaleTimeString()}
+                        </p>
+                        <p className="text-[11px] text-texter-cyan font-mono mt-0.5">
+                          Hash de Integridad (RFC 8785): {req.payload_hash.substring(0, 16)}...
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isApproving}
+                          onClick={() => handleResolveApproval(req.id, "reject")}
+                          leftIcon={<Ban className="w-3.5 h-3.5 text-rose-400" />}
+                        >
+                          Rechazar
+                        </Button>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          disabled={isApproving}
+                          isLoading={isApproving}
+                          onClick={() => handleResolveApproval(req.id, "approve")}
+                          leftIcon={<Check className="w-3.5 h-3.5" />}
+                        >
+                          Aprobar y Ejecutar
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* VISTA 2: GRID DE AGENTES */
+          <div className="space-y-4">
+            {/* Barra de Filtros */}
+            <div className="flex items-center justify-between gap-4 flex-wrap border-b border-texter-border/50 pb-3">
+              <div className="flex items-center gap-2">
+                {[
+                  { id: "all", label: "Activos & Borradores" },
+                  { id: "active", label: "Solo Activos" },
+                  { id: "draft", label: "Borradores" },
+                  { id: "paused", label: "Pausados" },
+                ].map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => setStatusFilter(f.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                      statusFilter === f.id
+                        ? "bg-texter-indigo text-white shadow-sm"
+                        : "bg-texter-surface-subtle text-texter-text-muted hover:text-white border border-texter-border"
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              <span className="text-xs font-mono text-texter-text-dim">
+                Total: {filteredAgents.length} agente(s)
+              </span>
+            </div>
+
+            {/* Grid de Agentes */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredAgents.map((agent) => {
+                const isActive = agent.status === "active";
+                const isPaused = agent.status === "paused";
+
+                return (
+                  <Card
+                    key={agent.id}
+                    variant="elevated"
+                    padding="md"
+                    className="border-texter-border/80 flex flex-col justify-between hover:border-texter-indigo/40 transition-all shadow-md group"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-texter-surface-subtle border border-texter-border flex items-center justify-center text-texter-cyan">
+                            <Bot className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-bold text-white group-hover:text-texter-cyan transition-colors">
+                              {agent.name}
+                            </h3>
+                            <span className="text-[10px] font-mono text-texter-text-dim flex items-center gap-1">
+                              <Cpu className="w-3 h-3 text-texter-indigo" />
+                              {agent.model_id}
+                            </span>
+                          </div>
+                        </div>
+
+                        <Badge
+                          variant={isActive ? "success" : isPaused ? "warning" : "default"}
+                          size="sm"
+                          dot
+                        >
+                          {agent.status.toUpperCase()}
+                        </Badge>
+                      </div>
+
+                      <p className="text-xs text-texter-text-muted line-clamp-2 leading-relaxed">
+                        {agent.description || "Sin descripción proporcionada."}
+                      </p>
+
+                      {/* Metadatos, Límites y Política de Gobernanza */}
+                      <div className="grid grid-cols-3 gap-2 py-2 px-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border/50 text-[10px] font-mono text-texter-text-dim">
+                        <div>
+                          <span>Pasos máx:</span>
+                          <p className="text-white font-semibold">{agent.max_steps}</p>
+                        </div>
+                        <div>
+                          <span>Tokens:</span>
+                          <p className="text-white font-semibold">
+                            {(agent.max_tokens / 1000).toFixed(0)}k
+                          </p>
+                        </div>
+                        <div>
+                          <span>Timeout:</span>
+                          <p className="text-white font-semibold">{agent.timeout_seconds}s</p>
+                        </div>
+                      </div>
+
+                      {/* Badges de Gobernanza de Riesgos */}
+                      <div className="flex items-center gap-1.5 flex-wrap text-[10px] font-mono text-texter-text-dim">
+                        <span className="px-1.5 py-0.5 rounded bg-texter-surface border border-texter-border">
+                          Riesgos: READ, WRITE
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded bg-texter-surface border border-texter-border text-amber-300">
+                          HITL Requerido
                         </span>
                       </div>
                     </div>
 
-                    <Badge
-                      variant={
-                        isActive ? "success" : isPaused ? "warning" : "default"
-                      }
-                      size="sm"
-                      dot
-                    >
-                      {agent.status.toUpperCase()}
-                    </Badge>
-                  </div>
+                    {/* Acciones */}
+                    <div className="pt-4 border-t border-texter-border/60 flex items-center justify-between gap-2 mt-4">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStatus(agent)}
+                        className="text-xs text-texter-text-muted hover:text-white flex items-center gap-1 font-mono transition-colors"
+                      >
+                        {isActive ? (
+                          <>
+                            <Pause className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Pausar</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Activar</span>
+                          </>
+                        )}
+                      </button>
 
-                  <p className="text-xs text-texter-text-muted line-clamp-2 leading-relaxed">
-                    {agent.description || "Sin descripción proporcionada."}
-                  </p>
-
-                  {/* Metadatos y Límites */}
-                  <div className="grid grid-cols-3 gap-2 py-2 px-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border/50 text-[10px] font-mono text-texter-text-dim">
-                    <div>
-                      <span>Pasos máx:</span>
-                      <p className="text-white font-semibold">{agent.max_steps}</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!isActive}
+                        onClick={() => {
+                          setActiveAgent(agent);
+                          setCurrentRun(null);
+                          setCurrentSteps([]);
+                          setRunError(null);
+                          setRunInput("");
+                        }}
+                        rightIcon={<ChevronRight className="w-3.5 h-3.5" />}
+                      >
+                        Ejecutar Run
+                      </Button>
                     </div>
-                    <div>
-                      <span>Tokens máx:</span>
-                      <p className="text-white font-semibold">
-                        {(agent.max_tokens / 1000).toFixed(0)}k
-                      </p>
-                    </div>
-                    <div>
-                      <span>Timeout:</span>
-                      <p className="text-white font-semibold">{agent.timeout_seconds}s</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Acciones */}
-                <div className="pt-4 border-t border-texter-border/60 flex items-center justify-between gap-2 mt-4">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleStatus(agent)}
-                    className="text-xs text-texter-text-muted hover:text-white flex items-center gap-1 font-mono transition-colors"
-                  >
-                    {isActive ? (
-                      <>
-                        <Pause className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Pausar</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Activar</span>
-                      </>
-                    )}
-                  </button>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!isActive}
-                    onClick={() => {
-                      setActiveAgent(agent);
-                      setCurrentRun(null);
-                      setCurrentSteps([]);
-                      setRunError(null);
-                      setRunInput("");
-                    }}
-                    rightIcon={<ChevronRight className="w-3.5 h-3.5" />}
-                  >
-                    Ejecutar Run
-                  </Button>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* MODAL CREAR AGENTE */}
@@ -628,28 +717,6 @@ export default function AgentsPage() {
                             <pre className="p-2 rounded bg-black/40 text-[10px] text-amber-300 overflow-x-auto">
                               {JSON.stringify(s.input, null, 2)}
                             </pre>
-
-                            <div className="flex items-center justify-end gap-2 pt-1">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={isApproving}
-                                onClick={() => handleApprovalAction(s.id, "reject")}
-                                leftIcon={<Ban className="w-3.5 h-3.5 text-rose-400" />}
-                              >
-                                Rechazar
-                              </Button>
-                              <Button
-                                variant="primary"
-                                size="sm"
-                                disabled={isApproving}
-                                isLoading={isApproving}
-                                onClick={() => handleApprovalAction(s.id, "approve")}
-                                leftIcon={<Check className="w-3.5 h-3.5" />}
-                              >
-                                Aprobar y Ejecutar
-                              </Button>
-                            </div>
                           </div>
                         )}
 

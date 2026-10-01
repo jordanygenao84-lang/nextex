@@ -1,8 +1,10 @@
 /**
- * NEXTEХ Agent Core — Tipos e interfaces de agentes, herramientas y ejecuciones (Fase 4.3)
+ * NEXTEХ Agent Core — Tipos e interfaces de agentes, herramientas y ejecuciones (Fase 4.4)
  */
 
 import { AgentErrorCode } from "./errors";
+export type { ToolRiskLevel } from "../tools/types";
+import { ToolRiskLevel } from "../tools/types";
 
 export type AgentStatus = "draft" | "active" | "paused" | "archived";
 
@@ -107,6 +109,151 @@ export interface ToolIdempotencyLedgerEntry {
   result: Record<string, any>;
   created_at: string;
   updated_at: string;
+}
+
+// ==============================================================================
+// GOBERNANZA FASE 4.4 — PERMISSIONS, POLICIES, APPROVALS & AUDIT
+// ==============================================================================
+
+export type CanonicalPermissionKey =
+  | "agents.read"
+  | "agents.create"
+  | "agents.update"
+  | "agents.delete"
+  | "agents.activate"
+  | "agents.pause"
+  | "runs.read"
+  | "runs.execute"
+  | "runs.cancel"
+  | "tools.read"
+  | "tools.execute"
+  | "tools.execute_read"
+  | "tools.execute_write"
+  | "tools.execute_external"
+  | "tools.execute_destructive"
+  | "approvals.read"
+  | "approvals.approve"
+  | "approvals.reject"
+  | "workspace.members.read"
+  | "workspace.members.manage"
+  | "workspace.settings.read"
+  | "workspace.settings.update";
+
+export type PermissionCategory =
+  | "agents"
+  | "runs"
+  | "tools"
+  | "approvals"
+  | "workspace";
+
+export interface Permission {
+  id: string;
+  key: CanonicalPermissionKey;
+  category: PermissionCategory;
+  description: string;
+  created_at: string;
+}
+
+export type WorkspaceRole = "owner" | "admin" | "member";
+
+export interface RolePermission {
+  id: string;
+  role: WorkspaceRole;
+  permission_key: CanonicalPermissionKey;
+  created_at: string;
+}
+
+export interface WorkspacePermissionOverride {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  permission_key: CanonicalPermissionKey;
+  effect: "allow" | "deny";
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ApprovalMode = "automatic" | "required" | "conditional";
+export type SelfApprovalMode = "blocked" | "allowed";
+
+export interface AgentPolicy {
+  id: string;
+  agent_id: string;
+  workspace_id: string;
+  allow_execution: boolean;
+  allowed_tool_risks: ToolRiskLevel[];
+  approval_mode: ApprovalMode;
+  self_approval_mode: SelfApprovalMode;
+  max_concurrent_runs: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ApprovalStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "expired"
+  | "cancelled";
+
+export interface ApprovalRequest {
+  id: string;
+  workspace_id: string;
+  run_id: string;
+  step_id: string;
+  tool_id: string;
+  tool_version: string;
+  requester_id: string;
+  required_permission: CanonicalPermissionKey;
+  risk_level: ToolRiskLevel;
+  payload_hash: string;
+  status: ApprovalStatus;
+  approver_id: string | null;
+  comment: string | null;
+  created_at: string;
+  resolved_at: string | null;
+  expires_at: string;
+}
+
+export interface AuthorizationEvaluationContext {
+  userId: string;
+  workspaceId: string;
+  agentId: string;
+  toolId?: string;
+  toolVersion?: string;
+  params?: Record<string, any>;
+  runId?: string;
+  stepId?: string;
+}
+
+export interface AuthorizationDecision {
+  decision: "allow" | "deny" | "approval_required";
+  reason: string;
+  requiredPermission?: CanonicalPermissionKey;
+  riskLevel?: ToolRiskLevel;
+  selfApprovalAllowed: boolean;
+  metadata?: Record<string, any>;
+}
+
+export interface AuthorizationAuditLogEntry {
+  id: string;
+  workspace_id: string;
+  actor_id: string;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  decision: "allow" | "deny" | "approval_required";
+  reason: string;
+  evaluated_role?: string | null;
+  evaluated_permissions?: Record<string, boolean> | null;
+  agent_id?: string | null;
+  run_id?: string | null;
+  step_id?: string | null;
+  tool_id?: string | null;
+  tool_version?: string | null;
+  payload_hash?: string | null;
+  created_at: string;
 }
 
 export interface AgentLimits {

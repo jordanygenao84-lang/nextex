@@ -1,18 +1,36 @@
 /**
- * NEXTEХ Agent Core — Permission Engine (Fase 4.3)
- * Validador estricto de autorizaciones, ciclo de vida y compatibilidad de versiones.
+ * NEXTEХ Agent Core — Permission Engine (Fase 4.4)
+ * Validador estricto de autorizaciones, ciclo de vida, compatibilidad de versiones y permisos RBAC.
  * PRINCIPIO: El LLM propone una acción; la plataforma decide si está permitida.
  */
 
 import { defaultToolRegistry, ToolRegistry } from "../tools/registry";
 import { ToolDefinition } from "../tools/types";
 import { AgentError, AgentErrorCodes } from "../types/errors";
+import { CanonicalPermissionKey, WorkspaceRole } from "../types";
+import { defaultPermissionEngine as govPermissionEngine } from "../governance/permissions";
 
 export class PermissionEngine {
   private registry: ToolRegistry;
 
   constructor(registry = defaultToolRegistry) {
     this.registry = registry;
+  }
+
+  /**
+   * Comprueba si un usuario posee un permiso canónico en un workspace.
+   */
+  public async can(
+    userId: string,
+    workspaceId: string,
+    permissionKey: CanonicalPermissionKey,
+    context?: {
+      supabaseClient?: any;
+      inMemoryOverrides?: Map<string, "allow" | "deny">;
+      inMemoryRole?: WorkspaceRole;
+    }
+  ) {
+    return govPermissionEngine.can(userId, workspaceId, permissionKey, context);
   }
 
   /**
@@ -77,7 +95,6 @@ export class PermissionEngine {
     }
 
     // 4. ¿El agente tiene asignada explícitamente esta herramienta?
-    // Verificamos por baseId o por coincidencia exacta con versión
     const isAssigned =
       authorizedToolsForAgent.includes(baseId) ||
       authorizedToolsForAgent.includes(resolvedTool.id) ||
