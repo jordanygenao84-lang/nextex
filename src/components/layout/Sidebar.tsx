@@ -17,9 +17,11 @@ import {
   LogOut,
   Sparkles,
   X,
+  Loader2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Logo } from "@/components/ui/Logo";
+import { useAuth } from "@/context/AuthContext";
 
 interface SidebarProps {
   mobileOpen?: boolean;
@@ -32,6 +34,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const { user, profile, signOut, isLoading } = useAuth();
 
   const mainNav = [
     {
@@ -71,11 +76,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: ShieldCheck,
     },
     {
-      name: "Configuración",
-      href: "/dashboard#settings",
+      name: "Configuración & Cuenta",
+      href: "/settings",
       icon: Settings,
     },
   ];
+
+  const handleSignOut = async () => {
+    setIsLoggingOut(true);
+    await signOut();
+    setIsLoggingOut(false);
+  };
+
+  // Extraer iniciales reales
+  const displayName = profile?.full_name || user?.email?.split("@")[0] || "Jordany Genao";
+  const displayEmail = user?.email || "Jordanygenao84@gmail.com";
+  const userPlan = (profile?.plan || "free").toUpperCase();
+  const initials = displayName
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "NX";
 
   return (
     <>
@@ -253,30 +275,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
               collapsed ? "justify-center" : "justify-between"
             )}
           >
-            <div className="flex items-center gap-2.5 min-w-0">
+            <Link
+              href="/settings"
+              className="flex items-center gap-2.5 min-w-0 flex-1 hover:opacity-90"
+              title="Ver perfil y configuración"
+            >
               <div className="w-8 h-8 rounded-lg bg-texter-surface border border-texter-border flex items-center justify-center font-mono font-semibold text-xs text-texter-indigo shrink-0">
-                JG
+                {initials}
               </div>
               {!collapsed && (
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-white truncate">
-                    Jordany Genao
-                  </p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-semibold text-white truncate">
+                      {displayName}
+                    </p>
+                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-texter-surface border border-texter-border text-texter-cyan">
+                      {userPlan}
+                    </span>
+                  </div>
                   <p className="text-[10px] text-texter-text-muted truncate font-mono">
-                    Nexora Texter
+                    {displayEmail}
                   </p>
                 </div>
               )}
-            </div>
+            </Link>
 
             {!collapsed && (
-              <Link
-                href="/login"
-                className="p-1 text-texter-text-muted hover:text-texter-rose transition-colors rounded-lg"
+              <button
+                onClick={handleSignOut}
+                disabled={isLoggingOut}
+                className="p-1.5 text-texter-text-muted hover:text-texter-rose transition-colors rounded-lg hover:bg-texter-surface"
                 title="Cerrar sesión"
+                aria-label="Cerrar sesión"
               >
-                <LogOut className="w-4 h-4" />
-              </Link>
+                {isLoggingOut ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-texter-rose" />
+                ) : (
+                  <LogOut className="w-4 h-4" />
+                )}
+              </button>
             )}
           </div>
         </div>

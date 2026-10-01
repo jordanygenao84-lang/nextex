@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Logo } from "@/components/ui/Logo";
+import { createClient } from "@/lib/supabase/client";
 import {
   Mail,
   Lock,
@@ -14,25 +15,75 @@ import {
   ShieldCheck,
   Github,
   Globe,
+  AlertCircle,
 } from "lucide-react";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
-  const [email, setEmail] = useState("Jordanygenao84@gmail.com");
-  const [password, setPassword] = useState("••••••••••••");
+  const searchParams = useSearchParams();
+  const redirectPath = searchParams.get("redirect") || "/dashboard";
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [oauthNote, setOauthNote] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    setError("");
+    setError(null);
+    setOauthNote(null);
 
-    // Simulate Supabase authentication transition
-    setTimeout(() => {
+    const emailTrimmed = email.trim();
+    if (!emailTrimmed) {
+      setError("Introduce tu correo electrónico.");
+      return;
+    }
+
+    if (!password) {
+      setError("Introduce tu contraseña.");
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const supabase = createClient();
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: emailTrimmed,
+        password,
+      });
+
+      if (signInError) {
+        if (
+          signInError.message.toLowerCase().includes("invalid login credentials") ||
+          signInError.message.toLowerCase().includes("invalid grant")
+        ) {
+          setError("Correo electrónico o contraseña incorrectos.");
+        } else if (signInError.message.toLowerCase().includes("email not confirmed")) {
+          setError("Tu correo electrónico aún no ha sido confirmado. Revisa tu bandeja de entrada.");
+        } else {
+          setError(signInError.message || "No fue posible iniciar sesión.");
+        }
+        setIsLoading(false);
+        return;
+      }
+
+      if (data?.session) {
+        router.push(redirectPath);
+        router.refresh();
+      }
+    } catch {
+      setError("Error al comunicar con el servicio de autenticación.");
+    } finally {
       setIsLoading(false);
-      router.push("/dashboard");
-    }, 1000);
+    }
+  };
+
+  const handleOAuth = (provider: "google" | "github") => {
+    setOauthNote(
+      `La integración OAuth con ${provider === "google" ? "Google" : "GitHub"} requiere activar las credenciales oficiales en el Dashboard de Supabase bajo la cuenta Jordanygenao84@gmail.com.`
+    );
   };
 
   return (
@@ -63,6 +114,7 @@ export default function LoginPage() {
           <div className="grid grid-cols-2 gap-3 mb-6">
             <button
               type="button"
+              onClick={() => handleOAuth("github")}
               className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-texter-surface-subtle hover:bg-texter-surface-hover border border-texter-border text-xs font-medium text-texter-text-secondary hover:text-white transition-all"
             >
               <Github className="w-4 h-4" />
@@ -70,12 +122,20 @@ export default function LoginPage() {
             </button>
             <button
               type="button"
+              onClick={() => handleOAuth("google")}
               className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-texter-surface-subtle hover:bg-texter-surface-hover border border-texter-border text-xs font-medium text-texter-text-secondary hover:text-white transition-all"
             >
               <Globe className="w-4 h-4 text-texter-cyan" />
               <span>Google SSO</span>
             </button>
           </div>
+
+          {oauthNote && (
+            <div className="mb-5 p-3 rounded-xl bg-texter-amber/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+              <span>{oauthNote}</span>
+            </div>
+          )}
 
           {/* Divider */}
           <div className="relative flex items-center justify-center mb-6">
@@ -102,12 +162,12 @@ export default function LoginPage() {
                 <label className="text-xs font-medium text-texter-text-secondary">
                   Contraseña
                 </label>
-                <a
-                  href="#forgot"
+                <Link
+                  href="/reset-password"
                   className="text-[11px] text-texter-indigo hover:text-indigo-400 transition-colors"
                 >
                   ¿Olvidaste tu contraseña?
-                </a>
+                </Link>
               </div>
               <Input
                 type="password"
@@ -120,8 +180,9 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300">
-                {error}
+              <div className="p-3.5 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-texter-rose" />
+                <span>{error}</span>
               </div>
             )}
 
@@ -129,11 +190,11 @@ export default function LoginPage() {
               type="submit"
               variant="primary"
               size="lg"
-              className="w-full justify-center"
+              className="w-full justify-center mt-2"
               isLoading={isLoading}
               rightIcon={<ArrowRight className="w-4 h-4" />}
             >
-              Iniciar Sesión en NEXTEХ
+              {isLoading ? "Iniciando sesión..." : "Iniciar Sesión en NEXTEХ"}
             </Button>
           </form>
 
@@ -141,7 +202,7 @@ export default function LoginPage() {
           <div className="mt-6 pt-5 border-t border-texter-border/60 flex items-center justify-between text-xs text-texter-text-muted">
             <div className="flex items-center gap-1.5 text-texter-text-dim">
               <ShieldCheck className="w-4 h-4 text-texter-emerald" />
-              <span>Supabase Auth & RLS Activo</span>
+              <span>Protección de cuenta activa</span>
             </div>
             <Link
               href="/register"
@@ -158,5 +219,19 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-texter-bg flex items-center justify-center text-xs font-mono text-texter-text-muted">
+          Cargando acceso...
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }
