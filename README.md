@@ -13,9 +13,9 @@ Plataforma profesional de Inteligencia Artificial, agentes autónomos y automati
 ---
 
 ## 2. Arquitectura y Cuentas Oficiales
-* **Control de Versiones & Repositorio**: GitHub (`Jordanygenao84@gmail.com`)
-* **Hosting, Edge & Despliegues**: Vercel (`Jordanygenao84@gmail.com`)
-* **Infraestructura de Datos, Auth & Storage**: Supabase (`Jordanygenao84@gmail.com`)
+* **Control de Versiones & Repositorio**: GitHub (`jordanygenao84-lang/nextex`)
+* **Hosting, Edge & Despliegues**: Vercel (`TEXTER / nextex`)
+* **Infraestructura de Datos, Auth & Storage**: Supabase (`vvpdycuclnoptffwmrvb.supabase.co`)
 
 ---
 
@@ -30,12 +30,10 @@ Plataforma profesional de Inteligencia Artificial, agentes autónomos y automati
 
 ---
 
-## 4. Estructura de Pantallas (Fase 1)
-* `/`: Landing Page interactiva con visualización de pipeline autónomo.
-* `/login`: Portal de acceso seguro a NEXTEХ.
-* `/register`: Incorporación de usuarios y planes.
-* `/dashboard`: Centro de comando con métricas en tiempo real, jobs y agentes.
-* `/chat`: Espacio de trabajo inteligente con trazabilidad de ejecución y herramientas.
+## 4. Estado de Fases
+* **Fase 1**: Identidad NEXTEХ, diseño visual y andamiaje completo.
+* **Fase 2**: Autenticación Supabase Auth, perfiles, workspaces, RLS estricto y middleware de rutas protegidas.
+* **Fase 3**: Motor de tareas, orquestador de agentes y canales SMS/WhatsApp (en progreso).
 
 ---
 
