@@ -1,6 +1,6 @@
 /**
  * NEXTEХ OmniEngine — Model Registry Central
- * Catálogo canónico de modelos reales, capacidades verificadas y estado de configuración.
+ * Catálogo canónico de modelos reales, capacidades verificadas y ciclo de vida oficial.
  * REGLA ESTRICTA: Cero modelos ficticios. Modelos sin API Key se marcan 'unconfigured'.
  */
 
@@ -13,6 +13,7 @@ export const CANONICAL_MODELS: Omit<ModelMetadata, "status">[] = [
     provider: "google",
     displayName: "Gemini 1.5 Flash",
     family: "Gemini",
+    lifecycle: "active",
     contextWindow: 1048576, // 1M tokens
     maxOutputTokens: 8192,
     capabilities: ["streaming", "vision", "toolCalling", "structuredOutput"],
@@ -31,6 +32,7 @@ export const CANONICAL_MODELS: Omit<ModelMetadata, "status">[] = [
     provider: "google",
     displayName: "Gemini 1.5 Pro",
     family: "Gemini",
+    lifecycle: "active",
     contextWindow: 2097152, // 2M tokens
     maxOutputTokens: 8192,
     capabilities: ["streaming", "vision", "toolCalling", "structuredOutput"],
@@ -49,6 +51,7 @@ export const CANONICAL_MODELS: Omit<ModelMetadata, "status">[] = [
     provider: "google",
     displayName: "Gemini 2.0 Flash (Experimental)",
     family: "Gemini",
+    lifecycle: "experimental",
     contextWindow: 1048576,
     maxOutputTokens: 8192,
     capabilities: ["streaming", "vision", "toolCalling", "structuredOutput"],
@@ -69,6 +72,7 @@ export const CANONICAL_MODELS: Omit<ModelMetadata, "status">[] = [
     provider: "anthropic",
     displayName: "Claude 3.5 Sonnet",
     family: "Claude",
+    lifecycle: "active",
     contextWindow: 200000,
     maxOutputTokens: 8192,
     capabilities: ["streaming", "vision", "toolCalling", "structuredOutput"],
@@ -87,6 +91,7 @@ export const CANONICAL_MODELS: Omit<ModelMetadata, "status">[] = [
     provider: "anthropic",
     displayName: "Claude 3.5 Haiku",
     family: "Claude",
+    lifecycle: "active",
     contextWindow: 200000,
     maxOutputTokens: 8192,
     capabilities: ["streaming", "vision", "toolCalling", "structuredOutput"],
@@ -107,6 +112,7 @@ export const CANONICAL_MODELS: Omit<ModelMetadata, "status">[] = [
     provider: "openai",
     displayName: "GPT-4o (Omni)",
     family: "GPT-4",
+    lifecycle: "active",
     contextWindow: 128000,
     maxOutputTokens: 4096,
     capabilities: ["streaming", "vision", "toolCalling", "structuredOutput"],
@@ -125,6 +131,7 @@ export const CANONICAL_MODELS: Omit<ModelMetadata, "status">[] = [
     provider: "openai",
     displayName: "GPT-4o mini",
     family: "GPT-4",
+    lifecycle: "active",
     contextWindow: 128000,
     maxOutputTokens: 16384,
     capabilities: ["streaming", "vision", "toolCalling", "structuredOutput"],
@@ -143,10 +150,11 @@ export const CANONICAL_MODELS: Omit<ModelMetadata, "status">[] = [
     provider: "openai",
     displayName: "o1-mini",
     family: "o1",
+    lifecycle: "deprecated", // Marcado oficialmente en docs de OpenAI
     contextWindow: 128000,
     maxOutputTokens: 65536,
     capabilities: ["streaming", "structuredOutput"],
-    supportsStreaming: false, // Modelos o1 razonan antes de stream en API actual
+    supportsStreaming: false,
     supportsVision: false,
     supportsToolCalling: false,
     supportsStructuredOutput: true,
@@ -163,6 +171,7 @@ export const CANONICAL_MODELS: Omit<ModelMetadata, "status">[] = [
     provider: "local_mock",
     displayName: "NEXTEХ Sandbox Simulator",
     family: "NEXTEХ Internal",
+    lifecycle: "active",
     contextWindow: 32768,
     maxOutputTokens: 4096,
     capabilities: ["streaming", "structuredOutput"],
@@ -192,7 +201,6 @@ export function isProviderConfigured(provider: AIProviderId): boolean {
     case "openai":
       return Boolean(process.env.OPENAI_API_KEY);
     case "local_mock":
-      // Siempre disponible para desarrollo y pruebas del sistema
       return true;
     default:
       return false;
@@ -201,7 +209,6 @@ export function isProviderConfigured(provider: AIProviderId): boolean {
 
 /**
  * Retorna el catálogo completo con el estado en vivo ('available' o 'unconfigured').
- * Server-side evaluation.
  */
 export function getModelRegistry(): ModelMetadata[] {
   return CANONICAL_MODELS.map((model) => {

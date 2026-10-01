@@ -14,6 +14,7 @@ export type AICapability =
   | "embeddings";
 
 export type ModelStatus = "available" | "unconfigured" | "deprecated" | "offline";
+export type ModelLifecycle = "active" | "deprecated" | "experimental" | "legacy";
 
 export interface ModelMetadata {
   id: string;
@@ -28,6 +29,7 @@ export interface ModelMetadata {
   supportsToolCalling: boolean;
   supportsStructuredOutput: boolean;
   status: ModelStatus;
+  lifecycle?: ModelLifecycle;
   configurationRequirement: {
     envKey: string;
     description: string;
