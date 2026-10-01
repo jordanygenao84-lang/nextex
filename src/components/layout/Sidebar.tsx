@@ -18,6 +18,7 @@ import {
   Sparkles,
   X,
   Loader2,
+  Bot,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Logo } from "@/components/ui/Logo";
@@ -36,7 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [collapsed, setCollapsed] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const { user, profile, signOut, isLoading } = useAuth();
+  const { user, profile, signOut } = useAuth();
 
   const mainNav = [
     {
@@ -46,10 +47,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badge: "En vivo",
     },
     {
-      name: "Chat & Agentes",
+      name: "Chat & Modelos",
       href: "/chat",
       icon: MessageSquareCode,
       badge: "Multi-Model",
+    },
+    {
+      name: "Agentes Autónomos",
+      href: "/agents",
+      icon: Bot,
+      badge: "Core v4.1",
     },
     {
       name: "Tareas & Jobs",
@@ -88,7 +95,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setIsLoggingOut(false);
   };
 
-  // Extraer iniciales reales
   const displayName = profile?.full_name || user?.email?.split("@")[0] || "Jordany Genao";
   const displayEmail = user?.email || "Jordanygenao84@gmail.com";
   const userPlan = (profile?.plan || "free").toUpperCase();
@@ -101,7 +107,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      {/* Mobile Backdrop */}
       {mobileOpen && (
         <div
           onClick={onCloseMobile}
@@ -109,7 +114,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         />
       )}
 
-      {/* Sidebar Container */}
       <aside
         className={cn(
           "fixed top-0 bottom-0 left-0 z-50 flex flex-col bg-texter-surface border-r border-texter-border transition-all duration-300 ease-in-out",
@@ -118,7 +122,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           mobileOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full lg:translate-x-0"
         )}
       >
-        {/* Top Header / Brand */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-texter-border">
           <Link
             href="/"
@@ -131,7 +134,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </Link>
 
-          {/* Mobile close button */}
           <button
             onClick={onCloseMobile}
             className="p-1.5 text-texter-text-muted hover:text-white rounded-lg hover:bg-texter-surface-hover lg:hidden"
@@ -140,7 +142,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <X className="w-5 h-5" />
           </button>
 
-          {/* Desktop collapse toggle */}
           <button
             onClick={() => setCollapsed(!collapsed)}
             className="hidden lg:flex p-1.5 text-texter-text-muted hover:text-white rounded-lg hover:bg-texter-surface-hover border border-texter-border/50"
@@ -154,9 +155,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        {/* Navigation List */}
         <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
-          {/* Main Navigation */}
           <div>
             {!collapsed && (
               <p className="px-2 mb-2 text-[10px] font-semibold text-texter-text-dim uppercase tracking-wider font-mono">
@@ -209,7 +208,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </nav>
           </div>
 
-          {/* Secondary / Admin */}
           <div>
             {!collapsed && (
               <p className="px-2 mb-2 text-[10px] font-semibold text-texter-text-dim uppercase tracking-wider font-mono">
@@ -243,7 +241,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </nav>
           </div>
 
-          {/* AI Cluster Status Card */}
           {!collapsed && (
             <div className="p-3.5 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs space-y-2.5">
               <div className="flex items-center justify-between">
@@ -267,7 +264,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {/* User Profile Footer */}
         <div className="p-3 border-t border-texter-border bg-texter-surface-subtle/50">
           <div
             className={cn(

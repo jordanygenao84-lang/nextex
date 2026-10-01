@@ -9,7 +9,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test:isolation": "node scripts/test-rls-isolation.mjs",
-    "test:omniengine": "node scripts/test-omniengine.mjs"
+    "test:omniengine": "node scripts/test-omniengine.mjs",
+    "test:agent-core": "node scripts/test-agent-core.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
