@@ -190,7 +190,7 @@ function sanitizeText(text) {
 }
 
 // 4. Lector y Escritor de Database
-const ALLOWED_WORKSPACE_TABLES = ["workspaces", "profiles", "conversations", "ai_usage", "agents", "agent_runs"];
+const ALLOWED_WORKSPACE_TABLES = ["workspaces", "profiles", "conversations", "agents", "agent_runs"];
 function databaseReadHandler(params, context) {
   const table = (params.table || "").toLowerCase().trim();
   if (!ALLOWED_WORKSPACE_TABLES.includes(table)) {
@@ -208,7 +208,7 @@ function databaseReadHandler(params, context) {
 
 function databaseWriteHandler(params, context) {
   const table = (params.table || "").toLowerCase().trim();
-  if (!["conversations", "ai_usage", "agents"].includes(table)) {
+  if (!["conversations", "agents"].includes(table)) {
     throw new Error(`Escritura denegada en tabla '${table}'.`);
   }
   return {

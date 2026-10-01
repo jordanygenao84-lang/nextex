@@ -33,7 +33,10 @@ Plataforma profesional de Inteligencia Artificial, agentes autónomos y automati
 ## 4. Estado de Fases
 * **Fase 1**: Identidad NEXTEХ, diseño visual y andamiaje completo.
 * **Fase 2**: Autenticación Supabase Auth, perfiles, workspaces, RLS estricto y middleware de rutas protegidas.
-* **Fase 3**: Motor de tareas, orquestador de agentes y canales SMS/WhatsApp (en progreso).
+* **Fase 3**: OmniEngine AI Gateway, Model Registry, Model Router, Quota Manager y telemetría de tokens.
+* **Fase 4.1**: Agent Core, Runtime declarativo, aislamiento de runs y pasos operativos.
+* **Fase 4.2**: Tool Execution Engine, sandbox de herramientas nativas y aprobación Human-in-the-Loop (HITL).
+* **Fase 4.3**: Advanced Tool Registry, Idempotency Ledger, Fencing tokens y mutación segura (ver [Documentación Técnica de Fase 4.3](docs/FASE_4_3_IDEMPOTENCY_FENCING.md)).
 
 ---
 

@@ -1,5 +1,5 @@
 /**
- * NEXTEХ Agent Core — Tipos e interfaces de agentes, herramientas y ejecuciones (Fase 4.2)
+ * NEXTEХ Agent Core — Tipos e interfaces de agentes, herramientas y ejecuciones (Fase 4.3)
  */
 
 import { AgentErrorCode } from "./errors";
@@ -85,6 +85,28 @@ export interface AgentRunStep {
   started_at: string;
   completed_at?: string | null;
   created_at: string;
+  fencing_token?: number | bigint;
+  lease_expires_at?: string | null;
+  executor_id?: string | null;
+}
+
+export interface ToolIdempotencyLedgerEntry {
+  id: string;
+  workspace_id: string;
+  run_id: string;
+  step_id: string;
+  tool_id: string;
+  tool_version: string;
+  execution_id: string;
+  fencing_token: number | bigint;
+  payload_hash: string;
+  operation: "insert" | "update" | "delete";
+  target_table: "conversations" | "agents";
+  target_record_id?: string | null;
+  status: "committed" | "not_found" | "already_deleted";
+  result: Record<string, any>;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AgentLimits {

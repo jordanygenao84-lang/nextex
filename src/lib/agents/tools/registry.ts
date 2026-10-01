@@ -52,9 +52,9 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
     parameters: {
       table: {
         type: "string",
-        description: "Tabla destino (conversations, ai_usage, agents, agent_runs, etc.)",
+        description: "Tabla destino (conversations, agents, etc.)",
         required: true,
-        enum: ["workspaces", "profiles", "workspace_members", "conversations", "ai_usage", "agents", "agent_runs", "agent_run_steps"],
+        enum: ["workspaces", "profiles", "workspace_members", "conversations", "agents", "agent_runs", "agent_run_steps"],
       },
       limit: {
         type: "number",
@@ -88,7 +88,7 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
   {
     id: "database_write",
     name: "Escritura de Registros",
-    description: "Creación o actualización de entidades del workspace. Requiere confirmación humana.",
+    description: "Creación, actualización o eliminación de entidades autorizadas (conversations, agents). Requiere confirmación humana.",
     version: "1.0.0",
     category: "database",
     riskLevel: "write",
@@ -101,22 +101,22 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
         type: "string",
         description: "Tabla destino autorizada para mutaciones",
         required: true,
-        enum: ["conversations", "ai_usage", "agents"],
+        enum: ["conversations", "agents"],
       },
       operation: {
         type: "string",
-        description: "Operación: 'insert' o 'update'",
+        description: "Operación: 'insert', 'update' o 'delete'",
         required: false,
-        enum: ["insert", "update"],
+        enum: ["insert", "update", "delete"],
       },
       data: {
         type: "object",
-        description: "Payload estructurado a guardar",
-        required: true,
+        description: "Payload estructurado a guardar (requerido para insert y update)",
+        required: false,
       },
       recordId: {
         type: "string",
-        description: "ID del registro a actualizar (obligatorio solo si operation=update)",
+        description: "ID del registro a actualizar o eliminar (obligatorio si operation='update' o 'delete')",
         required: false,
       },
     },
@@ -127,6 +127,7 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
         table: { type: "string" },
         workspace_id: { type: "string" },
         status: { type: "string" },
+        record: { type: "object" },
       },
     },
     handler: databaseWriteToolHandler,

@@ -340,6 +340,9 @@ export class AgentRuntime {
           userId: dto.user_id,
           supabaseClient: supabase,
           signal: abortController.signal,
+          stepId: toolStepId,
+          executionId: `exec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          fencingToken: 1,
         });
 
         toolStep.status = "completed";
@@ -562,12 +565,17 @@ export class AgentRuntime {
     }
 
     // Decisión: APPROVE -> Ejecución en Sandbox con ToolExecutor y SchemaValidator
+    const executionId = `exec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const execOutcome = await defaultToolExecutor.execute(toolId, toolParams, {
       agentId: run.agent_id,
       runId: run.id,
       workspaceId: run.workspace_id,
       userId: run.user_id,
       supabaseClient: supabase,
+      stepId: stepId,
+      executionId: executionId,
+      fencingToken: 1,
+      expectedPayloadHash: expectedHash,
     });
 
     // Registrar paso TOOL_RESULT

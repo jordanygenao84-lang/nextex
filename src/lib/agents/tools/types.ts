@@ -39,6 +39,10 @@ export interface ToolExecutionContext {
   userId: string;
   supabaseClient?: any;
   signal?: AbortSignal;
+  stepId?: string;
+  executionId?: string;
+  fencingToken?: number | bigint;
+  expectedPayloadHash?: string;
 }
 
 export interface NormalizedToolOutput<T = any> {
