@@ -122,6 +122,14 @@ create trigger tr_agent_memory_cleanup
   for each row execute function public.handle_agent_memory_cleanup_on_delete();
 
 -- 4. EXTENSIÓN DEL CATÁLOGO DE PERMISOS: 22 -> 26 PERMISOS CANÓNICOS
+-- Actualizar constraint permissions_category_check para incorporar la categoría 'memory'
+alter table public.permissions
+  drop constraint if exists permissions_category_check;
+
+alter table public.permissions
+  add constraint permissions_category_check
+  check (category in ('agents', 'runs', 'tools', 'approvals', 'workspace', 'memory'));
+
 insert into public.permissions (id, key, category, description)
 values
   ('memory.read', 'memory.read', 'memory', 'Consultar y recuperar memorias cognitivas del workspace'),
@@ -191,7 +199,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = pg_catalog, public, pg_temp
+set search_path = pg_catalog, public, extensions, pg_temp
 as $$
 declare
   v_caller uuid;
@@ -321,7 +329,7 @@ create or replace function public.ingest_agent_memory(
 returns jsonb
 language plpgsql
 security definer
-set search_path = pg_catalog, public, pg_temp
+set search_path = pg_catalog, public, extensions, pg_temp
 as $$
 declare
   v_caller uuid;
