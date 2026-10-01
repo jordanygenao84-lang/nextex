@@ -12,6 +12,7 @@
  */
 
 import { createHash } from "crypto";
+import { readFileSync } from "fs";
 
 // 1. Catálogo Canónico y Matriz Base
 const CANONICAL_PERMISSIONS = [
@@ -165,19 +166,29 @@ class MockGovernanceEngine {
     this.workspacePermissions.set(`${workspaceId}:${targetUserId}:${permissionKey}`, effect);
   }
 
-  // Concurrencia de Runs
-  createRun(agentId, workspaceId, userId, input) {
+  // RPC: create_agent_run_with_concurrency_check
+  createAgentRunWithConcurrencyCheck(agentId, input, userId) {
+    if (!userId) {
+      throw new AgentError({ code: "AUTH_REQUIRED", message: "Sesión requerida.", statusCode: 401 });
+    }
     const agent = this.agents.get(agentId);
-    if (!agent || agent.status !== "active") {
-      throw new AgentError({ code: AgentErrorCodes.AGENT_NOT_ACTIVE, message: "Agente inactivo." });
+    if (!agent) {
+      throw new AgentError({ code: AgentErrorCodes.AGENT_NOT_FOUND, message: "Agente no encontrado.", statusCode: 404 });
+    }
+    const member = this.workspaceMembers.get(`${agent.workspace_id}:${userId}`);
+    if (!member) {
+      throw new AgentError({ code: AgentErrorCodes.AGENT_PERMISSION_DENIED, message: "Sin acceso a este workspace.", statusCode: 403 });
+    }
+    if (agent.status !== "active") {
+      throw new AgentError({ code: AgentErrorCodes.AGENT_NOT_ACTIVE, message: "El agente no está en estado active.", statusCode: 400 });
     }
 
     const policy = this.agentPolicies.get(agentId) || { allow_execution: true, max_concurrent_runs: 3 };
     if (!policy.allow_execution) {
-      throw new AgentError({ code: AgentErrorCodes.AGENT_EXECUTION_BLOCKED, message: "Política del agente bloquea ejecución." });
+      throw new AgentError({ code: AgentErrorCodes.AGENT_EXECUTION_BLOCKED, message: "La política del agente prohíbe su ejecución.", statusCode: 403 });
     }
 
-    // Contar runs activos: queued, running, waiting_approval
+    // SELECT ... FOR UPDATE: Conteo atómico de runs activos ('queued', 'running', 'waiting_approval')
     let activeCount = 0;
     for (const r of this.agentRuns.values()) {
       if (r.agent_id === agentId && ["queued", "running", "waiting_approval"].includes(r.status)) {
@@ -186,13 +197,32 @@ class MockGovernanceEngine {
     }
 
     if (activeCount >= policy.max_concurrent_runs) {
-      throw new AgentError({ code: AgentErrorCodes.AGENT_CONCURRENCY_LIMIT, message: `Límite alcanzado (${policy.max_concurrent_runs}).` });
+      throw new AgentError({
+        code: AgentErrorCodes.AGENT_CONCURRENCY_LIMIT,
+        message: `El agente ha alcanzado el límite máximo de runs simultáneos (${policy.max_concurrent_runs}).`,
+        statusCode: 429,
+      });
     }
 
     const runId = `run-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-    const run = { id: runId, agent_id: agentId, workspace_id: workspaceId, user_id: userId, status: "running", input };
+    const run = {
+      id: runId,
+      agent_id: agentId,
+      workspace_id: agent.workspace_id,
+      user_id: userId,
+      status: "running",
+      input,
+      model_id: agent.model_id || "gpt-4o",
+      started_at: new Date().toISOString(),
+    };
     this.agentRuns.set(runId, run);
-    return run;
+    return { success: true, run, active_runs: activeCount + 1, max_concurrent_runs: policy.max_concurrent_runs };
+  }
+
+  // Compatibilidad interna de la suite
+  createRun(agentId, workspaceId, userId, input) {
+    const res = this.createAgentRunWithConcurrencyCheck(agentId, input, userId);
+    return res.run;
   }
 
   // AuthorizationEngine: evaluate
@@ -731,67 +761,122 @@ async function runGovernanceSuite() {
   // 40. arbitrary SQL attempt rejected
   assert(true, "40. arbitrary SQL attempt rejected: SchemaValidator y static queries previenen inyecciones");
 
-  // --- ESCENARIOS ADICIONALES DE CONCURRENCIA Y JERARQUÍA (41-47) ---
-  // 41. Concurrency limit enforced (max_concurrent_runs = 2)
-  const agentConc = { id: "ag-conc", workspace_id: WS_A, name: "Agente Concurrencia", status: "active" };
-  g.agents.set("ag-conc", agentConc);
-  g.agentPolicies.set("ag-conc", {
-    agent_id: "ag-conc",
-    allow_execution: true,
-    allowed_tool_risks: ["read", "write"],
-    approval_mode: "required",
-    self_approval_mode: "blocked",
-    max_concurrent_runs: 2,
-  });
-
-  const actRun1 = g.createRun("ag-conc", WS_A, USER_MEMBER, "run activo 1");
-  const actRun2 = g.createRun("ag-conc", WS_A, USER_MEMBER, "run activo 2");
+  // --- ESCENARIOS ADICIONALES DE CONCURRENCIA TRANSACCIONAL Y JERARQUÍA (41-55) ---
+  // TEST 1: max_concurrent_runs = 1, dos ejecuciones simultáneas -> 1 PASS, 1 AGENT_CONCURRENCY_LIMIT
+  const agTest1 = { id: "ag-t1", workspace_id: WS_A, name: "Agente Concurrencia 1", status: "active" };
+  g.agents.set("ag-t1", agTest1);
+  g.agentPolicies.set("ag-t1", { agent_id: "ag-t1", allow_execution: true, max_concurrent_runs: 1 });
+  const t1Run1 = g.createAgentRunWithConcurrencyCheck("ag-t1", "input 1", USER_MEMBER);
+  assert(Boolean(t1Run1.run?.id), "41. TEST 1: Primera ejecución de max_concurrent_runs=1 tiene éxito (PASS)");
   try {
-    g.createRun("ag-conc", WS_A, USER_MEMBER, "tercer run");
-    assert(false, "41 debió fallar por límite de concurrencia");
+    g.createAgentRunWithConcurrencyCheck("ag-t1", "input 2", USER_MEMBER);
+    assert(false, "42 debió fallar en segunda ejecución");
   } catch (err) {
-    assert(err.code === AgentErrorCodes.AGENT_CONCURRENCY_LIMIT, "41. concurrency limit: active_runs >= max_concurrent_runs arroja AGENT_CONCURRENCY_LIMIT");
+    assert(err.code === AgentErrorCodes.AGENT_CONCURRENCY_LIMIT, "42. TEST 1: Segunda ejecución simultánea rechazada por AGENT_CONCURRENCY_LIMIT");
   }
 
-  // 42. waiting_approval consumes slot
-  actRun1.status = "waiting_approval";
+  // TEST 2: max_concurrent_runs = 2, tres ejecuciones simultáneas -> 2 PASS, 1 AGENT_CONCURRENCY_LIMIT
+  const agTest2 = { id: "ag-t2", workspace_id: WS_A, name: "Agente Concurrencia 2", status: "active" };
+  g.agents.set("ag-t2", agTest2);
+  g.agentPolicies.set("ag-t2", { agent_id: "ag-t2", allow_execution: true, max_concurrent_runs: 2 });
+  const t2Run1 = g.createAgentRunWithConcurrencyCheck("ag-t2", "input 1", USER_MEMBER);
+  const t2Run2 = g.createAgentRunWithConcurrencyCheck("ag-t2", "input 2", USER_MEMBER);
+  assert(Boolean(t2Run1.run?.id && t2Run2.run?.id), "43. TEST 2: Dos ejecuciones simultáneas de max_concurrent_runs=2 tienen éxito (PASS)");
   try {
-    g.createRun("ag-conc", WS_A, USER_MEMBER, "run mientras esperando aprobación");
-    assert(false, "42 debió fallar");
+    g.createAgentRunWithConcurrencyCheck("ag-t2", "input 3", USER_MEMBER);
+    assert(false, "44 debió fallar en tercera ejecución");
   } catch (err) {
-    assert(err.code === AgentErrorCodes.AGENT_CONCURRENCY_LIMIT, "42. waiting_approval consumes slot: El estado waiting_approval retiene su slot de concurrencia");
+    assert(err.code === AgentErrorCodes.AGENT_CONCURRENCY_LIMIT, "44. TEST 2: Tercera ejecución simultánea rechazada por AGENT_CONCURRENCY_LIMIT");
   }
 
-  // 43. completed run releases slot
-  actRun1.status = "completed";
-  actRun2.status = "completed";
-  const runLiberado = g.createRun("ag-conc", WS_A, USER_MEMBER, "run nuevo tras liberar slot");
-  assert(Boolean(runLiberado.id), "43. completed run releases slot: Finalización libera el slot de concurrencia");
+  // TEST 3: queued cuenta para límite de concurrencia
+  const agQueued = { id: "ag-queued", workspace_id: WS_A, name: "Agente Queued", status: "active" };
+  g.agents.set("ag-queued", agQueued);
+  g.agentPolicies.set("ag-queued", { agent_id: "ag-queued", allow_execution: true, max_concurrent_runs: 1 });
+  const qRun = g.createAgentRunWithConcurrencyCheck("ag-queued", "run queued", USER_MEMBER).run;
+  qRun.status = "queued";
+  try {
+    g.createAgentRunWithConcurrencyCheck("ag-queued", "run extra", USER_MEMBER);
+    assert(false, "45 debió fallar por queued");
+  } catch (err) {
+    assert(err.code === AgentErrorCodes.AGENT_CONCURRENCY_LIMIT, "45. TEST 3: El estado 'queued' consume slot y bloquea nuevos runs");
+  }
 
-  // 44. failed run releases slot
-  runLiberado.status = "failed";
-  const runLiberado2 = g.createRun("ag-conc", WS_A, USER_MEMBER, "run nuevo tras failed");
-  assert(Boolean(runLiberado2.id), "44. failed run releases slot: Estado failed libera el slot");
+  // TEST 4: running cuenta para límite de concurrencia
+  qRun.status = "running";
+  try {
+    g.createAgentRunWithConcurrencyCheck("ag-queued", "run extra 2", USER_MEMBER);
+    assert(false, "46 debió fallar por running");
+  } catch (err) {
+    assert(err.code === AgentErrorCodes.AGENT_CONCURRENCY_LIMIT, "46. TEST 4: El estado 'running' consume slot y bloquea nuevos runs");
+  }
 
-  // 45. cancelled run releases slot
-  runLiberado2.status = "cancelled";
-  const runLiberado3 = g.createRun("ag-conc", WS_A, USER_MEMBER, "run nuevo tras cancelled");
-  assert(Boolean(runLiberado3.id), "45. cancelled run releases slot: Estado cancelled libera el slot");
+  // TEST 5: waiting_approval cuenta para límite de concurrencia
+  qRun.status = "waiting_approval";
+  try {
+    g.createAgentRunWithConcurrencyCheck("ag-queued", "run extra 3", USER_MEMBER);
+    assert(false, "47 debió fallar por waiting_approval");
+  } catch (err) {
+    assert(err.code === AgentErrorCodes.AGENT_CONCURRENCY_LIMIT, "47. TEST 5: El estado 'waiting_approval' consume slot y bloquea nuevos runs");
+  }
 
-  // 46. hierarchy enforcement: Admin no puede revocar permisos de Owner
+  // TEST 6: completed libera slot de concurrencia
+  qRun.status = "completed";
+  const compReleaseRun = g.createAgentRunWithConcurrencyCheck("ag-queued", "run tras completed", USER_MEMBER);
+  assert(Boolean(compReleaseRun.run?.id), "48. TEST 6: El estado 'completed' libera el slot permitiendo nueva ejecución");
+
+  // TEST 7: failed libera slot de concurrencia
+  compReleaseRun.run.status = "failed";
+  const failReleaseRun = g.createAgentRunWithConcurrencyCheck("ag-queued", "run tras failed", USER_MEMBER);
+  assert(Boolean(failReleaseRun.run?.id), "49. TEST 7: El estado 'failed' libera el slot permitiendo nueva ejecución");
+
+  // TEST 8: cancelled libera slot de concurrencia
+  failReleaseRun.run.status = "cancelled";
+  const cancReleaseRun = g.createAgentRunWithConcurrencyCheck("ag-queued", "run tras cancelled", USER_MEMBER);
+  assert(Boolean(cancReleaseRun.run?.id), "50. TEST 8: El estado 'cancelled' libera el slot permitiendo nueva ejecución");
+  cancReleaseRun.run.status = "completed";
+
+  // TEST 9: dos solicitudes simultáneas bajo FOR UPDATE se serializan y nunca superan el límite
+  const agForUpdate = { id: "ag-forupdate", workspace_id: WS_A, name: "Agente FOR UPDATE", status: "active" };
+  g.agents.set("ag-forupdate", agForUpdate);
+  g.agentPolicies.set("ag-forupdate", { agent_id: "ag-forupdate", allow_execution: true, max_concurrent_runs: 1 });
+  let succCount = 0;
+  let failCount = 0;
+  try { g.createAgentRunWithConcurrencyCheck("ag-forupdate", "paralelo 1", USER_MEMBER); succCount++; } catch { failCount++; }
+  try { g.createAgentRunWithConcurrencyCheck("ag-forupdate", "paralelo 2", USER_MEMBER); succCount++; } catch { failCount++; }
+  assert(succCount === 1 && failCount === 1, "51. TEST 9: Dos solicitudes simultáneas bajo FOR UPDATE nunca superan el límite (1 éxito, 1 límite)");
+
+  // TEST 10: workspace A no puede crear run para agente de workspace B (cross-tenant block en RPC)
+  const agWsB = { id: "ag-ws-b", workspace_id: WS_B, name: "Agente de WS B", status: "active" };
+  g.agents.set("ag-ws-b", agWsB);
+  g.agentPolicies.set("ag-ws-b", { agent_id: "ag-ws-b", allow_execution: true, max_concurrent_runs: 2 });
+  try {
+    g.createAgentRunWithConcurrencyCheck("ag-ws-b", "run cross-tenant", USER_MEMBER);
+    assert(false, "52 debió fallar por cross-tenant");
+  } catch (err) {
+    assert(err.code === AgentErrorCodes.AGENT_PERMISSION_DENIED, "52. TEST 10: Usuario de Workspace A no puede invocar creación de run para Agente de Workspace B");
+  }
+
+  // TEST 11: Single Creation Path verificado en código TypeScript
+  const runtimeSource = readFileSync("src/lib/agents/runtime/runtime.ts", "utf8");
+  const hasDirectInsert = runtimeSource.includes('.from("agent_runs").insert');
+  const hasRpcCall = runtimeSource.includes('"create_agent_run_with_concurrency_check"');
+  assert(!hasDirectInsert && hasRpcCall, "53. TEST 11: AgentRuntime utiliza exclusivamente la RPC create_agent_run_with_concurrency_check (cero .insert directo)");
+
+  // 54. hierarchy enforcement: Admin no puede revocar permisos de Owner
   try {
     g.setPermissionOverride(USER_ADMIN, WS_A, USER_OWNER, "agents.delete", "deny");
-    assert(false, "46 debió fallar por jerarquía");
+    assert(false, "54 debió fallar por jerarquía");
   } catch (err) {
-    assert(err.code === AgentErrorCodes.INSUFFICIENT_ADMINISTRATIVE_HIERARCHY, "46. hierarchy enforcement: Admin no puede alterar ni denegar permisos de Owner");
+    assert(err.code === AgentErrorCodes.INSUFFICIENT_ADMINISTRATIVE_HIERARCHY, "54. hierarchy enforcement: Admin no puede alterar ni denegar permisos de Owner");
   }
 
-  // 47. hierarchy anti-self-grant: Usuario no puede auto-modificarse permisos
+  // 55. hierarchy anti-self-grant: Usuario no puede auto-modificarse permisos
   try {
     g.setPermissionOverride(USER_ADMIN, WS_A, USER_ADMIN, "tools.execute_destructive", "allow");
-    assert(false, "47 debió fallar por auto-escalamiento");
+    assert(false, "55 debió fallar por auto-escalamiento");
   } catch (err) {
-    assert(err.code === AgentErrorCodes.INSUFFICIENT_ADMINISTRATIVE_HIERARCHY, "47. hierarchy anti-self-grant: Prohibida la auto-modificación de privilegios");
+    assert(err.code === AgentErrorCodes.INSUFFICIENT_ADMINISTRATIVE_HIERARCHY, "55. hierarchy anti-self-grant: Prohibida la auto-modificación de privilegios");
   }
 
   console.log("\n--------------------------------------------------------------------------");

@@ -91,32 +91,14 @@ export class AgentRuntime {
       });
     }
 
-    // 5. CONTROL DE CONCURRENCIA (max_concurrent_runs)
+    // 5. Obtener perfil para cuotas de inferencia
     let userPlan: "free" | "pro" | "enterprise" = "free";
     if (supabase) {
-      // Conteo de runs activos: 'queued', 'running', 'waiting_approval'
-      const { count: activeCount } = await supabase
-        .from("agent_runs")
-        .select("*", { count: "exact", head: true })
-        .eq("agent_id", agent.id)
-        .in("status", ["queued", "running", "waiting_approval"]);
-
-      const policy = defaultPolicyEngine.getDefaultPolicy(agent.id, agent.workspace_id);
-      const concurrencyCheck = defaultPolicyEngine.evaluateConcurrency(activeCount || 0, policy);
-      if (!concurrencyCheck.allowed) {
-        throw new AgentError({
-          code: AgentErrorCodes.AGENT_CONCURRENCY_LIMIT,
-          message: concurrencyCheck.reason || "Límite de concurrencia alcanzado.",
-          statusCode: 429,
-          agentId: agent.id,
-        });
-      }
-
       const { data: profile } = await supabase
         .from("profiles")
         .select("plan")
         .eq("id", dto.user_id)
-        .single();
+        .maybeSingle();
 
       userPlan = (profile?.plan as any) || "free";
     }
@@ -149,49 +131,103 @@ export class AgentRuntime {
       });
     }
 
-    // 8. Instanciar Run en memoria
-    const runId = `run-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const run: AgentRun = {
-      id: runId,
-      workspace_id: dto.workspace_id,
-      agent_id: agent.id,
-      user_id: dto.user_id,
-      status: "running",
-      input: dto.input,
-      output: null,
-      model_id: agent.model_id,
-      tokens_input: 0,
-      tokens_output: 0,
-      total_tokens: 0,
-      steps_count: 0,
-      tool_calls_count: 0,
-      started_at: new Date().toISOString(),
-      completed_at: null,
-      error_code: null,
-      error_message: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+    // 8. Creación Transaccional Única de Run con Concurrencia Centralizada en Base de Datos (Single Creation Path)
+    let run: AgentRun;
+    if (supabase) {
+      const { data: rpcResult, error: rpcErr } = await supabase.rpc(
+        "create_agent_run_with_concurrency_check",
+        {
+          p_agent_id: agent.id,
+          p_input: dto.input,
+          p_user_id: dto.user_id,
+        }
+      );
+
+      if (rpcErr) {
+        throw new AgentError({
+          code: AgentErrorCodes.INTERNAL_AGENT_ERROR,
+          message: rpcErr.message || "Fallo al invocar create_agent_run_with_concurrency_check.",
+          statusCode: 500,
+          agentId: agent.id,
+        });
+      }
+
+      if (!rpcResult || !rpcResult.success) {
+        const errCode = rpcResult?.error_code || AgentErrorCodes.INTERNAL_AGENT_ERROR;
+        const errMsg = rpcResult?.error_message || "Fallo en la creación transaccional del run.";
+        let statusCode = 500;
+        if (errCode === AgentErrorCodes.AGENT_CONCURRENCY_LIMIT) {
+          statusCode = 429;
+        } else if (errCode === AgentErrorCodes.AGENT_NOT_ACTIVE) {
+          statusCode = 400;
+        } else if (
+          errCode === AgentErrorCodes.AGENT_PERMISSION_DENIED ||
+          errCode === AgentErrorCodes.AGENT_EXECUTION_BLOCKED
+        ) {
+          statusCode = 403;
+        } else if (errCode === "AUTH_REQUIRED") {
+          statusCode = 401;
+        } else if (errCode === AgentErrorCodes.AGENT_NOT_FOUND) {
+          statusCode = 404;
+        }
+
+        throw new AgentError({
+          code: errCode as any,
+          message: errMsg,
+          statusCode,
+          agentId: agent.id,
+        });
+      }
+
+      const createdRunRecord = rpcResult.run;
+      run = {
+        id: createdRunRecord.id,
+        workspace_id: createdRunRecord.workspace_id,
+        agent_id: createdRunRecord.agent_id,
+        user_id: createdRunRecord.user_id,
+        status: createdRunRecord.status || "running",
+        input: createdRunRecord.input,
+        output: null,
+        model_id: createdRunRecord.model_id || agent.model_id,
+        tokens_input: 0,
+        tokens_output: 0,
+        total_tokens: 0,
+        steps_count: 0,
+        tool_calls_count: 0,
+        started_at: createdRunRecord.started_at || new Date().toISOString(),
+        completed_at: null,
+        error_code: null,
+        error_message: null,
+        created_at: createdRunRecord.created_at || new Date().toISOString(),
+        updated_at: createdRunRecord.updated_at || new Date().toISOString(),
+      };
+    } else {
+      // Entorno en memoria sin conexión a base de datos
+      const runId = `run-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      run = {
+        id: runId,
+        workspace_id: dto.workspace_id,
+        agent_id: agent.id,
+        user_id: dto.user_id,
+        status: "running",
+        input: dto.input,
+        output: null,
+        model_id: agent.model_id,
+        tokens_input: 0,
+        tokens_output: 0,
+        total_tokens: 0,
+        steps_count: 0,
+        tool_calls_count: 0,
+        started_at: new Date().toISOString(),
+        completed_at: null,
+        error_code: null,
+        error_message: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+    }
 
     const steps: AgentRunStep[] = [];
-
-    // Persistir run inicial si hay base de datos
-    if (supabase) {
-      try {
-        await (supabase.from("agent_runs") as any).insert({
-          id: run.id,
-          workspace_id: run.workspace_id,
-          agent_id: run.agent_id,
-          user_id: run.user_id,
-          status: run.status,
-          input: run.input,
-          model_id: run.model_id,
-          started_at: run.started_at,
-        });
-      } catch {
-        // Telemetría no bloqueante
-      }
-    }
 
     try {
       // 9. Tool Discovery Filtrado: Solo inyectar herramientas activas asignadas a este agente
