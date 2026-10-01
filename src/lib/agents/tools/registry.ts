@@ -1,22 +1,26 @@
 /**
- * NEXTEХ Agent Core — Tool Registry Central (Declarativo)
- * Catálogo canónico de herramientas con niveles de riesgo para control de permisos.
- * REGLA: En Fase 4.1 ninguna herramienta externa se ejecuta de forma arbitraria.
+ * NEXTEХ Agent Core — Tool Registry Central (Fase 4.2)
+ * Catálogo canónico de herramientas con niveles de riesgo y ejecutores en sandbox.
  */
 
 import { ToolDefinition } from "./types";
+import { calculatorToolHandler } from "./builtins/calculator";
+import { databaseReadToolHandler } from "./builtins/database_read";
+import { databaseWriteToolHandler } from "./builtins/database_write";
 
 export const CANONICAL_TOOLS: ToolDefinition[] = [
   {
     id: "calculator",
     name: "Calculadora de Precisión",
-    description: "Evaluación matemática de operaciones aritméticas y financieras.",
+    description: "Evaluación matemática de operaciones aritméticas y financieras sin eval().",
     riskLevel: "read",
     requiresApproval: false,
     enabled: true,
+    timeoutMs: 3000,
     parameters: {
-      expression: { type: "string", description: "Expresión matemática", required: true },
+      expression: { type: "string", description: "Expresión matemática a evaluar", required: true },
     },
+    handler: calculatorToolHandler,
   },
   {
     id: "database_read",
@@ -25,21 +29,30 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
     riskLevel: "read",
     requiresApproval: false,
     enabled: true,
+    timeoutMs: 5000,
     parameters: {
-      query: { type: "string", description: "Criterio de búsqueda", required: true },
+      table: { type: "string", description: "Tabla destino (conversations, ai_usage, agents, etc.)", required: true },
+      limit: { type: "number", description: "Límite de registros (máximo 50)", required: false },
+      filterField: { type: "string", description: "Campo a filtrar", required: false },
+      filterValue: { type: "string", description: "Valor del filtro", required: false },
     },
+    handler: databaseReadToolHandler,
   },
   {
     id: "database_write",
     name: "Escritura de Registros",
-    description: "Creación o actualización de entidades del workspace.",
+    description: "Creación o actualización de entidades del workspace. Requiere confirmación humana.",
     riskLevel: "write",
-    requiresApproval: false,
+    requiresApproval: true,
     enabled: true,
+    timeoutMs: 5000,
     parameters: {
       table: { type: "string", description: "Tabla destino", required: true },
-      data: { type: "object", description: "Payload estructurado", required: true },
+      operation: { type: "string", description: "Operación: 'insert' o 'update'", required: false },
+      data: { type: "object", description: "Payload estructurado a guardar", required: true },
+      recordId: { type: "string", description: "ID del registro a actualizar (solo si operation=update)", required: false },
     },
+    handler: databaseWriteToolHandler,
   },
   {
     id: "web_search",
@@ -47,7 +60,7 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
     description: "Consulta externa de información pública en internet.",
     riskLevel: "external",
     requiresApproval: false,
-    enabled: false, // Inhabilitada en Fase 4.1
+    enabled: false,
     parameters: {
       query: { type: "string", description: "Término de búsqueda", required: true },
     },
@@ -58,7 +71,7 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
     description: "Envío y redacción de correos electrónicos corporativos.",
     riskLevel: "external",
     requiresApproval: true,
-    enabled: false, // Inhabilitada en Fase 4.1
+    enabled: false,
     parameters: {
       to: { type: "string", description: "Destinatario", required: true },
       subject: { type: "string", description: "Asunto", required: true },
@@ -71,7 +84,7 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
     description: "Notificaciones y mensajería instantánea transaccional.",
     riskLevel: "external",
     requiresApproval: true,
-    enabled: false, // Inhabilitada en Fase 4.1
+    enabled: false,
     parameters: {
       phone: { type: "string", description: "Número de teléfono con código de país", required: true },
       message: { type: "string", description: "Mensaje a enviar", required: true },
@@ -83,7 +96,7 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
     description: "Despacho de mensajes cortos de texto para alertas.",
     riskLevel: "external",
     requiresApproval: true,
-    enabled: false, // Inhabilitada en Fase 4.1
+    enabled: false,
     parameters: {
       phone: { type: "string", description: "Número destino", required: true },
       text: { type: "string", description: "Texto SMS", required: true },

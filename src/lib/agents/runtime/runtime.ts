@@ -1,12 +1,14 @@
 /**
- * NEXTEХ Agent Core — Agent Runtime
+ * NEXTEХ Agent Core — Agent Runtime (Fase 4.2)
  * Orquestador central de ejecución segura de agentes autónomos.
- * REGLA: Reutiliza OmniEngine y AI Gateway de Fase 3. No implementa un sistema paralelo de IA.
+ * Integra Tool Execution Engine, Sandboxing y Aprobación Humana (Human-in-the-Loop).
  */
 
 import { defaultAIGateway } from "@/lib/omniengine/gateway/gateway";
 import { defaultQuotaManager } from "@/lib/omniengine/quotas/quota-manager";
 import { defaultPermissionEngine } from "./permission";
+import { defaultToolRegistry } from "../tools/registry";
+import { defaultToolExecutor } from "../tools/executor";
 import {
   Agent,
   AgentRun,
@@ -14,16 +16,17 @@ import {
   ExecuteAgentRunDTO,
 } from "../types";
 import { AgentError, AgentErrorCodes } from "../types/errors";
-import { OmniEngineError, OmniErrorCodes } from "@/lib/omniengine/types/errors";
 
 export interface ExecutionResult {
   run: AgentRun;
   steps: AgentRunStep[];
+  needsApproval?: boolean;
+  approvalStep?: AgentRunStep;
 }
 
 export class AgentRuntime {
   /**
-   * Ejecuta un Agent Run con gobernanza de límites, RLS y OmniEngine.
+   * Ejecuta un Agent Run con gobernanza de límites, RLS, OmniEngine y Tool Execution.
    */
   public async executeRun(
     agent: Agent,
@@ -31,8 +34,6 @@ export class AgentRuntime {
     supabase?: any,
     externalSignal?: AbortSignal
   ): Promise<ExecutionResult> {
-    const startTime = Date.now();
-
     // 1. Validar autenticación
     if (!dto.user_id?.trim()) {
       throw new AgentError({
@@ -146,7 +147,7 @@ export class AgentRuntime {
     // Persistir run inicial si hay base de datos
     if (supabase) {
       try {
-        await supabase.from("agent_runs").insert({
+        await (supabase.from("agent_runs") as any).insert({
           id: run.id,
           workspace_id: run.workspace_id,
           agent_id: run.agent_id,
@@ -164,111 +165,185 @@ export class AgentRuntime {
     try {
       // 8. Ciclo de Ejecución de Pasos Operativos
       let currentStepNumber = 1;
-      let isExecutionComplete = false;
 
-      while (!isExecutionComplete && currentStepNumber <= effectiveMaxSteps) {
-        // Verificar cancelación o timeout
-        if (abortController.signal.aborted) {
-          const reason = abortController.signal.reason;
-          if (reason?.message === "AGENT_TIMEOUT") {
-            throw new AgentError({
-              code: AgentErrorCodes.AGENT_TIMEOUT,
-              message: `La ejecución del agente excedió el tiempo límite configurado (${effectiveTimeoutSec}s).`,
-              statusCode: 504,
-              agentId: agent.id,
-              runId: run.id,
-            });
-          }
-          throw new AgentError({
-            code: AgentErrorCodes.AGENT_CANCELLED,
-            message: "La ejecución del agente fue cancelada por el usuario.",
-            statusCode: 499,
-            agentId: agent.id,
-            runId: run.id,
-          });
-        }
-
-        // Registrar paso AI_REQUEST
-        const stepId = `step-${run.id}-${currentStepNumber}`;
-        const aiStep: AgentRunStep = {
-          id: stepId,
-          run_id: run.id,
-          workspace_id: run.workspace_id,
-          step_number: currentStepNumber,
-          step_type: "AI_REQUEST",
-          status: "running",
-          input: { prompt: dto.input, instructions: agent.system_instructions },
-          output: null,
-          started_at: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-        };
-
-        // Invocación a través del AI Gateway de OmniEngine (Fase 3)
-        const aiResponse = await defaultAIGateway.execute(
-          {
-            requestId: `req-agent-${run.id}-${currentStepNumber}`,
-            workspaceId: agent.workspace_id,
-            userId: dto.user_id,
-            model: agent.model_id,
-            messages: [
-              { role: "system", content: agent.system_instructions },
-              { role: "user", content: dto.input },
-            ],
-            options: {
-              maxTokens: effectiveMaxTokens,
-              signal: abortController.signal,
-            },
-          },
-          supabase
-        );
-
-        // Actualizar métricas acumuladas de tokens
-        run.tokens_input += aiResponse.usage.inputTokens;
-        run.tokens_output += aiResponse.usage.outputTokens;
-        run.total_tokens = run.tokens_input + run.tokens_output;
-        run.steps_count++;
-
-        // Verificar límite de tokens por run
-        if (run.total_tokens > effectiveMaxTokens) {
-          throw new AgentError({
-            code: AgentErrorCodes.AGENT_LIMIT_EXCEEDED,
-            message: `El agente consumió ${run.total_tokens} tokens, superando el límite asignado de ${effectiveMaxTokens} tokens.`,
-            statusCode: 429,
-            agentId: agent.id,
-            runId: run.id,
-          });
-        }
-
-        aiStep.status = "completed";
-        aiStep.completed_at = new Date().toISOString();
-        aiStep.output = { content: aiResponse.content, usage: aiResponse.usage };
-        steps.push(aiStep);
-
-        // Si el agente requería tools o produjo una respuesta final
-        run.output = aiResponse.content;
-        isExecutionComplete = true;
-
-        currentStepNumber++;
+      // Verificar cancelación o timeout previo
+      if (abortController.signal.aborted) {
+        throw new AgentError({
+          code: AgentErrorCodes.AGENT_CANCELLED,
+          message: "La ejecución del agente fue cancelada.",
+          statusCode: 499,
+          agentId: agent.id,
+          runId: run.id,
+        });
       }
 
-      if (!isExecutionComplete && currentStepNumber > effectiveMaxSteps) {
+      // Paso 1: AI_REQUEST inicial
+      const stepId1 = `step-${run.id}-${currentStepNumber}`;
+      const aiStep: AgentRunStep = {
+        id: stepId1,
+        run_id: run.id,
+        workspace_id: run.workspace_id,
+        step_number: currentStepNumber,
+        step_type: "AI_REQUEST",
+        status: "running",
+        input: { prompt: dto.input, instructions: agent.system_instructions },
+        output: null,
+        started_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      };
+
+      const aiResponse = await defaultAIGateway.execute(
+        {
+          requestId: `req-agent-${run.id}-${currentStepNumber}`,
+          workspaceId: agent.workspace_id,
+          userId: dto.user_id,
+          model: agent.model_id,
+          messages: [
+            { role: "system", content: agent.system_instructions },
+            { role: "user", content: dto.input },
+          ],
+          options: {
+            maxTokens: effectiveMaxTokens,
+            signal: abortController.signal,
+          },
+        },
+        supabase
+      );
+
+      run.tokens_input += aiResponse.usage.inputTokens;
+      run.tokens_output += aiResponse.usage.outputTokens;
+      run.total_tokens = run.tokens_input + run.tokens_output;
+      run.steps_count++;
+
+      if (run.total_tokens > effectiveMaxTokens) {
         throw new AgentError({
           code: AgentErrorCodes.AGENT_LIMIT_EXCEEDED,
-          message: `El agente alcanzó el límite máximo de ${effectiveMaxSteps} pasos operativos sin completar la tarea.`,
+          message: `El agente consumió ${run.total_tokens} tokens, superando el límite asignado de ${effectiveMaxTokens} tokens.`,
           statusCode: 429,
           agentId: agent.id,
           runId: run.id,
         });
       }
 
-      // Marcar run como completado
+      aiStep.status = "completed";
+      aiStep.completed_at = new Date().toISOString();
+      aiStep.output = { content: aiResponse.content, usage: aiResponse.usage };
+      steps.push(aiStep);
+      currentStepNumber++;
+
+      // Evaluar si se debe invocar una herramienta (forzada o inferida por comandos)
+      const toolCall = dto.forced_tool_call || this.detectToolCall(dto.input, aiResponse.content);
+
+      if (toolCall && currentStepNumber <= effectiveMaxSteps) {
+        // Validar permisos de la herramienta
+        const tool = defaultPermissionEngine.validateToolAccess(toolCall.tool_id, agent.tools || []);
+
+        // 9. Verificar Aprobación Humana (Human-in-the-Loop)
+        if (tool.requiresApproval || tool.riskLevel === "write" || tool.riskLevel === "destructive") {
+          const approvalStepId = `step-${run.id}-${currentStepNumber}`;
+          const approvalStep: AgentRunStep = {
+            id: approvalStepId,
+            run_id: run.id,
+            workspace_id: run.workspace_id,
+            step_number: currentStepNumber,
+            step_type: "APPROVAL_REQUEST",
+            status: "pending",
+            tool_id: tool.id,
+            input: { tool_id: tool.id, params: toolCall.params, riskLevel: tool.riskLevel },
+            output: null,
+            started_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+          };
+
+          steps.push(approvalStep);
+          run.steps_count++;
+          run.status = "waiting_approval";
+          run.output = `[HUMAN-IN-THE-LOOP]: El agente solicita aprobación para ejecutar la herramienta '${tool.name}' (Riesgo: ${tool.riskLevel.toUpperCase()}).`;
+          run.updated_at = new Date().toISOString();
+
+          if (supabase) {
+            await (supabase.from("agent_run_steps") as any).insert({
+              id: approvalStep.id,
+              run_id: approvalStep.run_id,
+              workspace_id: approvalStep.workspace_id,
+              step_number: approvalStep.step_number,
+              step_type: approvalStep.step_type,
+              status: approvalStep.status,
+              tool_id: approvalStep.tool_id,
+              input: approvalStep.input,
+              started_at: approvalStep.started_at,
+            });
+
+            await (supabase.from("agent_runs") as any)
+              .update({
+                status: run.status,
+                output: run.output,
+                steps_count: run.steps_count,
+                total_tokens: run.total_tokens,
+              })
+              .eq("id", run.id);
+          }
+
+          clearTimeout(timeoutHandle);
+          return { run, steps, needsApproval: true, approvalStep };
+        }
+
+        // Si no requiere aprobación, ejecutar la herramienta de inmediato
+        const toolStepId = `step-${run.id}-${currentStepNumber}`;
+        const toolStep: AgentRunStep = {
+          id: toolStepId,
+          run_id: run.id,
+          workspace_id: run.workspace_id,
+          step_number: currentStepNumber,
+          step_type: "TOOL_CALL",
+          status: "running",
+          tool_id: tool.id,
+          input: toolCall.params,
+          started_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+        };
+
+        const execOutcome = await defaultToolExecutor.execute(tool.id, toolCall.params, {
+          agentId: agent.id,
+          runId: run.id,
+          workspaceId: run.workspace_id,
+          userId: dto.user_id,
+          supabaseClient: supabase,
+          signal: abortController.signal,
+        });
+
+        toolStep.status = "completed";
+        toolStep.step_type = "TOOL_RESULT";
+        toolStep.completed_at = new Date().toISOString();
+        toolStep.output = execOutcome.result;
+        steps.push(toolStep);
+
+        run.tool_calls_count++;
+        run.steps_count++;
+        currentStepNumber++;
+
+        if (run.tool_calls_count > agent.max_tool_calls) {
+          throw new AgentError({
+            code: AgentErrorCodes.AGENT_LIMIT_EXCEEDED,
+            message: `El agente excedió el número máximo de llamadas a herramientas permitidas (${agent.max_tool_calls}).`,
+            statusCode: 429,
+            agentId: agent.id,
+            runId: run.id,
+          });
+        }
+
+        // Sintetizar respuesta final
+        run.output = `${aiResponse.content}\n\n[Resultado de ${tool.name}]: ${JSON.stringify(execOutcome.result, null, 2)}`;
+      } else {
+        run.output = aiResponse.content;
+      }
+
       run.status = "completed";
       run.completed_at = new Date().toISOString();
       run.updated_at = new Date().toISOString();
 
       if (supabase) {
-        await supabase
-          .from("agent_runs")
+        await (supabase.from("agent_runs") as any)
           .update({
             status: run.status,
             output: run.output,
@@ -282,6 +357,7 @@ export class AgentRuntime {
           .eq("id", run.id);
       }
 
+      clearTimeout(timeoutHandle);
       return { run, steps };
     } catch (err: any) {
       clearTimeout(timeoutHandle);
@@ -295,8 +371,7 @@ export class AgentRuntime {
       run.updated_at = new Date().toISOString();
 
       if (supabase) {
-        await supabase
-          .from("agent_runs")
+        await (supabase.from("agent_runs") as any)
           .update({
             status: run.status,
             error_code: run.error_code,
@@ -307,9 +382,181 @@ export class AgentRuntime {
       }
 
       throw err;
-    } finally {
-      clearTimeout(timeoutHandle);
     }
+  }
+
+  /**
+   * Resuelve una solicitud de aprobación humana pendiente y reanuda el ciclo del agente.
+   */
+  public async resumeRunWithApproval(
+    runId: string,
+    stepId: string,
+    decision: "approve" | "reject",
+    comment?: string,
+    supabase?: any,
+    userId?: string
+  ): Promise<ExecutionResult> {
+    if (!supabase) {
+      throw new AgentError({
+        code: AgentErrorCodes.INTERNAL_AGENT_ERROR,
+        message: "Se requiere conexión a base de datos para resolver la aprobación.",
+        statusCode: 500,
+      });
+    }
+
+    // 1. Obtener Run y Step
+    const { data: run, error: runErr } = await (supabase.from("agent_runs") as any)
+      .select("*")
+      .eq("id", runId)
+      .single();
+
+    if (runErr || !run) {
+      throw new AgentError({
+        code: AgentErrorCodes.AGENT_NOT_FOUND,
+        message: "Run no encontrado.",
+        statusCode: 404,
+      });
+    }
+
+    if (run.status !== "waiting_approval") {
+      throw new AgentError({
+        code: AgentErrorCodes.AGENT_NOT_ACTIVE,
+        message: `El run está en estado '${run.status}', no está esperando aprobación.`,
+        statusCode: 400,
+      });
+    }
+
+    const { data: step, error: stepErr } = await (supabase.from("agent_run_steps") as any)
+      .select("*")
+      .eq("id", stepId)
+      .eq("run_id", runId)
+      .single();
+
+    if (stepErr || !step) {
+      throw new AgentError({
+        code: AgentErrorCodes.AGENT_NOT_FOUND,
+        message: "Paso de aprobación no encontrado.",
+        statusCode: 404,
+      });
+    }
+
+    const toolId = step.tool_id || step.input?.tool_id;
+    const toolParams = step.input?.params || {};
+
+    if (decision === "reject") {
+      // Registrar paso como rechazado
+      await (supabase.from("agent_run_steps") as any)
+        .update({
+          status: "failed",
+          output: { decision: "rejected", comment: comment || "Rechazado por el operador" },
+          error_code: "APPROVAL_REJECTED",
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", stepId);
+
+      // Finalizar run con estado completado informando del rechazo
+      const finalOutput = `[ACCION DENEGADA]: El operador humano rechazó la ejecución de la herramienta '${toolId}'. Motivo: ${comment || "Sin comentario adicional"}. No se realizaron cambios.`;
+
+      const { data: updatedRun } = await (supabase.from("agent_runs") as any)
+        .update({
+          status: "completed",
+          output: finalOutput,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", runId)
+        .select()
+        .single();
+
+      const { data: allSteps } = await (supabase.from("agent_run_steps") as any)
+        .select("*")
+        .eq("run_id", runId)
+        .order("step_number", { ascending: true });
+
+      return { run: updatedRun, steps: allSteps || [] };
+    }
+
+    // Decisión: APPROVE -> Ejecutar la herramienta en sandbox
+    await (supabase.from("agent_run_steps") as any)
+      .update({
+        status: "completed",
+        output: { decision: "approved", approved_by: userId },
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", stepId);
+
+    const execOutcome = await defaultToolExecutor.execute(toolId, toolParams, {
+      agentId: run.agent_id,
+      runId: run.id,
+      workspaceId: run.workspace_id,
+      userId: run.user_id,
+      supabaseClient: supabase,
+    });
+
+    // Insertar paso de TOOL_RESULT
+    const nextStepNumber = (run.steps_count || 1) + 1;
+    const resultStepId = `step-${run.id}-${nextStepNumber}`;
+    await (supabase.from("agent_run_steps") as any).insert({
+      id: resultStepId,
+      run_id: run.id,
+      workspace_id: run.workspace_id,
+      step_number: nextStepNumber,
+      step_type: "TOOL_RESULT",
+      status: "completed",
+      tool_id: toolId,
+      input: toolParams,
+      output: execOutcome.result,
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+    });
+
+    const finalOutput = `[AUTORIZADO]: La herramienta '${toolId}' fue aprobada y ejecutada exitosamente en el workspace.\n\nResultado:\n${JSON.stringify(execOutcome.result, null, 2)}`;
+
+    const { data: completedRun } = await (supabase.from("agent_runs") as any)
+      .update({
+        status: "completed",
+        output: finalOutput,
+        tool_calls_count: (run.tool_calls_count || 0) + 1,
+        steps_count: nextStepNumber,
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", run.id)
+      .select()
+      .single();
+
+    const { data: finalSteps } = await (supabase.from("agent_run_steps") as any)
+      .select("*")
+      .eq("run_id", runId)
+      .order("step_number", { ascending: true });
+
+    return { run: completedRun, steps: finalSteps || [] };
+  }
+
+  /**
+   * Helper determinista para detectar llamadas estructuradas a tools en el texto o prompt.
+   */
+  private detectToolCall(input: string, content: string): { tool_id: string; params: Record<string, any> } | null {
+    // 1. Detectar patrón explícito: [TOOL_CALL: tool_id] { ... }
+    const match = content.match(/\[TOOL_CALL:\s*([a-zA-Z0-9_]+)\]\s*(\{[\s\S]*?\})/i);
+    if (match) {
+      try {
+        const tool_id = match[1].toLowerCase().trim();
+        const params = JSON.parse(match[2]);
+        return { tool_id, params };
+      } catch {
+        // Ignorar si no es JSON válido
+      }
+    }
+
+    // 2. Heurística segura para expresiones matemáticas
+    const mathMatch = input.match(/(?:calcula|calcule|cu[aá]nto es|evalua)\s*[:=]?\s*([0-9+\-*/%^().,\s]+)/i);
+    if (mathMatch && mathMatch[1].trim().length >= 3) {
+      return {
+        tool_id: "calculator",
+        params: { expression: mathMatch[1].trim() },
+      };
+    }
+
+    return null;
   }
 }
 

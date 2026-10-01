@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test:isolation": "node scripts/test-rls-isolation.mjs",
     "test:omniengine": "node scripts/test-omniengine.mjs",
-    "test:agent-core": "node scripts/test-agent-core.mjs"
+    "test:agent-core": "node scripts/test-agent-core.mjs",
+    "test:agent-tools": "node scripts/test-agent-tools.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

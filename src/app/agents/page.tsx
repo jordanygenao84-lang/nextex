@@ -14,18 +14,17 @@ import {
   Plus,
   Play,
   Pause,
-  Archive,
-  Clock,
   Layers,
-  Sparkles,
   ShieldCheck,
   CheckCircle2,
   AlertCircle,
   Cpu,
   ChevronRight,
   Terminal,
-  Activity,
   X,
+  Check,
+  Ban,
+  Loader2,
 } from "lucide-react";
 
 export default function AgentsPage() {
@@ -52,6 +51,7 @@ export default function AgentsPage() {
   const [currentRun, setCurrentRun] = useState<AgentRun | null>(null);
   const [currentSteps, setCurrentSteps] = useState<AgentRunStep[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
+  const [isApproving, setIsApproving] = useState(false);
 
   // Cargar agentes iniciales
   useEffect(() => {
@@ -63,7 +63,6 @@ export default function AgentsPage() {
           const json = await res.json();
           setAgents(json.agents || []);
         } else {
-          // Mock data inicial representativa si la base de datos está en sincronización
           setAgents([
             {
               id: "ag-default-1",
@@ -80,6 +79,7 @@ export default function AgentsPage() {
               created_by: "user-1",
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
+              tools: ["calculator", "database_read", "database_write"],
             },
             {
               id: "ag-default-2",
@@ -96,6 +96,7 @@ export default function AgentsPage() {
               created_by: "user-1",
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
+              tools: ["calculator", "database_read"],
             },
           ]);
         }
@@ -128,6 +129,7 @@ export default function AgentsPage() {
           max_steps: maxSteps,
           max_tokens: maxTokens,
           timeout_seconds: timeoutSeconds,
+          tool_ids: ["calculator", "database_read", "database_write"],
         }),
       });
 
@@ -190,6 +192,30 @@ export default function AgentsPage() {
     }
   };
 
+  const handleApprovalAction = async (stepId: string, action: "approve" | "reject") => {
+    if (!activeAgent || !currentRun) return;
+    setIsApproving(true);
+    try {
+      const res = await fetch(`/api/agents/${activeAgent.id}/runs/${currentRun.id}/approval`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ step_id: stepId, action }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error?.message || "Error al procesar la aprobación.");
+      }
+
+      setCurrentRun(json.data.run);
+      setCurrentSteps(json.data.steps || []);
+    } catch (err: any) {
+      setRunError(err?.message || "Error al resolver aprobación.");
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
   const filteredAgents = agents.filter((a) => {
     if (statusFilter === "all") return a.status !== "archived";
     return a.status === statusFilter;
@@ -206,14 +232,14 @@ export default function AgentsPage() {
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <span className="text-lg font-bold text-white tracking-tight">
-                NEXTEХ Agent Core v4.1
+                NEXTEХ Agent Core v4.2
               </span>
               <Badge variant="cyan" size="sm">
-                Runtime Conectado
+                Sandbox & HITL Activo
               </Badge>
             </div>
             <p className="text-xs text-texter-text-muted flex items-center gap-2">
-              <span>Gobernanza de herramientas activa</span>
+              <span>Gobernanza de herramientas con Human-in-the-Loop</span>
               <span className="text-texter-border">•</span>
               <span className="text-emerald-400 flex items-center gap-1 font-mono">
                 <ShieldCheck className="w-3.5 h-3.5" />
@@ -519,7 +545,7 @@ export default function AgentsPage() {
               <textarea
                 value={runInput}
                 onChange={(e) => setRunInput(e.target.value)}
-                placeholder="Indica la tarea que este agente debe procesar..."
+                placeholder="ej: calcula (250 * 12) + 400 ó revisa los últimos registros..."
                 rows={3}
                 disabled={isRunning}
                 className="w-full p-3 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white placeholder:text-texter-text-dim outline-none resize-none"
@@ -550,27 +576,89 @@ export default function AgentsPage() {
             {/* Trazabilidad de Pasos Operativos */}
             {currentSteps.length > 0 && (
               <div className="space-y-3 pt-3 border-t border-texter-border">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-texter-text-muted font-mono">
-                  Pasos de Ejecución Auditados ({currentSteps.length})
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-texter-text-muted font-mono">
+                    Pasos de Ejecución Auditados ({currentSteps.length})
+                  </h4>
+                  {currentRun?.status === "waiting_approval" && (
+                    <Badge variant="warning" size="sm" dot>
+                      ESPERANDO APROBACIÓN HUMANA
+                    </Badge>
+                  )}
+                </div>
 
                 <div className="space-y-2">
-                  {currentSteps.map((s) => (
-                    <div
-                      key={s.id}
-                      className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs space-y-1 font-mono"
-                    >
-                      <div className="flex items-center justify-between text-texter-cyan">
-                        <span>Paso {s.step_number}: [{s.step_type}]</span>
-                        <Badge variant="success" size="sm">
-                          {s.status.toUpperCase()}
-                        </Badge>
+                  {currentSteps.map((s) => {
+                    const isApprovalPending = s.step_type === "APPROVAL_REQUEST" && s.status === "pending";
+
+                    return (
+                      <div
+                        key={s.id}
+                        className={`p-3.5 rounded-xl border text-xs space-y-2 font-mono ${
+                          isApprovalPending
+                            ? "bg-amber-950/20 border-amber-500/50"
+                            : "bg-texter-surface-subtle border-texter-border"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-texter-cyan">
+                          <span className="font-semibold">
+                            Paso {s.step_number}: [{s.step_type}]
+                          </span>
+                          <Badge
+                            variant={
+                              s.status === "completed"
+                                ? "success"
+                                : s.status === "pending"
+                                ? "warning"
+                                : "default"
+                            }
+                            size="sm"
+                          >
+                            {s.status.toUpperCase()}
+                          </Badge>
+                        </div>
+
+                        {/* Detalle si es solicitud de aprobación */}
+                        {isApprovalPending && (
+                          <div className="space-y-2 pt-2 border-t border-amber-500/30 text-amber-200">
+                            <p className="text-[11px] leading-relaxed">
+                              ⚠️ El agente solicita ejecutar la herramienta{" "}
+                              <strong className="text-white underline">{s.tool_id}</strong> con nivel de riesgo mutativo.
+                            </p>
+                            <pre className="p-2 rounded bg-black/40 text-[10px] text-amber-300 overflow-x-auto">
+                              {JSON.stringify(s.input, null, 2)}
+                            </pre>
+
+                            <div className="flex items-center justify-end gap-2 pt-1">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={isApproving}
+                                onClick={() => handleApprovalAction(s.id, "reject")}
+                                leftIcon={<Ban className="w-3.5 h-3.5 text-rose-400" />}
+                              >
+                                Rechazar
+                              </Button>
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                disabled={isApproving}
+                                isLoading={isApproving}
+                                onClick={() => handleApprovalAction(s.id, "approve")}
+                                leftIcon={<Check className="w-3.5 h-3.5" />}
+                              >
+                                Aprobar y Ejecutar
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
+                        <p className="text-texter-text-secondary text-[11px]">
+                          Inicio: {new Date(s.started_at).toLocaleTimeString()}
+                        </p>
                       </div>
-                      <p className="text-texter-text-secondary text-[11px]">
-                        Inicio: {new Date(s.started_at).toLocaleTimeString()}
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

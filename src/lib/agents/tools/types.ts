@@ -1,6 +1,6 @@
 /**
- * NEXTEХ Agent Core — Metadatos y Tipos de Herramientas Declarativas
- * REGLA: En Fase 4.1 no se ejecutan herramientas externas arbitrarias; se define el contrato seguro.
+ * NEXTEХ Agent Core — Metadatos y Tipos de Herramientas Declarativas (Fase 4.2)
+ * Tipado estricto para definición y ejecución en sandbox seguro.
  */
 
 export type ToolRiskLevel = "read" | "write" | "external" | "destructive";
@@ -11,6 +11,20 @@ export interface ToolParameter {
   required?: boolean;
 }
 
+export interface ToolExecutionContext {
+  agentId: string;
+  runId: string;
+  workspaceId: string;
+  userId: string;
+  supabaseClient?: any;
+  signal?: AbortSignal;
+}
+
+export type ToolHandler = (
+  params: Record<string, any>,
+  context: ToolExecutionContext
+) => Promise<{ result: any; metadata?: Record<string, any> }>;
+
 export interface ToolDefinition {
   id: string;
   name: string;
@@ -19,4 +33,6 @@ export interface ToolDefinition {
   requiresApproval: boolean;
   enabled: boolean;
   parameters: Record<string, ToolParameter>;
+  timeoutMs?: number;
+  handler?: ToolHandler;
 }

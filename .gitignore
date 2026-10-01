@@ -16,6 +16,8 @@
 # Misc
 .DS_Store
 *.pem
+.gemini/
+downloads/
 
 # Debug
 npm-debug.log*

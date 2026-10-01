@@ -1,5 +1,5 @@
 /**
- * NEXTEХ Agent Core — Tipos e interfaces de agentes, herramientas y ejecuciones
+ * NEXTEХ Agent Core — Tipos e interfaces de agentes, herramientas y ejecuciones (Fase 4.2)
  */
 
 import { AgentErrorCode } from "./errors";
@@ -129,4 +129,14 @@ export interface ExecuteAgentRunDTO {
   override_max_tokens?: number;
   override_timeout_seconds?: number;
   override_max_steps?: number;
+  forced_tool_call?: {
+    tool_id: string;
+    params: Record<string, any>;
+  };
+}
+
+export interface RunApprovalDTO {
+  step_id: string;
+  action: "approve" | "reject";
+  comment?: string;
 }
