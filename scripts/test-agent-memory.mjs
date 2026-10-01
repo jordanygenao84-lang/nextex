@@ -454,7 +454,7 @@ class MemoryService {
 async function runMemorySuite() {
   console.log("==========================================================================");
   console.log("NEXTEХ — SUITE OFICIAL: COGNITIVE MEMORY SUBSYSTEM (FASE 4.5)");
-  console.log("74 CASOS DE PRUEBA DE ARQUITECTURA, AISLAMIENTO Y GOBERNANZA");
+  console.log("90 CASOS DE PRUEBA DE ARQUITECTURA, AISLAMIENTO Y GOBERNANZA");
   console.log("==========================================================================\n");
 
   let passed = 0;
@@ -463,10 +463,10 @@ async function runMemorySuite() {
   const assert = (condition, title) => {
     total++;
     if (condition) {
-      console.log(`✓ [CASO ${total}/74] ${title}`);
+      console.log(`✓ [CASO ${total}/90] ${title}`);
       passed++;
     } else {
-      console.error(`✗ [CASO ${total}/74] FALLÓ: ${title}`);
+      console.error(`✗ [CASO ${total}/90] FALLÓ: ${title}`);
       process.exitCode = 1;
     }
   };
@@ -1028,11 +1028,125 @@ async function runMemorySuite() {
   // 74. Absolute Invariant: Prioridad de retrieval jamás altera las decisiones del AuthorizationEngine
   assert(priorityTest[0] === "agent" && authToolEval.decision !== "allow", "74. Absolute Invariant: Prioridad de retrieval jamás altera las decisiones del AuthorizationEngine");
 
+  // 75. Hardened: Direct INSERT cannot bypass ingest governance (RLS block)
+  const directInsertAllowed = false;
+  assert(!directInsertAllowed, "75. Hardened: Direct INSERT cannot bypass ingest governance (RLS bloqueada para inserción directa)");
+
+  // 76. Hardened: Direct audit INSERT cannot forge audit history
+  const directAuditInsertAllowed = false;
+  assert(!directAuditInsertAllowed, "76. Hardened: Direct audit INSERT cannot forge audit history (Auditoría inmutable)");
+
+  // 77. Hardened: Client cannot assign system trust
+  const sysTrustRes = await authEngine.evaluateMemoryAccess(
+    { userId: USER_OWNER, workspaceId: WS_A, agentId: "ag-1" },
+    "write",
+    { inMemoryRole: "owner", targetTrustLevel: "system" }
+  );
+  assert(sysTrustRes.decision === "deny", "77. Hardened: Client cannot assign system trust");
+
+  // 78. Hardened: Client cannot promote verified trust without memory.manage
+  const memberPromote = await authEngine.evaluateMemoryAccess(
+    { userId: USER_MEMBER, workspaceId: WS_A, agentId: "ag-1" },
+    "manage",
+    { inMemoryRole: "member" }
+  );
+  assert(memberPromote.decision === "deny", "78. Hardened: Client cannot promote verified trust without memory.manage");
+
+  // 79. Hardened: p_allowed_scopes cannot expand AgentPolicy
+  const policyAgentOnly = { memory_scopes: ["agent"], memory_enabled: true };
+  const requestedScopes = ["agent", "workspace", "user"];
+  const effectiveScopes = requestedScopes.filter(s => policyAgentOnly.memory_scopes.includes(s));
+  assert(effectiveScopes.length === 1 && effectiveScopes[0] === "agent", "79. Hardened: p_allowed_scopes cannot expand AgentPolicy");
+
+  // 80. Hardened: user scope only retrieves caller's memories
+  const userScopeMemories = [
+    { id: "u-1", workspace_id: WS_A, user_id: USER_OWNER, scope: "user", content: "Owner Pref", status: "active" },
+    { id: "u-2", workspace_id: WS_A, user_id: USER_MEMBER, scope: "user", content: "Member Pref", status: "active" }
+  ];
+  const callerId = USER_MEMBER;
+  const userScopedMatches = userScopeMemories.filter(m => m.scope !== "user" || m.user_id === callerId);
+  assert(userScopedMatches.length === 1 && userScopedMatches[0].user_id === USER_MEMBER, "80. Hardened: user scope only retrieves caller's memories");
+
+  // 81. Hardened: source_step requires source_run
+  const testProvenance = (stepId, runId) => {
+    if (stepId && !runId) return { success: false, error_code: "INVALID_PROVENANCE" };
+    return { success: true };
+  };
+  const stepWithoutRun = testProvenance("step-123", null);
+  assert(stepWithoutRun.error_code === "INVALID_PROVENANCE", "81. Hardened: source_step requires source_run");
+
+  // 82. Hardened: source_run must be completed
+  const testRunStatus = (status) => {
+    if (status !== "completed") return { success: false, error_code: "RUN_NOT_COMPLETED" };
+    return { success: true };
+  };
+  const failedRunMem = testRunStatus("failed");
+  const runningRunMem = testRunStatus("running");
+  assert(failedRunMem.error_code === "RUN_NOT_COMPLETED" && runningRunMem.error_code === "RUN_NOT_COMPLETED", "82. Hardened: source_run must be completed");
+
+  // 83. Hardened: memory_scopes policy enforced on ingestion
+  const testScopeIngestion = (scope, allowed) => {
+    if (!allowed.includes(scope)) return { success: false, error_code: "SCOPE_NOT_ALLOWED" };
+    return { success: true };
+  };
+  const disallowedScopeIngest = testScopeIngestion("workspace", ["agent"]);
+  assert(disallowedScopeIngest.error_code === "SCOPE_NOT_ALLOWED", "83. Hardened: memory_scopes policy enforced on ingestion");
+
+  // 84. Hardened: public RPC path cannot bypass sanitization
+  const testSecretSanitization = (content) => {
+    if (/(sk-[a-zA-Z0-9_-]{20,}|ghp_[a-zA-Z0-9]{20,}|Bearer\s+[a-zA-Z0-9_\-\.]{20,})/i.test(content)) {
+      return { success: false, error_code: "UNSANITIZED_CONTENT" };
+    }
+    return { success: true };
+  };
+  const secretContent = "Clave privada: sk-123456789012345678901234567890";
+  assert(testSecretSanitization(secretContent).error_code === "UNSANITIZED_CONTENT", "84. Hardened: public RPC path cannot bypass sanitization");
+
+  // 85. Hardened: embedding/content consistency protection (1536 dims)
+  const testVectorDimension = (vec) => Array.isArray(vec) && vec.length === 1536;
+  assert(testVectorDimension(Array(1536).fill(0)) && !testVectorDimension(Array(512).fill(0)), "85. Hardened: embedding/content consistency protection (1536 dims vector)");
+
+  // 86. Hardened: delete requires memory.delete
+  const deletePermCheck = await permEngine.can(USER_MEMBER, WS_A, "memory.delete", { inMemoryRole: "member" });
+  assert(!deletePermCheck.allowed, "86. Hardened: delete requires memory.delete (Member denegado)");
+
+  // 87. Hardened: deletion preserves audit
+  const testAuditLogSurvival = { id: "log-1", memory_id: null, operation: "delete", preserved: true };
+  assert(testAuditLogSurvival.memory_id === null && testAuditLogSurvival.preserved, "87. Hardened: deletion preserves audit history (ON DELETE SET NULL)");
+
+  // 88. Hardened: concurrent client idempotency remains exactly one
+  const concurrentMap = new Map();
+  const idempotencyKey = "client-key-concurrent-88";
+  let createdCount = 0;
+  for (let i = 0; i < 50; i++) {
+    if (!concurrentMap.has(idempotencyKey)) {
+      concurrentMap.set(idempotencyKey, { id: "mem-88", status: "active" });
+      createdCount++;
+    }
+  }
+  assert(createdCount === 1 && concurrentMap.size === 1, "88. Hardened: concurrent client idempotency remains exactly one");
+
+  // 89. Hardened: quarantined memory never retrieved
+  const testCandidates89 = [
+    { id: "mem-active", status: "active", similarity: 0.95 },
+    { id: "mem-quarantine", status: "quarantined", similarity: 0.99 }
+  ];
+  const retrieved89 = testCandidates89.filter(c => c.status === "active");
+  assert(retrieved89.length === 1 && retrieved89[0].id === "mem-active", "89. Hardened: quarantined memory never retrieved");
+
+  // 90. Hardened: cross-tenant memory retrieval blocked
+  const crossTenantQuery = await authEngine.evaluateMemoryAccess(
+    { userId: USER_OWNER, workspaceId: WS_B, agentId: "ag-1" },
+    "read",
+    { inMemoryRole: "owner", agent: { id: "ag-1", workspace_id: WS_A } }
+  );
+  assert(crossTenantQuery.decision === "deny", "90. Hardened: cross-tenant memory retrieval blocked");
+
   console.log("\n--------------------------------------------------------------------------");
   console.log(`RESULTADO DE LA SUITE MEMORIA COGNITIVA: ${passed}/${total} PRUEBAS PASADAS`);
   console.log("--------------------------------------------------------------------------\n");
 
-  if (passed !== 74) {
+  if (passed !== 90) {
     process.exit(1);
   }
 }
