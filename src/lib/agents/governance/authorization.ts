@@ -1,5 +1,5 @@
 /**
- * NEXTEХ Agent Core — Authorization Engine (Fase 4.4)
+ * NEXTEХ Agent Core — Authorization Engine (Fase 4.4 & 4.5)
  * ÚNICA AUTORIDAD CENTRAL de decisión de autorización en la plataforma.
  * Coordina PermissionEngine, PolicyEngine y ToolRegistry.
  * Emite exclusivamente: 'allow' | 'deny' | 'approval_required'
@@ -14,6 +14,7 @@ import {
   AuthorizationDecision,
   AuthorizationEvaluationContext,
   CanonicalPermissionKey,
+  MemoryScope,
   ToolRiskLevel,
   WorkspaceRole,
 } from "../types";
@@ -188,6 +189,106 @@ export class AuthorizationEngine {
         toolId: tool.id,
         toolVersion: tool.version,
       },
+    };
+  }
+
+  /**
+   * Evalúa de forma centralizada operaciones sobre el subsistema de Memoria Cognitiva (Fase 4.5).
+   * Aplica reglas de jerarquía de roles (Member no puede crear scope=workspace) y prohibición de trust_level=system.
+   */
+  public async evaluateMemoryAccess(
+    context: AuthorizationEvaluationContext,
+    action: "read" | "write" | "delete" | "manage",
+    options?: {
+      agent?: Agent;
+      targetScope?: MemoryScope;
+      targetTrustLevel?: string;
+      policy?: AgentPolicy;
+      supabaseClient?: any;
+      inMemoryRole?: WorkspaceRole;
+      inMemoryOverrides?: Map<string, "allow" | "deny">;
+    }
+  ): Promise<AuthorizationDecision> {
+    const { userId, workspaceId, agentId } = context;
+
+    if (!userId || !workspaceId) {
+      return {
+        decision: "deny",
+        reason: "Contexto de autorización incompleto para operaciones de memoria.",
+        selfApprovalAllowed: false,
+      };
+    }
+
+    // Validar que el agente pertenezca al workspace solicitado si se proporciona
+    if (options?.agent && options.agent.workspace_id !== workspaceId) {
+      return {
+        decision: "deny",
+        reason: "El agente no pertenece al workspace solicitado (bloqueo cross-tenant).",
+        selfApprovalAllowed: false,
+      };
+    }
+
+    const requiredPerm = `memory.${action}` as CanonicalPermissionKey;
+
+    // 1. Validar permiso correspondiente
+    const canAction = await this.permissions.can(userId, workspaceId, requiredPerm, {
+      supabaseClient: options?.supabaseClient,
+      inMemoryOverrides: options?.inMemoryOverrides,
+      inMemoryRole: options?.inMemoryRole,
+    });
+
+    if (!canAction.allowed) {
+      return {
+        decision: "deny",
+        reason: `Usuario carece de permiso '${requiredPerm}' en este workspace. ${canAction.reason}`,
+        requiredPermission: requiredPerm,
+        selfApprovalAllowed: false,
+      };
+    }
+
+    // 2. Comprobar restricción de trust_level = system (Ningún cliente o API puede asignar system)
+    if (options?.targetTrustLevel === "system") {
+      return {
+        decision: "deny",
+        reason: "Prohibición de seguridad: Ninguna API ni usuario puede asignar trust_level='system'.",
+        selfApprovalAllowed: false,
+      };
+    }
+
+    // 3. Comprobar restricción de scope para miembros (Member no puede crear scope='workspace')
+    const userRole = options?.inMemoryRole || "member";
+    if (userRole === "member" && action === "write" && options?.targetScope === "workspace") {
+      return {
+        decision: "deny",
+        reason: "Jerarquía administrativa: Los usuarios con rol 'member' no pueden crear memorias con scope 'workspace'.",
+        selfApprovalAllowed: false,
+      };
+    }
+
+    // 4. Validar política del agente si aplica
+    if (options?.policy) {
+      if (options.policy.memory_enabled === false) {
+        return {
+          decision: "deny",
+          reason: "La memoria está deshabilitada en la política de este agente.",
+          selfApprovalAllowed: false,
+        };
+      }
+
+      if (action === "write" && options.policy.memory_write_mode === "disabled") {
+        return {
+          decision: "deny",
+          reason: "La escritura de memoria está deshabilitada en la política de este agente.",
+          selfApprovalAllowed: false,
+        };
+      }
+    }
+
+    return {
+      decision: "allow",
+      reason: `Operación 'memory.${action}' autorizada.`,
+      requiredPermission: requiredPerm,
+      selfApprovalAllowed: false,
     };
   }
 }

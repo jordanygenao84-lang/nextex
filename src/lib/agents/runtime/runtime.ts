@@ -1,9 +1,9 @@
 /**
- * NEXTEХ Agent Core — Agent Runtime (Fase 4.4)
+ * NEXTEХ Agent Core — Agent Runtime (Fase 4.4 & 4.5)
  * Orquestador central de ejecución segura de agentes autónomos.
  * Integra AuthorizationEngine, PolicyEngine, Tool Discovery filtrado,
- * validación previa de esquemas, Human-in-the-Loop desacoplado (APPROVED != COMPLETED)
- * y serialización atómica anti-replay / anti-tampering en persistencia.
+ * validación previa de esquemas, Human-in-the-Loop desacoplado (APPROVED != COMPLETED),
+ * serialización atómica anti-replay / anti-tampering y Subsistema de Memoria Cognitiva (Fase 4.5).
  */
 
 import { defaultAIGateway } from "@/lib/omniengine/gateway/gateway";
@@ -15,6 +15,7 @@ import { computeApprovalPayloadHash } from "../tools/hash";
 import { defaultAuthorizationEngine } from "../governance/authorization";
 import { defaultApprovalGovernance } from "../governance/approval";
 import { defaultPolicyEngine } from "../governance/policies";
+import { defaultMemoryService } from "../memory/service";
 import {
   Agent,
   AgentRun,
@@ -228,9 +229,37 @@ export class AgentRuntime {
     }
 
     const steps: AgentRunStep[] = [];
+    const policy = defaultPolicyEngine.getDefaultPolicy(agent.id, agent.workspace_id);
 
     try {
-      // 9. Tool Discovery Filtrado: Solo inyectar herramientas activas asignadas a este agente
+      // 9. PRE-RUN: RECUPERACIÓN DE MEMORIA COGNITIVA (GROUNDING DATA ONLY)
+      // Principio: MEMORY != SYSTEM INSTRUCTIONS. Grounding desconfiado en User Context.
+      let formattedMemories = "";
+      if (policy.memory_enabled !== false && policy.memory_retrieval_mode !== "disabled") {
+        try {
+          const retrievalRes = await defaultMemoryService.retrieveMemories(
+            {
+              query: dto.input,
+              agentId: agent.id,
+              userId: dto.user_id,
+              runId: run.id,
+            },
+            {
+              workspaceId: agent.workspace_id,
+              userId: dto.user_id,
+              policy,
+              supabaseClient: supabase,
+            }
+          );
+          if (retrievalRes.memories.length > 0) {
+            formattedMemories = defaultMemoryService.formatMemoriesForPrompt(retrievalRes.memories);
+          }
+        } catch {
+          // Fallback seguro: una falla en el subsistema de memoria jamás bloquea la ejecución del agente
+        }
+      }
+
+      // 10. Tool Discovery Filtrado: Solo inyectar herramientas activas asignadas a este agente
       const assignedTools = defaultToolRegistry.getToolsForAgent(agent.tools || []);
       const toolDocumentation = assignedTools
         .map(
@@ -256,6 +285,11 @@ export class AgentRuntime {
       }
 
       // Inferencia con AI Gateway
+      // La memoria entra estrictamente en el prompt de usuario delimitada, NUNCA en role: 'system'
+      const userMessageContent = formattedMemories
+        ? `${formattedMemories}\n\n${dto.input}`
+        : dto.input;
+
       const stepId1 = `step-${run.id}-${currentStepNumber}`;
       const aiStep: AgentRunStep = {
         id: stepId1,
@@ -278,7 +312,7 @@ export class AgentRuntime {
           model: agent.model_id,
           messages: [
             { role: "system", content: enrichedSystemPrompt },
-            { role: "user", content: dto.input },
+            { role: "user", content: userMessageContent },
           ],
           options: {
             maxTokens: effectiveMaxTokens,
@@ -313,7 +347,7 @@ export class AgentRuntime {
       const toolCall = dto.forced_tool_call || this.detectToolCall(dto.input, aiResponse.content);
 
       if (toolCall && currentStepNumber <= effectiveMaxSteps) {
-        // 10. EVALUACIÓN FORMAL EN AuthorizationEngine
+        // 11. EVALUACIÓN FORMAL EN AuthorizationEngine (MEMORY != AUTHORITY)
         const tool = defaultPermissionEngine.validateToolAccess(toolCall.tool_id, agent.tools || []);
 
         const authzDecision = await defaultAuthorizationEngine.evaluate(
@@ -342,7 +376,7 @@ export class AgentRuntime {
           });
         }
 
-        // 11. GOBERNANZA HITL: Si requiere aprobación, suspender y crear ApprovalRequest
+        // 12. GOBERNANZA HITL: Si requiere aprobación, suspender y crear ApprovalRequest
         if (authzDecision.decision === "approval_required") {
           const approvalStepId = `step-${run.id}-${currentStepNumber}`;
 
@@ -437,7 +471,7 @@ export class AgentRuntime {
           return { run, steps, needsApproval: true, approvalStep };
         }
 
-        // 12. SI LA HERRAMIENTA ESTÁ AUTORIZADA DIRECTAMENTE (ALLOW)
+        // 13. SI LA HERRAMIENTA ESTÁ AUTORIZADA DIRECTAMENTE (ALLOW)
         const toolStepId = `step-${run.id}-${currentStepNumber}`;
         const toolStep: AgentRunStep = {
           id: toolStepId,
@@ -508,6 +542,33 @@ export class AgentRuntime {
           .eq("id", run.id);
       }
 
+      // 14. POST-RUN MEMORY INGESTION (Solo si el run completó exitosamente)
+      // Principio: Fallo/Aborto no genera recuerdos
+      if (policy.memory_enabled !== false && policy.memory_write_mode !== "disabled") {
+        try {
+          const lastStep = steps[steps.length - 1];
+          await defaultMemoryService.ingestMemory(
+            {
+              content: `Entrada: ${dto.input.trim()} -> Salida: ${run.output?.substring(0, 1000).trim() || ""}`,
+              type: "episodic",
+              scope: "agent",
+              summary: `Ejecución de agente ${agent.name} sobre prompt: ${dto.input.substring(0, 100)}`,
+            },
+            {
+              agentId: agent.id,
+              workspaceId: agent.workspace_id,
+              userId: dto.user_id,
+              policy,
+              sourceRunId: run.id,
+              sourceStepId: lastStep?.id || null,
+              supabaseClient: supabase,
+            }
+          );
+        } catch {
+          // La consolidación de memoria post-run no debe alterar el resultado exitoso del run
+        }
+      }
+
       clearTimeout(timeoutHandle);
       return { run, steps };
     } catch (err: any) {
@@ -532,6 +593,7 @@ export class AgentRuntime {
           .eq("id", run.id);
       }
 
+      // Cero ingestión de memoria ante error, timeout o cancelación
       throw err;
     }
   }

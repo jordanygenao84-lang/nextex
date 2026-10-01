@@ -1,10 +1,12 @@
 /**
- * NEXTEХ Agent Core — Tipos e interfaces de agentes, herramientas y ejecuciones (Fase 4.4)
+ * NEXTEХ Agent Core — Tipos e interfaces de agentes, herramientas, ejecuciones y memoria (Fase 4.5)
  */
 
 import { AgentErrorCode } from "./errors";
 export type { ToolRiskLevel } from "../tools/types";
 import { ToolRiskLevel } from "../tools/types";
+export * from "./memory";
+import { MemoryScope, MemoryRetrievalMode, MemoryWriteMode } from "./memory";
 
 export type AgentStatus = "draft" | "active" | "paused" | "archived";
 
@@ -112,7 +114,7 @@ export interface ToolIdempotencyLedgerEntry {
 }
 
 // ==============================================================================
-// GOBERNANZA FASE 4.4 — PERMISSIONS, POLICIES, APPROVALS & AUDIT
+// GOBERNANZA FASE 4.4 & 4.5 — PERMISSIONS, POLICIES, APPROVALS & MEMORY
 // ==============================================================================
 
 export type CanonicalPermissionKey =
@@ -137,14 +139,19 @@ export type CanonicalPermissionKey =
   | "workspace.members.read"
   | "workspace.members.manage"
   | "workspace.settings.read"
-  | "workspace.settings.update";
+  | "workspace.settings.update"
+  | "memory.read"
+  | "memory.write"
+  | "memory.delete"
+  | "memory.manage";
 
 export type PermissionCategory =
   | "agents"
   | "runs"
   | "tools"
   | "approvals"
-  | "workspace";
+  | "workspace"
+  | "memory";
 
 export interface Permission {
   id: string;
@@ -186,6 +193,12 @@ export interface AgentPolicy {
   approval_mode: ApprovalMode;
   self_approval_mode: SelfApprovalMode;
   max_concurrent_runs: number;
+  memory_enabled?: boolean;
+  memory_retrieval_mode?: MemoryRetrievalMode;
+  memory_max_tokens?: number;
+  memory_similarity_threshold?: number;
+  memory_scopes?: MemoryScope[];
+  memory_write_mode?: MemoryWriteMode;
   created_at: string;
   updated_at: string;
 }
@@ -225,6 +238,8 @@ export interface AuthorizationEvaluationContext {
   params?: Record<string, any>;
   runId?: string;
   stepId?: string;
+  targetScope?: MemoryScope;
+  targetTrustLevel?: string;
 }
 
 export interface AuthorizationDecision {

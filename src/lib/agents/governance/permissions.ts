@@ -1,5 +1,5 @@
 /**
- * NEXTEХ Agent Core — Permission Engine (Fase 4.4)
+ * NEXTEХ Agent Core — Permission Engine (Fase 4.4 & 4.5)
  * Motor central de permisos con precedencia estricta:
  * EXPLICIT DENY -> EXPLICIT ALLOW -> ROLE PERMISSION -> DEFAULT DENY
  */
@@ -33,6 +33,10 @@ export const CANONICAL_PERMISSIONS_CATALOG: Permission[] = [
   { id: "workspace.members.manage", key: "workspace.members.manage", category: "workspace", description: "Invitar, modificar roles y desasociar miembros", created_at: "2026-10-01T00:00:00Z" },
   { id: "workspace.settings.read", key: "workspace.settings.read", category: "workspace", description: "Consultar configuraciones y cuotas del workspace", created_at: "2026-10-01T00:00:00Z" },
   { id: "workspace.settings.update", key: "workspace.settings.update", category: "workspace", description: "Modificar configuraciones globales del workspace", created_at: "2026-10-01T00:00:00Z" },
+  { id: "memory.read", key: "memory.read", category: "memory", description: "Consultar y recuperar memorias cognitivas del workspace", created_at: "2026-10-01T00:00:00Z" },
+  { id: "memory.write", key: "memory.write", category: "memory", description: "Persistir y consolidar nuevos recuerdos de agentes", created_at: "2026-10-01T00:00:00Z" },
+  { id: "memory.delete", key: "memory.delete", category: "memory", description: "Eliminar físicamente recuerdos y ejecutar olvido de datos", created_at: "2026-10-01T00:00:00Z" },
+  { id: "memory.manage", key: "memory.manage", category: "memory", description: "Administrar retención, cuotas y cuarentenas de memoria", created_at: "2026-10-01T00:00:00Z" },
 ];
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<WorkspaceRole, CanonicalPermissionKey[]> = {
@@ -42,7 +46,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<WorkspaceRole, CanonicalPermission
     "tools.read", "tools.execute", "tools.execute_read", "tools.execute_write", "tools.execute_external", "tools.execute_destructive",
     "approvals.read", "approvals.approve", "approvals.reject",
     "workspace.members.read", "workspace.members.manage",
-    "workspace.settings.read", "workspace.settings.update"
+    "workspace.settings.read", "workspace.settings.update",
+    "memory.read", "memory.write", "memory.delete", "memory.manage"
   ],
   admin: [
     "agents.read", "agents.create", "agents.update", "agents.delete", "agents.activate", "agents.pause",
@@ -50,14 +55,17 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<WorkspaceRole, CanonicalPermission
     "tools.read", "tools.execute", "tools.execute_read", "tools.execute_write", "tools.execute_external",
     "approvals.read", "approvals.approve", "approvals.reject",
     "workspace.members.read",
-    "workspace.settings.read"
+    "workspace.settings.read",
+    "memory.read", "memory.write", "memory.delete", "memory.manage"
   ],
   member: [
     "agents.read",
     "runs.read", "runs.execute", "runs.cancel",
     "tools.read", "tools.execute", "tools.execute_read",
     "approvals.read",
-    "workspace.members.read"
+    "workspace.members.read",
+    "memory.read",
+    "memory.write"
   ],
 };
 
