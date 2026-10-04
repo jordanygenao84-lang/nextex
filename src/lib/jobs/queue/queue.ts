@@ -18,6 +18,7 @@ export class JobQueue {
       priority?: JobRunPriority;
       automationId?: string | null;
       occurrenceId?: string | null;
+      eventId?: string | null;
       configurationVersion?: number;
       configurationHash?: string;
     },
@@ -77,6 +78,7 @@ export class JobQueue {
         job_id: params.jobId,
         automation_id: params.automationId || null,
         occurrence_id: params.occurrenceId || null,
+        event_id: params.eventId || null,
         agent_id: params.agentId,
         priority,
         status: "queued",
@@ -216,8 +218,8 @@ export class JobQueue {
    */
   public async checkpointAndRequeue(
     runId: string,
-    workerId: string,
-    fencingToken: number | bigint,
+    workerId: string = "system",
+    fencingToken: number | bigint = 0,
     supabase?: any
   ): Promise<boolean> {
     if (!supabase) return true;

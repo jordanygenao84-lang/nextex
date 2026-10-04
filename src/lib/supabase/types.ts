@@ -108,7 +108,22 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      drain_worker: {
+        Args: { p_worker_id: string; p_actor_id: string; p_reason?: string | null };
+        Returns: Json;
+      };
+      quarantine_worker: {
+        Args: { p_worker_id: string; p_actor_id: string; p_reason: string };
+        Returns: Json;
+      };
+      release_worker_quarantine: {
+        Args: { p_worker_id: string; p_actor_id: string };
+        Returns: Json;
+      };
+      recover_worker_jobs: {
+        Args: { p_batch_size?: number };
+        Returns: Json;
+      };
     };
     Enums: {
       user_plan: UserPlan;

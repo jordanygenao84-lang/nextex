@@ -43,3 +43,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err?.message || "Internal Scheduler Error" }, { status: 500 });
   }
 }
+
+/** Vercel Cron dispatches scheduled invocations as GET requests. */
+export async function GET(req: NextRequest) {
+  return POST(req);
+}

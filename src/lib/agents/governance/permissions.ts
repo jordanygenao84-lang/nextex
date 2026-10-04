@@ -52,6 +52,24 @@ export const CANONICAL_PERMISSIONS_CATALOG: Permission[] = [
   { id: "automations.activate", key: "automations.activate", category: "automations", description: "Habilitar disparo programado de automations", created_at: "2026-10-01T00:00:00Z" },
   { id: "automations.pause", key: "automations.pause", category: "automations", description: "Pausar programaciones suspendiendo generación de occurrences", created_at: "2026-10-01T00:00:00Z" },
   { id: "automations.archive", key: "automations.archive", category: "automations", description: "Archivar automations preservando historial", created_at: "2026-10-01T00:00:00Z" },
+  { id: "integrations.read", key: "integrations.read", category: "integrations", description: "Visualizar integraciones y endpoints en el workspace", created_at: "2026-10-01T00:00:00Z" },
+  { id: "integrations.create", key: "integrations.create", category: "integrations", description: "Configurar y registrar nuevas integraciones", created_at: "2026-10-01T00:00:00Z" },
+  { id: "integrations.update", key: "integrations.update", category: "integrations", description: "Modificar nombres, configs y endpoints de integración", created_at: "2026-10-01T00:00:00Z" },
+  { id: "integrations.delete", key: "integrations.delete", category: "integrations", description: "Eliminar integraciones del workspace", created_at: "2026-10-01T00:00:00Z" },
+  { id: "integrations.activate", key: "integrations.activate", category: "integrations", description: "Activar integraciones para permitir recepción de eventos", created_at: "2026-10-01T00:00:00Z" },
+  { id: "integrations.pause", key: "integrations.pause", category: "integrations", description: "Pausar integraciones suspendiendo el encolamiento de jobs", created_at: "2026-10-01T00:00:00Z" },
+  { id: "integrations.revoke", key: "integrations.revoke", category: "integrations", description: "Revocar credenciales y endpoints de una integración", created_at: "2026-10-01T00:00:00Z" },
+  { id: "integration_events.read", key: "integration_events.read", category: "integration_events", description: "Consultar historial, metadatos y estado de eventos recibidos", created_at: "2026-10-01T00:00:00Z" },
+  { id: "integration_events.retry", key: "integration_events.retry", category: "integration_events", description: "Reintentar manualmente el despacho de eventos fallidos (status=failed)", created_at: "2026-10-01T00:00:00Z" },
+  { id: "integration_events.quarantine", key: "integration_events.quarantine", category: "integration_events", description: "Enviar eventos sospechosos o anómalos a cuarentena", created_at: "2026-10-01T00:00:00Z" },
+  { id: "integration_events.reprocess", key: "integration_events.reprocess", category: "integration_events", description: "Reprocesar eventos válidos sin ejecución previa (status in received, verified)", created_at: "2026-10-01T00:00:00Z" },
+  { id: "workers.read", key: "workers.read", category: "workers", description: "Visualizar workers, leases, métricas y telemetría de ejecución", created_at: "2026-10-01T00:00:00Z" },
+  { id: "workers.manage", key: "workers.manage", category: "workers", description: "Administrar ciclo de vida, registro y políticas de workers", created_at: "2026-10-01T00:00:00Z" },
+  { id: "workers.drain", key: "workers.drain", category: "workers", description: "Iniciar vaciado controlado (drain) de workers en el workspace", created_at: "2026-10-01T00:00:00Z" },
+  { id: "workers.quarantine", key: "workers.quarantine", category: "workers", description: "Aislar y poner workers anómalos en cuarentena operativa", created_at: "2026-10-01T00:00:00Z" },
+  { id: "workers.restart", key: "workers.restart", category: "workers", description: "Reiniciar workers y reasignar leases activos", created_at: "2026-10-01T00:00:00Z" },
+  { id: "workers.recover", key: "workers.recover", category: "workers", description: "Forzar recuperación de jobs con leases expirados o workers caídos", created_at: "2026-10-01T00:00:00Z" },
+  { id: "workers.configure", key: "workers.configure", category: "workers", description: "Modificar capacidad de concurrencia y capabilities de workers", created_at: "2026-10-01T00:00:00Z" },
 ];
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<WorkspaceRole, CanonicalPermissionKey[]> = {
@@ -64,7 +82,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<WorkspaceRole, CanonicalPermission
     "workspace.settings.read", "workspace.settings.update",
     "memory.read", "memory.write", "memory.delete", "memory.manage",
     "jobs.read", "jobs.create", "jobs.update", "jobs.delete", "jobs.activate", "jobs.pause", "jobs.archive", "jobs.run",
-    "automations.read", "automations.create", "automations.update", "automations.delete", "automations.activate", "automations.pause", "automations.archive"
+    "automations.read", "automations.create", "automations.update", "automations.delete", "automations.activate", "automations.pause", "automations.archive",
+    "integrations.read", "integrations.create", "integrations.update", "integrations.delete", "integrations.activate", "integrations.pause", "integrations.revoke",
+    "integration_events.read", "integration_events.retry", "integration_events.quarantine", "integration_events.reprocess",
+    "workers.read", "workers.manage", "workers.drain", "workers.quarantine", "workers.restart", "workers.recover", "workers.configure"
   ],
   admin: [
     "agents.read", "agents.create", "agents.update", "agents.delete", "agents.activate", "agents.pause",
@@ -75,7 +96,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<WorkspaceRole, CanonicalPermission
     "workspace.settings.read",
     "memory.read", "memory.write", "memory.delete", "memory.manage",
     "jobs.read", "jobs.create", "jobs.update", "jobs.delete", "jobs.activate", "jobs.pause", "jobs.archive", "jobs.run",
-    "automations.read", "automations.create", "automations.update", "automations.delete", "automations.activate", "automations.pause", "automations.archive"
+    "automations.read", "automations.create", "automations.update", "automations.delete", "automations.activate", "automations.pause", "automations.archive",
+    "integrations.read", "integrations.create", "integrations.update", "integrations.delete", "integrations.activate", "integrations.pause", "integrations.revoke",
+    "integration_events.read", "integration_events.retry", "integration_events.quarantine", "integration_events.reprocess",
+    "workers.read", "workers.manage", "workers.drain", "workers.quarantine", "workers.restart", "workers.recover", "workers.configure"
   ],
   member: [
     "agents.read",
@@ -87,7 +111,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<WorkspaceRole, CanonicalPermission
     "memory.write",
     "jobs.read",
     "jobs.run",
-    "automations.read"
+    "automations.read",
+    "integrations.read",
+    "integration_events.read",
+    "workers.read"
   ],
 };
 

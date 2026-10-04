@@ -58,6 +58,8 @@ export interface AgentRun {
   created_at: string;
   updated_at: string;
   job_run_id?: string | null;
+  fencing_token?: number | bigint;
+  worker_id?: string | null;
 }
 
 export type StepType =
@@ -159,7 +161,25 @@ export type CanonicalPermissionKey =
   | "automations.delete"
   | "automations.activate"
   | "automations.pause"
-  | "automations.archive";
+  | "automations.archive"
+  | "integrations.read"
+  | "integrations.create"
+  | "integrations.update"
+  | "integrations.delete"
+  | "integrations.activate"
+  | "integrations.pause"
+  | "integrations.revoke"
+  | "integration_events.read"
+  | "integration_events.retry"
+  | "integration_events.quarantine"
+  | "integration_events.reprocess"
+  | "workers.read"
+  | "workers.manage"
+  | "workers.drain"
+  | "workers.quarantine"
+  | "workers.restart"
+  | "workers.recover"
+  | "workers.configure";
 
 export type PermissionCategory =
   | "agents"
@@ -169,7 +189,10 @@ export type PermissionCategory =
   | "workspace"
   | "memory"
   | "jobs"
-  | "automations";
+  | "automations"
+  | "integrations"
+  | "integration_events"
+  | "workers";
 
 export interface Permission {
   id: string;
@@ -336,6 +359,8 @@ export interface ExecuteAgentRunDTO {
     params: Record<string, any>;
   };
   job_run_id?: string;
+  fencing_token?: number | bigint;
+  worker_id?: string;
 }
 
 export interface RunApprovalDTO {

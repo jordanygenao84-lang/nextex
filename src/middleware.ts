@@ -40,8 +40,24 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
-  const isProtectedPath = pathname.startsWith("/dashboard") || pathname.startsWith("/chat") || pathname.startsWith("/settings");
-  const isAuthPath = pathname === "/login" || pathname === "/register" || pathname === "/reset-password";
+  const protectedPrefixes = [
+    "/dashboard",
+    "/chat",
+    "/settings",
+    "/control-plane",
+    "/agents",
+    "/jobs",
+    "/integrations",
+    "/automations",
+    "/observability",
+  ];
+  const isProtectedPath = protectedPrefixes.some((prefix) => pathname.startsWith(prefix));
+  const isAuthPath =
+    pathname === "/login" ||
+    pathname === "/register" ||
+    pathname === "/reset-password" ||
+    pathname === "/update-password" ||
+    pathname === "/verify-email";
 
   // Redirigir a login si intenta entrar a ruta privada sin sesión
   if (isProtectedPath && !user) {

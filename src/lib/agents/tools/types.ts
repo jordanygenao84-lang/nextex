@@ -43,6 +43,9 @@ export interface ToolExecutionContext {
   executionId?: string;
   fencingToken?: number | bigint;
   expectedPayloadHash?: string;
+  jobRunId?: string;
+  workerId?: string;
+  idempotencyKey?: string;
 }
 
 export interface NormalizedToolOutput<T = any> {

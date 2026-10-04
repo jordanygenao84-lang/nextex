@@ -15,6 +15,7 @@ import { defaultRateLimiter } from "../security/rate-limiter";
 import { omniLogger } from "../observability/logger";
 import { OmniEngineError, OmniErrorCodes } from "../types/errors";
 import { sanitizeText } from "../security/sanitizer";
+import { tracer } from "@/lib/observability/tracer";
 
 export class AIGateway {
   /**
@@ -52,6 +53,20 @@ export class AIGateway {
       quotaPolicy,
     });
 
+    // Iniciar Span de Telemetría (Fase 4.8)
+    const aiSpan = tracer.startSpan({
+      name: "ai.generate",
+      component: "ai_gateway",
+      spanType: "ai",
+      workspaceId: payload.workspaceId,
+      aiRequestId: payload.requestId,
+      attributes: {
+        provider: provider.id,
+        model: model.id,
+        estimated_input_tokens: estimatedInputTokens,
+      },
+    });
+
     // 6. Registro de auditoría inicial en ai_requests
     await this.recordRequestStart(payload, model.id, provider.id, supabase);
 
@@ -83,6 +98,16 @@ export class AIGateway {
           status: "completed",
           latencyMs,
           usage: response.usage,
+        });
+
+        await aiSpan.end({
+          status: "completed",
+          attributes: {
+            tokens_input: response.usage.inputTokens,
+            tokens_output: response.usage.outputTokens,
+            total_tokens: response.usage.totalTokens,
+            latency_ms: latencyMs,
+          },
         });
 
         return response;
@@ -125,6 +150,14 @@ export class AIGateway {
       latencyMs,
     });
 
+    await aiSpan.end({
+      status: "failed",
+      error: finalError,
+      attributes: {
+        latency_ms: latencyMs,
+      },
+    });
+
     throw finalError;
   }
 
@@ -155,6 +188,19 @@ export class AIGateway {
       requiredCapabilities: ["streaming", ...(payload.requiredCapabilities || [])],
       userPlan,
       quotaPolicy,
+    });
+
+    const aiSpan = tracer.startSpan({
+      name: "ai.stream",
+      component: "ai_gateway",
+      spanType: "ai",
+      workspaceId: payload.workspaceId,
+      aiRequestId: payload.requestId,
+      attributes: {
+        provider: provider.id,
+        model: model.id,
+        estimated_input_tokens: estimatedInputTokens,
+      },
     });
 
     await this.recordRequestStart(payload, model.id, provider.id, supabase);
@@ -202,6 +248,15 @@ export class AIGateway {
           latencyMs,
           supabase
         );
+        await aiSpan.end({
+          status: "completed",
+          attributes: {
+            tokens_input: finalUsage.inputTokens,
+            tokens_output: finalUsage.outputTokens,
+            total_tokens: finalUsage.totalTokens,
+            latency_ms: latencyMs,
+          },
+        });
       } else {
         await this.recordUsageFailure(
           payload,
@@ -211,6 +266,13 @@ export class AIGateway {
           latencyMs,
           supabase
         );
+        await aiSpan.end({
+          status: "failed",
+          error: errorCode,
+          attributes: {
+            latency_ms: latencyMs,
+          },
+        });
       }
 
       omniLogger.info("AI Gateway Stream Finalized", {

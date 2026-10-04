@@ -1,6 +1,7 @@
 /**
- * NEXTEХ Episodic Serverless Worker (Fase 4.6)
- * Ejecución episódica acotada, recuperación de runs durables y preservación de authority.
+ * NEXTEХ Episodic Serverless Worker (Fase 4.6 & 4.8)
+ * Ejecución episódica acotada, recuperación de runs durables, preservación de authority
+ * e instrumentación de observabilidad fail-safe.
  */
 
 import { defaultJobQueue } from "../queue/queue";
@@ -11,6 +12,8 @@ import { defaultPermissionEngine } from "@/lib/agents/governance/permissions";
 import { Agent } from "@/lib/agents/types";
 import { AgentError, AgentErrorCodes } from "@/lib/agents/types/errors";
 import { JobRun } from "../types";
+import { tracer } from "@/lib/observability/tracer";
+import { ObservabilityContext } from "@/lib/observability/context";
 
 export interface WorkerTickResult {
   processed: boolean;
@@ -58,157 +61,219 @@ export class EpisodicWorker {
       };
     }
 
+    // Iniciar Telemetría de Worker (Fase 4.8)
+    const queueWaitMs = run.queued_at
+      ? Math.max(0, Date.now() - new Date(run.queued_at).getTime())
+      : 0;
+
+    const jobSpan = tracer.startSpan({
+      name: "job.execute_tick",
+      component: "worker",
+      spanType: "job",
+      workspaceId: run.workspace_id,
+      jobId: run.job_id,
+      jobRunId: run.id,
+      agentId: run.agent_id,
+      attributes: {
+        worker_id: workerId,
+        fencing_token: run.fencing_token,
+        attempt: run.attempt,
+        queue_wait_ms: queueWaitMs,
+      },
+    });
+
     // 2. Iniciar Heartbeat activo mientras la petición HTTP esté en curso
     leaseManager.startHeartbeat(run.id, workerId, run.fencing_token, supabase);
 
-    try {
-      // 3. JIT CURRENT RESOURCE AUTHORITY VALIDATION
-      // Principio: No depende de created_by; evalúa estado del Workspace y del Agente
-      const { data: agentData, error: agErr } = await (supabase.from("agents") as any)
-        .select("*, agent_tools(tool_id, enabled)")
-        .eq("id", run.agent_id)
-        .eq("workspace_id", run.workspace_id)
-        .single();
+    return ObservabilityContext.run(
+      {
+        traceId: jobSpan.traceId,
+        spanId: jobSpan.spanId,
+        workspaceId: run.workspace_id,
+      },
+      async () => {
+        try {
+          // 3. JIT CURRENT RESOURCE AUTHORITY VALIDATION
+          // Principio: No depende de created_by; evalúa estado del Workspace y del Agente
+          const { data: agentData, error: agErr } = await (supabase.from("agents") as any)
+            .select("*, agent_tools(tool_id, enabled)")
+            .eq("id", run.agent_id)
+            .eq("workspace_id", run.workspace_id)
+            .single();
 
-      if (agErr || !agentData) {
-        throw new AgentError({
-          code: AgentErrorCodes.AGENT_NOT_FOUND,
-          message: "El agente vinculado al job no existe o no pertenece al workspace.",
-          statusCode: 404,
-        });
-      }
+          if (agErr || !agentData) {
+            throw new AgentError({
+              code: AgentErrorCodes.AGENT_NOT_FOUND,
+              message: "El agente vinculado al job no existe o no pertenece al workspace.",
+              statusCode: 404,
+            });
+          }
 
-      if (agentData.status !== "active") {
-        throw new AgentError({
-          code: AgentErrorCodes.AGENT_NOT_ACTIVE,
-          message: `El agente vinculado está en estado '${agentData.status}'. Solo agentes en estado 'active' pueden ejecutarse.`,
-          statusCode: 400,
-        });
-      }
+          if (agentData.status !== "active") {
+            throw new AgentError({
+              code: AgentErrorCodes.AGENT_NOT_ACTIVE,
+              message: `El agente vinculado está en estado '${agentData.status}'. Solo agentes en estado 'active' pueden ejecutarse.`,
+              statusCode: 400,
+            });
+          }
 
-      const policy = defaultPolicyEngine.getDefaultPolicy(agentData.id, run.workspace_id);
-      if (policy.allow_execution === false) {
-        throw new AgentError({
-          code: AgentErrorCodes.AGENT_EXECUTION_BLOCKED,
-          message: "La política de seguridad del agente prohíbe su ejecución.",
-          statusCode: 403,
-        });
-      }
+          const policy = defaultPolicyEngine.getDefaultPolicy(agentData.id, run.workspace_id);
+          if (policy.allow_execution === false) {
+            throw new AgentError({
+              code: AgentErrorCodes.AGENT_EXECUTION_BLOCKED,
+              message: "La política de seguridad del agente prohíbe su ejecución.",
+              statusCode: 403,
+            });
+          }
 
-      const agent: Agent = {
-        ...agentData,
-        tools: agentData.agent_tools?.filter((t: any) => t.enabled).map((t: any) => t.tool_id) || [],
-      };
+          const agent: Agent = {
+            ...agentData,
+            tools: agentData.agent_tools?.filter((t: any) => t.enabled).map((t: any) => t.tool_id) || [],
+          };
 
-      // 4. VERIFICAR SI YA EXISTE UN AGENT RUN VINCULADO (REGLA: 1 Job Run = 1 Agent Run)
-      let executionResult: any;
+          // 4. VERIFICAR SI YA EXISTE UN AGENT RUN VINCULADO (REGLA: 1 Job Run = 1 Agent Run)
+          let executionResult: any;
 
-      const { data: existingAgentRun } = await (supabase.from("agent_runs") as any)
-        .select("id, status")
-        .eq("job_run_id", run.id)
-        .maybeSingle();
+          const { data: existingAgentRun } = await (supabase.from("agent_runs") as any)
+            .select("id, status")
+            .eq("job_run_id", run.id)
+            .maybeSingle();
 
-      if (existingAgentRun) {
+          if (existingAgentRun) {
         // Recuperación y Reanudación de Agent Run existente
-        executionResult = await defaultAgentRuntime.resumeInterruptedRun(
-          existingAgentRun.id,
-          supabase
-        );
-      } else {
-        // Ejecución inicial: vincula job_run_id
-        executionResult = await defaultAgentRuntime.executeRun(
-          agent,
-          {
-            agent_id: agent.id,
-            workspace_id: run.workspace_id,
-            user_id: agentData.created_by, // Identidad de servicio en nombre del workspace
-            input: run.input,
-            job_run_id: run.id,
-          },
-          supabase
-        );
+            executionResult = await defaultAgentRuntime.resumeInterruptedRun(
+              existingAgentRun.id,
+              supabase,
+              undefined,
+              {
+                fencingToken: run.fencing_token,
+                workerId,
+              }
+            );
+          } else {
+            // Ejecución inicial: vincula job_run_id y propaga fencing_token y worker_id
+            executionResult = await defaultAgentRuntime.executeRun(
+              agent,
+              {
+                agent_id: agent.id,
+                workspace_id: run.workspace_id,
+                user_id: agentData.created_by, // Identidad de servicio en nombre del workspace
+                input: run.input,
+                job_run_id: run.id,
+                fencing_token: run.fencing_token,
+                worker_id: workerId,
+              },
+              supabase
+            );
+          }
+
+          // 5. EVALUAR RESULTADO
+          if (executionResult.needsApproval) {
+            // Suspensión HITL: Desacopla worker y libera lease
+            leaseManager.stopHeartbeat();
+            await defaultJobQueue.releaseForApproval(run.id, workerId, run.fencing_token, supabase);
+            await jobSpan.end({
+              status: "completed",
+              attributes: { outcome: "waiting_approval" },
+            });
+
+            return {
+              processed: true,
+              workerId,
+              runId: run.id,
+              status: "waiting_approval",
+              message: "Job Run suspendido en waiting_approval; lease liberado exitosamente.",
+            };
+          }
+
+          // Si el presupuesto de tiempo está próximo a agotarse y se necesita continuación
+          if (leaseManager.isBudgetExpiring()) {
+            leaseManager.stopHeartbeat();
+            await defaultJobQueue.checkpointAndRequeue(run.id, workerId, run.fencing_token, supabase);
+            await jobSpan.end({
+              status: "completed",
+              attributes: { outcome: "checkpoint_requeued" },
+            });
+
+            return {
+              processed: true,
+              workerId,
+              runId: run.id,
+              status: "checkpoint_requeued",
+              message: "Presupuesto de ejecución alcanzado; run re-encolado para continuación.",
+            };
+          }
+
+          // Completado exitosamente
+          leaseManager.stopHeartbeat();
+          await defaultJobQueue.complete(
+            run.id,
+            workerId,
+            run.fencing_token,
+            executionResult.run?.output || null,
+            executionResult.run?.tokens_input || 0,
+            executionResult.run?.tokens_output || 0,
+            supabase
+          );
+
+          await jobSpan.end({
+            status: "completed",
+            attributes: {
+              outcome: "completed",
+              tokens_input: executionResult.run?.tokens_input || 0,
+              tokens_output: executionResult.run?.tokens_output || 0,
+            },
+          });
+
+          return {
+            processed: true,
+            workerId,
+            runId: run.id,
+            status: "completed",
+            message: "Job Run completado exitosamente.",
+          };
+        } catch (err: any) {
+          leaseManager.stopHeartbeat();
+          const errorCode = err?.code || AgentErrorCodes.INTERNAL_AGENT_ERROR;
+          const errorMessage = err?.message || "Fallo en la ejecución del job.";
+
+          // Errores no reintentables: denegaciones de política, permisos, esquema inválido
+          const nonRetryableCodes = [
+            AgentErrorCodes.AGENT_PERMISSION_DENIED,
+            AgentErrorCodes.AGENT_EXECUTION_BLOCKED,
+            AgentErrorCodes.TOOL_NOT_ALLOWED,
+            AgentErrorCodes.TOOL_SCHEMA_INVALID,
+            "AUTHORIZATION_REVOKED",
+          ];
+
+          const isRetryable = !nonRetryableCodes.includes(errorCode as any);
+
+          await defaultJobQueue.failAndRetry(
+            run.id,
+            workerId,
+            run.fencing_token,
+            errorCode,
+            errorMessage,
+            isRetryable,
+            supabase
+          );
+
+          await jobSpan.end({
+            status: "failed",
+            error: err,
+            attributes: { is_retryable: isRetryable },
+          });
+
+          return {
+            processed: true,
+            workerId,
+            runId: run.id,
+            status: isRetryable ? "retry_scheduled" : "dead_letter",
+            error: `${errorCode}: ${errorMessage}`,
+          };
+        }
       }
-
-      // 5. EVALUAR RESULTADO
-      if (executionResult.needsApproval) {
-        // Suspensión HITL: Desacopla worker y libera lease
-        leaseManager.stopHeartbeat();
-        await defaultJobQueue.releaseForApproval(run.id, workerId, run.fencing_token, supabase);
-        return {
-          processed: true,
-          workerId,
-          runId: run.id,
-          status: "waiting_approval",
-          message: "Job Run suspendido en waiting_approval; lease liberado exitosamente.",
-        };
-      }
-
-      // Si el presupuesto de tiempo está próximo a agotarse y se necesita continuación
-      if (leaseManager.isBudgetExpiring()) {
-        leaseManager.stopHeartbeat();
-        await defaultJobQueue.checkpointAndRequeue(run.id, workerId, run.fencing_token, supabase);
-        return {
-          processed: true,
-          workerId,
-          runId: run.id,
-          status: "checkpoint_requeued",
-          message: "Presupuesto de ejecución alcanzado; run re-encolado para continuación.",
-        };
-      }
-
-      // Completado exitosamente
-      leaseManager.stopHeartbeat();
-      await defaultJobQueue.complete(
-        run.id,
-        workerId,
-        run.fencing_token,
-        executionResult.run?.output || null,
-        executionResult.run?.tokens_input || 0,
-        executionResult.run?.tokens_output || 0,
-        supabase
-      );
-
-      return {
-        processed: true,
-        workerId,
-        runId: run.id,
-        status: "completed",
-        message: "Job Run completado exitosamente.",
-      };
-    } catch (err: any) {
-      leaseManager.stopHeartbeat();
-      const errorCode = err?.code || AgentErrorCodes.INTERNAL_AGENT_ERROR;
-      const errorMessage = err?.message || "Fallo en la ejecución del job.";
-
-      // Errores no reintentables: denegaciones de política, permisos, esquema inválido
-      const nonRetryableCodes = [
-        AgentErrorCodes.AGENT_PERMISSION_DENIED,
-        AgentErrorCodes.AGENT_EXECUTION_BLOCKED,
-        AgentErrorCodes.TOOL_NOT_ALLOWED,
-        AgentErrorCodes.TOOL_SCHEMA_INVALID,
-        "AUTHORIZATION_REVOKED",
-      ];
-
-      const isRetryable = !nonRetryableCodes.includes(errorCode as any);
-
-      await defaultJobQueue.failAndRetry(
-        run.id,
-        workerId,
-        run.fencing_token,
-        errorCode,
-        errorMessage,
-        isRetryable,
-        supabase
-      );
-
-      return {
-        processed: true,
-        workerId,
-        runId: run.id,
-        status: isRetryable ? "retry_scheduled" : "dead_letter",
-        error: `${errorCode}: ${errorMessage}`,
-      };
-    }
+    );
   }
 }
 

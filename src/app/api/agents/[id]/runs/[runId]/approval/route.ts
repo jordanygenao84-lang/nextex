@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { defaultAgentRuntime } from "@/lib/agents/runtime/runtime";
+import { defaultJobQueue } from "@/lib/jobs/queue/queue";
 import { AgentErrorCodes } from "@/lib/agents/types/errors";
 import { RunApprovalDTO } from "@/lib/agents/types";
 
@@ -96,6 +97,27 @@ export async function POST(
       supabase,
       user.id
     );
+
+    // GAP-001 & FINDING-009 REMEDIACIÓN: Si el AgentRun está vinculado a un JobRun en waiting_approval,
+    // re-encolar durablemente el JobRun en la cola durable utilizando EXCLUSIVAMENTE createServiceClient() (service_role).
+    const jobRunId = result.run?.job_run_id;
+    if (jobRunId) {
+      const serviceClient = createServiceClient();
+      const { data: jobRun } = await (serviceClient.from("job_runs") as any)
+        .select("id, status, fencing_token")
+        .eq("id", jobRunId)
+        .eq("workspace_id", run.workspace_id)
+        .maybeSingle();
+
+      if (jobRun && jobRun.status === "waiting_approval") {
+        await defaultJobQueue.checkpointAndRequeue(
+          jobRun.id,
+          user.id,
+          jobRun.fencing_token,
+          serviceClient
+        );
+      }
+    }
 
     return NextResponse.json({ success: true, data: result });
   } catch (err: any) {

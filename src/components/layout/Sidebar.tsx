@@ -59,6 +59,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badge: "Core v4.1",
     },
     {
+      name: "Control Plane",
+      href: "/control-plane",
+      icon: Cpu,
+      badge: "v4.10",
+    },
+    {
       name: "Tareas & Jobs",
       href: "/dashboard#jobs",
       icon: Cpu,

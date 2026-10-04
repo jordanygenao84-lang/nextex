@@ -57,7 +57,7 @@ async function runPhase3RLSTests() {
     for (const [tbl, ex] of Object.entries(tablesStatus)) {
       console.log(` - public.${tbl}: ${ex ? "EXISTE" : "PENDIENTE DE APLICAR MIGRACIÓN"}`);
     }
-    console.log("\n→ La migración 'supabase/migrations/20261001_omniengine_ai_gateway.sql' debe ser ejecutada en el SQL Editor de Supabase.");
+    console.log("\n→ La migración 'supabase/migrations/2026100103_omniengine_ai_gateway.sql' debe ser ejecutada en el SQL Editor de Supabase.");
     return { applied: false, results: [] };
   }
 

@@ -67,7 +67,7 @@ create trigger tr_workspaces_updated_at
 create or replace function public.is_workspace_member(ws_id uuid, u_id uuid)
 returns boolean
 security definer
-set search_path = public
+set search_path = pg_catalog, public, pg_temp
 as $$
   select exists (
     select 1 from public.workspace_members
@@ -78,7 +78,7 @@ $$ language sql stable;
 create or replace function public.is_workspace_admin(ws_id uuid, u_id uuid)
 returns boolean
 security definer
-set search_path = public
+set search_path = pg_catalog, public, pg_temp
 as $$
   select exists (
     select 1 from public.workspace_members
@@ -90,7 +90,7 @@ $$ language sql stable;
 create or replace function public.handle_new_user()
 returns trigger
 security definer
-set search_path = public
+set search_path = pg_catalog, public, pg_temp
 as $$
 declare
   v_full_name text;

@@ -202,6 +202,8 @@ export class AgentRuntime {
         created_at: createdRunRecord.created_at || new Date().toISOString(),
         updated_at: createdRunRecord.updated_at || new Date().toISOString(),
         job_run_id: dto.job_run_id || null,
+        fencing_token: dto.fencing_token ?? 0,
+        worker_id: dto.worker_id ?? null,
       };
 
       if (dto.job_run_id) {
@@ -233,6 +235,8 @@ export class AgentRuntime {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         job_run_id: dto.job_run_id || null,
+        fencing_token: dto.fencing_token ?? 0,
+        worker_id: dto.worker_id ?? null,
       };
     }
 
@@ -481,6 +485,7 @@ export class AgentRuntime {
 
         // 13. SI LA HERRAMIENTA ESTÁ AUTORIZADA DIRECTAMENTE (ALLOW)
         const toolStepId = `step-${run.id}-${currentStepNumber}`;
+        const effectiveFencingToken = dto.fencing_token ?? (run.fencing_token || 0);
         const toolStep: AgentRunStep = {
           id: toolStepId,
           run_id: run.id,
@@ -492,6 +497,7 @@ export class AgentRuntime {
           input: toolCall.params,
           started_at: new Date().toISOString(),
           created_at: new Date().toISOString(),
+          fencing_token: effectiveFencingToken,
         };
 
         const execOutcome = await defaultToolExecutor.execute(tool.id, toolCall.params, {
@@ -503,7 +509,9 @@ export class AgentRuntime {
           signal: abortController.signal,
           stepId: toolStepId,
           executionId: `exec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          fencingToken: 1,
+          fencingToken: effectiveFencingToken,
+          jobRunId: dto.job_run_id || undefined,
+          workerId: dto.worker_id || undefined,
         });
 
         toolStep.status = "completed";
@@ -719,6 +727,8 @@ export class AgentRuntime {
           executionId: executionId,
           fencingToken: jitResult.fencingToken || 1,
           expectedPayloadHash: expectedHash,
+          jobRunId: run.job_run_id || undefined,
+          workerId: run.worker_id || undefined,
         });
       } catch (execErr: any) {
         // Si la herramienta falla tras la aprobación, el step pasa a failed
@@ -815,8 +825,10 @@ export class AgentRuntime {
       supabaseClient: supabase,
       stepId: stepId,
       executionId: executionId,
-      fencingToken: 1,
+      fencingToken: run.fencing_token || 0,
       expectedPayloadHash: expectedHash,
+      jobRunId: run.job_run_id || undefined,
+      workerId: run.worker_id || undefined,
     });
 
     await (supabase.from("agent_run_steps") as any)
@@ -855,7 +867,11 @@ export class AgentRuntime {
   public async resumeInterruptedRun(
     agentRunId: string,
     supabase: any,
-    externalSignal?: AbortSignal
+    externalSignal?: AbortSignal,
+    options?: {
+      fencingToken?: number | bigint;
+      workerId?: string;
+    }
   ): Promise<ExecutionResult> {
     if (!supabase) {
       throw new AgentError({
@@ -879,7 +895,32 @@ export class AgentRuntime {
       });
     }
 
-    // 2. Obtener Agente asociado
+    // 2. Obtener steps existentes
+    const { data: stepsRecords } = await (supabase.from("agent_run_steps") as any)
+      .select("*")
+      .eq("run_id", agentRunId)
+      .order("step_number", { ascending: true });
+
+    const steps: AgentRunStep[] = stepsRecords || [];
+
+    // Verificación estricta de aislamiento multi-tenant e integridad de linaje
+    for (const step of steps) {
+      if (step.workspace_id !== runRecord.workspace_id || step.run_id !== runRecord.id) {
+        throw new AgentError({
+          code: AgentErrorCodes.TOOL_CROSS_TENANT_ACCESS,
+          message: `Discrepancia de seguridad: el paso '${step.id}' no pertenece al run '${runRecord.id}' o al workspace '${runRecord.workspace_id}'.`,
+          statusCode: 403,
+          runId: runRecord.id,
+        });
+      }
+    }
+
+    // Si el run ya se encuentra en un estado terminal, respetar inmutabilidad y retornar
+    if (["completed", "failed", "cancelled", "timeout"].includes(runRecord.status)) {
+      return { run: runRecord, steps };
+    }
+
+    // 3. Obtener Agente asociado
     const { data: agentData, error: agErr } = await (supabase.from("agents") as any)
       .select("*, agent_tools(tool_id, enabled)")
       .eq("id", runRecord.agent_id)
@@ -893,22 +934,30 @@ export class AgentRuntime {
       });
     }
 
+    if (agentData.status !== "active") {
+      throw new AgentError({
+        code: AgentErrorCodes.AGENT_NOT_ACTIVE,
+        message: `El agente está en estado '${agentData.status}'. Solo agentes en estado 'active' pueden reanudarse.`,
+        statusCode: 400,
+        agentId: agentData.id,
+      });
+    }
+
     const agent: Agent = {
       ...agentData,
       tools: agentData.agent_tools?.filter((t: any) => t.enabled).map((t: any) => t.tool_id) || [],
     };
 
-    // 3. Obtener steps existentes
-    const { data: stepsRecords } = await (supabase.from("agent_run_steps") as any)
-      .select("*")
-      .eq("run_id", agentRunId)
-      .order("step_number", { ascending: true });
+    const effectiveFencingToken = options?.fencingToken ?? (runRecord.fencing_token || 0);
+    const effectiveWorkerId = options?.workerId ?? runRecord.worker_id ?? undefined;
 
-    const steps: AgentRunStep[] = stepsRecords || [];
-
-    // 4. Reconciliar el último step si quedó en running
+    // 4. Reconciliar el último step si quedó en running o pending
     const lastStep = steps[steps.length - 1];
-    if (lastStep && lastStep.status === "running") {
+    if (lastStep && (lastStep.status === "running" || lastStep.status === "pending")) {
+      if (lastStep.step_type === "APPROVAL_REQUEST" && lastStep.status === "pending") {
+        return { run: runRecord, steps, needsApproval: true, approvalStep: lastStep };
+      }
+
       if (lastStep.step_type === "TOOL_CALL") {
         // Reconciliar con tool_idempotency_ledger
         const { data: ledgerEntry } = await (supabase.from("tool_idempotency_ledger") as any)
@@ -917,48 +966,304 @@ export class AgentRuntime {
           .maybeSingle();
 
         if (ledgerEntry && ledgerEntry.status === "committed") {
-          // Mutación física ya ocurrió en PostgreSQL -> reutilizar resultado
+          // Mutación física ya ocurrió en PostgreSQL -> reutilizar resultado sin duplicar
           lastStep.status = "completed";
+          lastStep.step_type = "TOOL_RESULT";
           lastStep.output = ledgerEntry.result;
           lastStep.completed_at = ledgerEntry.created_at;
           await (supabase.from("agent_run_steps") as any)
-            .update({ status: "completed", output: lastStep.output, completed_at: lastStep.completed_at })
+            .update({ status: "completed", step_type: "TOOL_RESULT", output: lastStep.output, completed_at: lastStep.completed_at })
+            .eq("id", lastStep.id);
+        } else {
+          // No se consolidó en el ledger: re-ejecutar herramienta bajo nuevo fencing token
+          const toolId = lastStep.tool_id || (lastStep.input as any)?.tool_id;
+          const params = (lastStep.input as any)?.params || lastStep.input || {};
+          const execOutcome = await defaultToolExecutor.execute(toolId, params, {
+            agentId: agent.id,
+            runId: runRecord.id,
+            workspaceId: runRecord.workspace_id,
+            userId: runRecord.user_id,
+            supabaseClient: supabase,
+            signal: externalSignal,
+            stepId: lastStep.id,
+            executionId: `exec-rec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            fencingToken: effectiveFencingToken,
+            jobRunId: runRecord.job_run_id || undefined,
+            workerId: effectiveWorkerId,
+          });
+
+          lastStep.status = "completed";
+          lastStep.step_type = "TOOL_RESULT";
+          lastStep.completed_at = new Date().toISOString();
+          lastStep.output = execOutcome.data;
+          await (supabase.from("agent_run_steps") as any)
+            .update({ status: "completed", step_type: "TOOL_RESULT", output: lastStep.output, completed_at: lastStep.completed_at })
             .eq("id", lastStep.id);
         }
       } else if (lastStep.step_type === "AI_REQUEST") {
-        if (lastStep.output) {
+        if (lastStep.output && (lastStep.output as any).content) {
           lastStep.status = "completed";
           await (supabase.from("agent_run_steps") as any)
             .update({ status: "completed" })
+            .eq("id", lastStep.id);
+        } else {
+          // Re-ejecutar AI Gateway para este paso con requestId determinista
+          const assignedTools = defaultToolRegistry.getToolsForAgent(agent.tools || []);
+          const toolDocumentation = assignedTools
+            .map((t) => `- ${t.id}@${t.version} (${t.name}): ${t.description} [Riesgo: ${t.riskLevel.toUpperCase()}]`)
+            .join("\n");
+          const enrichedSystemPrompt = assignedTools.length > 0
+            ? `${agent.system_instructions}\n\n[HERRAMIENTAS AUTORIZADAS PARA ESTE AGENTE]:\n${toolDocumentation}\n\nPara invocar una herramienta autorizada, responde con el formato estructurado:\n[TOOL_CALL: id_herramienta]\n{\n  "parametro": "valor"\n}\n[/TOOL_CALL]`
+            : agent.system_instructions;
+
+          const aiResponse = await defaultAIGateway.execute(
+            {
+              requestId: `req-agent-${runRecord.id}-${lastStep.step_number}`,
+              workspaceId: agent.workspace_id,
+              userId: runRecord.user_id,
+              model: agent.model_id,
+              messages: [
+                { role: "system", content: enrichedSystemPrompt },
+                { role: "user", content: runRecord.input },
+              ],
+              options: {
+                maxTokens: agent.max_tokens,
+                signal: externalSignal,
+              },
+            },
+            supabase
+          );
+
+          lastStep.status = "completed";
+          lastStep.completed_at = new Date().toISOString();
+          lastStep.output = { content: aiResponse.content, usage: aiResponse.usage };
+
+          await (supabase.from("agent_run_steps") as any)
+            .update({
+              status: "completed",
+              completed_at: lastStep.completed_at,
+              output: lastStep.output,
+            })
             .eq("id", lastStep.id);
         }
       }
     }
 
-    // 5. Verificar si hay un paso en waiting_approval
+    // 5. Verificar si hay un paso en waiting_approval tras reconciliación
     const pendingApproval = steps.find((s) => s.step_type === "APPROVAL_REQUEST" && s.status === "pending");
     if (pendingApproval) {
       return { run: runRecord, steps, needsApproval: true, approvalStep: pendingApproval };
     }
 
-    // 6. Si todos los steps están completados y no hay más acciones
-    if (runRecord.status === "completed") {
-      return { run: runRecord, steps };
+    // 6. CONTINUAR EL FLUJO COGNITIVO DEL AGENTE SI FALTAN PASOS
+    if (steps.length === 0) {
+      return this.executeRun(
+        agent,
+        {
+          agent_id: agent.id,
+          workspace_id: runRecord.workspace_id,
+          user_id: runRecord.user_id,
+          input: runRecord.input,
+          job_run_id: runRecord.job_run_id || undefined,
+          fencing_token: effectiveFencingToken,
+          worker_id: effectiveWorkerId,
+        },
+        supabase,
+        externalSignal
+      );
     }
 
-    // Si aún faltaba completar, sellar el run
-    const completedRun = {
-      ...runRecord,
-      status: "completed" as const,
-      completed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+    const lastCompleted = steps[steps.length - 1];
+    const nextStepNumber = steps.length + 1;
+
+    if (lastCompleted.step_type === "AI_REQUEST") {
+      const aiContent = (lastCompleted.output as any)?.content || "";
+      const toolCall = this.detectToolCall(runRecord.input, aiContent);
+
+      if (toolCall && nextStepNumber <= agent.max_steps && (runRecord.tool_calls_count || 0) < agent.max_tool_calls) {
+        const tool = defaultPermissionEngine.validateToolAccess(toolCall.tool_id, agent.tools || []);
+        const authzDecision = await defaultAuthorizationEngine.evaluate(
+          {
+            userId: runRecord.user_id,
+            workspaceId: runRecord.workspace_id,
+            agentId: agent.id,
+            toolId: tool.id,
+            toolVersion: tool.version,
+            params: toolCall.params,
+            runId: runRecord.id,
+          },
+          { agent, supabaseClient: supabase }
+        );
+
+        if (authzDecision.decision === "deny") {
+          throw new AgentError({
+            code: AgentErrorCodes.TOOL_NOT_ALLOWED,
+            message: `Acción denegada por AuthorizationEngine: ${authzDecision.reason}`,
+            statusCode: 403,
+            toolId: tool.id,
+            runId: runRecord.id,
+          });
+        }
+
+        if (authzDecision.decision === "approval_required") {
+          const approvalStepId = `step-${runRecord.id}-${nextStepNumber}`;
+          const payloadHash = computeApprovalPayloadHash(runRecord.id, approvalStepId, tool.id, tool.version, toolCall.params);
+          const approvalStep: AgentRunStep = {
+            id: approvalStepId,
+            run_id: runRecord.id,
+            workspace_id: runRecord.workspace_id,
+            step_number: nextStepNumber,
+            step_type: "APPROVAL_REQUEST",
+            status: "pending",
+            tool_id: tool.id,
+            input: {
+              tool_id: tool.id,
+              tool_version: tool.version,
+              params: toolCall.params,
+              riskLevel: tool.riskLevel,
+              category: tool.category,
+              payload_hash: payloadHash,
+            },
+            output: null,
+            started_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+          };
+
+          steps.push(approvalStep);
+          await (supabase.from("agent_run_steps") as any).insert({
+            id: approvalStep.id,
+            run_id: approvalStep.run_id,
+            workspace_id: approvalStep.workspace_id,
+            step_number: approvalStep.step_number,
+            step_type: approvalStep.step_type,
+            status: approvalStep.status,
+            tool_id: approvalStep.tool_id,
+            input: approvalStep.input,
+            started_at: approvalStep.started_at,
+          });
+
+          const formalApproval = defaultApprovalGovernance.createApprovalRequest(
+            runRecord.workspace_id,
+            runRecord.id,
+            approvalStep.id,
+            tool.id,
+            tool.version,
+            runRecord.user_id,
+            tool.riskLevel,
+            toolCall.params
+          );
+
+          await (supabase.from("approval_requests") as any).insert({
+            id: formalApproval.id,
+            workspace_id: formalApproval.workspace_id,
+            run_id: formalApproval.run_id,
+            step_id: formalApproval.step_id,
+            tool_id: formalApproval.tool_id,
+            tool_version: formalApproval.tool_version,
+            requester_id: formalApproval.requester_id,
+            required_permission: formalApproval.required_permission,
+            risk_level: formalApproval.risk_level,
+            payload_hash: formalApproval.payload_hash,
+            status: formalApproval.status,
+            expires_at: formalApproval.expires_at,
+          });
+
+          const waitingOutput = `[HUMAN-IN-THE-LOOP]: El agente solicita aprobación para ejecutar la herramienta '${tool.name}@${tool.version}' (Riesgo: ${tool.riskLevel.toUpperCase()}).`;
+          await (supabase.from("agent_runs") as any)
+            .update({
+              status: "waiting_approval",
+              output: waitingOutput,
+              steps_count: steps.length,
+            })
+            .eq("id", runRecord.id);
+
+          runRecord.status = "waiting_approval";
+          runRecord.output = waitingOutput;
+          return { run: runRecord, steps, needsApproval: true, approvalStep };
+        }
+
+        // Si fue allowed: ejecutar herramienta con barrera de cercado
+        const toolStepId = `step-${runRecord.id}-${nextStepNumber}`;
+        const toolStep: AgentRunStep = {
+          id: toolStepId,
+          run_id: runRecord.id,
+          workspace_id: runRecord.workspace_id,
+          step_number: nextStepNumber,
+          step_type: "TOOL_CALL",
+          status: "running",
+          tool_id: tool.id,
+          input: toolCall.params,
+          started_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          fencing_token: effectiveFencingToken,
+        };
+
+        const execOutcome = await defaultToolExecutor.execute(tool.id, toolCall.params, {
+          agentId: agent.id,
+          runId: runRecord.id,
+          workspaceId: runRecord.workspace_id,
+          userId: runRecord.user_id,
+          supabaseClient: supabase,
+          signal: externalSignal,
+          stepId: toolStepId,
+          executionId: `exec-rec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          fencingToken: effectiveFencingToken,
+          jobRunId: runRecord.job_run_id || undefined,
+          workerId: effectiveWorkerId,
+        });
+
+        toolStep.status = "completed";
+        toolStep.step_type = "TOOL_RESULT";
+        toolStep.completed_at = new Date().toISOString();
+        toolStep.output = execOutcome.data;
+        steps.push(toolStep);
+
+        await (supabase.from("agent_run_steps") as any).insert({
+          id: toolStep.id,
+          run_id: toolStep.run_id,
+          workspace_id: toolStep.workspace_id,
+          step_number: toolStep.step_number,
+          step_type: toolStep.step_type,
+          status: toolStep.status,
+          tool_id: toolStep.tool_id,
+          input: toolStep.input,
+          output: toolStep.output,
+          started_at: toolStep.started_at,
+          completed_at: toolStep.completed_at,
+          fencing_token: effectiveFencingToken,
+        });
+
+        runRecord.tool_calls_count = (runRecord.tool_calls_count || 0) + 1;
+        runRecord.steps_count = steps.length;
+        runRecord.output = `${aiContent}\n\n[Resultado de ${tool.name}@${tool.version}]: ${JSON.stringify(execOutcome.data, null, 2)}`;
+      } else {
+        runRecord.output = aiContent;
+      }
+    } else if (lastCompleted.step_type === "TOOL_RESULT" || lastCompleted.step_type === "TOOL_CALL") {
+      if (!runRecord.output) {
+        const firstStep = steps.find((s) => s.step_type === "AI_REQUEST");
+        const aiText = (firstStep?.output as any)?.content || "";
+        runRecord.output = `${aiText}\n\n[Resultado]: ${JSON.stringify(lastCompleted.output, null, 2)}`;
+      }
+    }
+
+    // 7. Sellar finalización natural
+    runRecord.status = "completed";
+    runRecord.completed_at = new Date().toISOString();
+    runRecord.updated_at = new Date().toISOString();
+    runRecord.steps_count = steps.length;
 
     await (supabase.from("agent_runs") as any)
-      .update({ status: "completed", completed_at: completedRun.completed_at })
+      .update({
+        status: "completed",
+        output: runRecord.output,
+        steps_count: runRecord.steps_count,
+        tool_calls_count: runRecord.tool_calls_count,
+        completed_at: runRecord.completed_at,
+      })
       .eq("id", runRecord.id);
 
-    return { run: completedRun, steps };
+    return { run: runRecord, steps };
   }
 
   /**

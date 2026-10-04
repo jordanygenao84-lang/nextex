@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { defaultEpisodicWorker } from "@/lib/jobs/worker/worker";
 import crypto from "crypto";
 
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden: Invalid authorization token" }, { status: 403 });
     }
 
-    const supabase = createClient();
+    const supabase = createServiceClient();
     const result = await defaultEpisodicWorker.executeTick(supabase);
 
     return NextResponse.json({
@@ -42,4 +42,9 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Internal Worker Error" }, { status: 500 });
   }
+}
+
+/** Vercel Cron dispatches scheduled invocations as GET requests. */
+export async function GET(req: NextRequest) {
+  return POST(req);
 }

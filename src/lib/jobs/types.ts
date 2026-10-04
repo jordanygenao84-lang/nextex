@@ -4,7 +4,7 @@
  */
 
 export type JobStatus = "draft" | "active" | "paused" | "archived";
-export type JobTriggerType = "manual" | "scheduled"; // Webhooks explícitamente excluidos en Fase 4.6
+export type JobTriggerType = "manual" | "scheduled" | "webhook";
 
 export interface JobRetryPolicy {
   max_attempts: number;
@@ -75,6 +75,7 @@ export type JobRunStatus =
   | "claimed"
   | "running"
   | "waiting_approval"
+  | "cancellation_requested"
   | "completed"
   | "failed"
   | "cancelled"
@@ -89,6 +90,7 @@ export interface JobRun {
   job_id: string;
   automation_id: string | null;
   occurrence_id: string | null;
+  event_id?: string | null;
   agent_id: string;
   agent_run_id: string | null;
   priority: JobRunPriority;
