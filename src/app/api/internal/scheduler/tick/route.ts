@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { defaultSchedulerEngine } from "@/lib/jobs/scheduler/scheduler";
 import crypto from "crypto";
 
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden: Invalid authorization token" }, { status: 403 });
     }
 
-    const supabase = createClient();
+    const supabase = createServiceClient();
     const result = await defaultSchedulerEngine.triggerTick(supabase);
 
     return NextResponse.json({
