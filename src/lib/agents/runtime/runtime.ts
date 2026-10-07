@@ -126,10 +126,17 @@ export class AgentRuntime {
       abortController.abort(new Error("AGENT_TIMEOUT"));
     }, effectiveTimeoutSec * 1000);
 
+    const onExternalAbort = () => {
+      const reason = externalSignal?.reason || new Error("AGENT_CANCELLED");
+      abortController.abort(reason);
+    };
+
     if (externalSignal) {
-      externalSignal.addEventListener("abort", () => {
-        abortController.abort(new Error("AGENT_CANCELLED"));
-      });
+      if (externalSignal.aborted) {
+        onExternalAbort();
+      } else {
+        externalSignal.addEventListener("abort", onExternalAbort);
+      }
     }
 
     // 8. Creación Transaccional Única de Run con Concurrencia Centralizada en Base de Datos (Single Creation Path)
@@ -287,6 +294,39 @@ export class AgentRuntime {
       let currentStepNumber = 1;
 
       if (abortController.signal.aborted) {
+        const reason = abortController.signal.reason;
+        const isBudget =
+          (reason instanceof Error && reason.message === "WORKER_BUDGET_EXPIRED") ||
+          reason === "WORKER_BUDGET_EXPIRED" ||
+          (reason as any)?.code === "WORKER_BUDGET_EXPIRED" ||
+          (reason as any)?.code === AgentErrorCodes.WORKER_BUDGET_EXPIRED;
+
+        if (isBudget) {
+          throw new AgentError({
+            code: AgentErrorCodes.WORKER_BUDGET_EXPIRED,
+            message: "Presupuesto de ejecución del worker serverless agotado; suspensión para checkpoint.",
+            statusCode: 408,
+            agentId: agent.id,
+            runId: run.id,
+            retryable: true,
+          });
+        }
+
+        const isTimeout =
+          (reason instanceof Error && reason.message === "AGENT_TIMEOUT") ||
+          reason === "AGENT_TIMEOUT" ||
+          (reason as any)?.code === AgentErrorCodes.AGENT_TIMEOUT;
+
+        if (isTimeout) {
+          throw new AgentError({
+            code: AgentErrorCodes.AGENT_TIMEOUT,
+            message: "La ejecución del agente excedió el tiempo límite configurado.",
+            statusCode: 408,
+            agentId: agent.id,
+            runId: run.id,
+          });
+        }
+
         throw new AgentError({
           code: AgentErrorCodes.AGENT_CANCELLED,
           message: "La ejecución del agente fue cancelada.",
@@ -589,11 +629,71 @@ export class AgentRuntime {
       return { run, steps };
     } catch (err: any) {
       clearTimeout(timeoutHandle);
-      const isTimeout = err?.code === AgentErrorCodes.AGENT_TIMEOUT;
-      const isCancelled = err?.code === AgentErrorCodes.AGENT_CANCELLED;
+      const reason = abortController.signal.reason;
+
+      const isBudgetExpired =
+        err?.code === AgentErrorCodes.WORKER_BUDGET_EXPIRED ||
+        err?.code === "WORKER_BUDGET_EXPIRED" ||
+        err?.message === "WORKER_BUDGET_EXPIRED" ||
+        (abortController.signal.aborted &&
+          ((reason instanceof Error && reason.message === "WORKER_BUDGET_EXPIRED") ||
+            reason === "WORKER_BUDGET_EXPIRED" ||
+            (reason as any)?.code === "WORKER_BUDGET_EXPIRED" ||
+            (reason as any)?.code === AgentErrorCodes.WORKER_BUDGET_EXPIRED));
+
+      const isTimeout =
+        !isBudgetExpired &&
+        (err?.code === AgentErrorCodes.AGENT_TIMEOUT ||
+          err?.message === "AGENT_TIMEOUT" ||
+          (abortController.signal.aborted &&
+            ((reason instanceof Error && reason.message === "AGENT_TIMEOUT") ||
+              reason === "AGENT_TIMEOUT" ||
+              (reason as any)?.code === AgentErrorCodes.AGENT_TIMEOUT)));
+
+      const isCancelled =
+        !isBudgetExpired &&
+        !isTimeout &&
+        (err?.code === AgentErrorCodes.AGENT_CANCELLED ||
+          err?.message === "AGENT_CANCELLED" ||
+          (abortController.signal.aborted &&
+            ((reason instanceof Error && reason.message === "AGENT_CANCELLED") ||
+              reason === "AGENT_CANCELLED" ||
+              (reason as any)?.code === AgentErrorCodes.AGENT_CANCELLED ||
+              err?.name === "AbortError")));
+
+      if (isBudgetExpired) {
+        // Interrupción cooperativa por agotamiento de presupuesto serverless:
+        // Mantener en estado reanudable ('queued' o 'running') y NUNCA marcar como terminal (cancelled, timeout, failed)
+        run.status = "queued";
+        run.updated_at = new Date().toISOString();
+
+        if (supabase) {
+          await (supabase.from("agent_runs") as any)
+            .update({
+              status: run.status,
+              updated_at: run.updated_at,
+            })
+            .eq("id", run.id);
+        }
+
+        const budgetError = new AgentError({
+          code: AgentErrorCodes.WORKER_BUDGET_EXPIRED,
+          message: "Presupuesto de ejecución serverless agotado; se suspende para checkpoint y reencolamiento.",
+          statusCode: 408,
+          agentId: agent.id,
+          runId: run.id,
+          retryable: true,
+        });
+
+        throw budgetError;
+      }
 
       run.status = isTimeout ? "timeout" : isCancelled ? "cancelled" : "failed";
-      run.error_code = err?.code || AgentErrorCodes.INTERNAL_AGENT_ERROR;
+      run.error_code = isTimeout
+        ? AgentErrorCodes.AGENT_TIMEOUT
+        : isCancelled
+        ? AgentErrorCodes.AGENT_CANCELLED
+        : (err?.code || AgentErrorCodes.INTERNAL_AGENT_ERROR);
       run.error_message = err?.message || "Fallo en la ejecución del agente.";
       run.completed_at = new Date().toISOString();
       run.updated_at = new Date().toISOString();
@@ -919,6 +1019,40 @@ export class AgentRuntime {
     if (["completed", "failed", "cancelled", "timeout"].includes(runRecord.status)) {
       return { run: runRecord, steps };
     }
+
+    if (runRecord.status === "queued") {
+      runRecord.status = "running";
+      runRecord.updated_at = new Date().toISOString();
+      await (supabase.from("agent_runs") as any)
+        .update({
+          status: "running",
+          updated_at: runRecord.updated_at,
+        })
+        .eq("id", agentRunId);
+    }
+
+    const isBudgetAbort = (signal?: AbortSignal) => {
+      if (!signal || !signal.aborted) return false;
+      const r = signal.reason;
+      return (
+        (r instanceof Error && r.message === "WORKER_BUDGET_EXPIRED") ||
+        r === "WORKER_BUDGET_EXPIRED" ||
+        (r as any)?.code === "WORKER_BUDGET_EXPIRED" ||
+        (r as any)?.code === AgentErrorCodes.WORKER_BUDGET_EXPIRED
+      );
+    };
+
+    try {
+      if (isBudgetAbort(externalSignal)) {
+        throw new AgentError({
+          code: AgentErrorCodes.WORKER_BUDGET_EXPIRED,
+          message: "Presupuesto de ejecución serverless agotado; se suspende para checkpoint y reencolamiento.",
+          statusCode: 408,
+          agentId: runRecord.agent_id,
+          runId: runRecord.id,
+          retryable: true,
+        });
+      }
 
     // 3. Obtener Agente asociado
     const { data: agentData, error: agErr } = await (supabase.from("agents") as any)
@@ -1264,6 +1398,74 @@ export class AgentRuntime {
       .eq("id", runRecord.id);
 
     return { run: runRecord, steps };
+    } catch (err: any) {
+      const isBudget =
+        err?.code === AgentErrorCodes.WORKER_BUDGET_EXPIRED ||
+        err?.code === "WORKER_BUDGET_EXPIRED" ||
+        err?.message === "WORKER_BUDGET_EXPIRED" ||
+        isBudgetAbort(externalSignal);
+
+      if (isBudget) {
+        runRecord.status = "queued";
+        runRecord.updated_at = new Date().toISOString();
+        if (supabase) {
+          await (supabase.from("agent_runs") as any)
+            .update({
+              status: "queued",
+              updated_at: runRecord.updated_at,
+            })
+            .eq("id", runRecord.id);
+        }
+        throw (err?.code === AgentErrorCodes.WORKER_BUDGET_EXPIRED
+          ? err
+          : new AgentError({
+              code: AgentErrorCodes.WORKER_BUDGET_EXPIRED,
+              message: "Presupuesto de ejecución serverless agotado; se suspende para checkpoint y reencolamiento.",
+              statusCode: 408,
+              agentId: runRecord.agent_id,
+              runId: runRecord.id,
+              retryable: true,
+            }));
+      }
+
+      const isTimeout =
+        err?.code === AgentErrorCodes.AGENT_TIMEOUT ||
+        err?.message === "AGENT_TIMEOUT" ||
+        (externalSignal?.aborted &&
+          ((externalSignal.reason instanceof Error &&
+            externalSignal.reason.message === AgentErrorCodes.AGENT_TIMEOUT) ||
+            externalSignal.reason === AgentErrorCodes.AGENT_TIMEOUT ||
+            (externalSignal.reason as any)?.code === AgentErrorCodes.AGENT_TIMEOUT));
+
+      const isCancelled =
+        !isTimeout &&
+        (err?.code === AgentErrorCodes.AGENT_CANCELLED ||
+          err?.message === "AGENT_CANCELLED" ||
+          externalSignal?.aborted);
+
+      runRecord.status = isTimeout ? "timeout" : isCancelled ? "cancelled" : "failed";
+      runRecord.error_code = isTimeout
+        ? AgentErrorCodes.AGENT_TIMEOUT
+        : isCancelled
+        ? AgentErrorCodes.AGENT_CANCELLED
+        : (err?.code || AgentErrorCodes.INTERNAL_AGENT_ERROR);
+      runRecord.error_message = err?.message || "Fallo al reanudar el agente.";
+      runRecord.completed_at = new Date().toISOString();
+      runRecord.updated_at = new Date().toISOString();
+
+      if (supabase) {
+        await (supabase.from("agent_runs") as any)
+          .update({
+            status: runRecord.status,
+            error_code: runRecord.error_code,
+            error_message: runRecord.error_message,
+            completed_at: runRecord.completed_at,
+          })
+          .eq("id", runRecord.id);
+      }
+
+      throw err;
+    }
   }
 
   /**

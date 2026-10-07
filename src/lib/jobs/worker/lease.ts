@@ -19,6 +19,8 @@ export class LeaseManager {
   private heartbeatIntervalMs: number;
   private leaseDurationSeconds: number;
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  private budgetTimer: NodeJS.Timeout | null = null;
+  private budgetAbortController: AbortController;
   private isAlive: boolean = true;
 
   constructor(options?: LeaseManagerOptions) {
@@ -27,14 +29,47 @@ export class LeaseManager {
     this.safetyMarginMs = options?.safetyMarginMs || 15000;
     this.heartbeatIntervalMs = options?.heartbeatIntervalMs || 15000;
     this.leaseDurationSeconds = options?.leaseDurationSeconds || 60;
+    this.budgetAbortController = new AbortController();
+
+    const budgetThresholdMs = Math.max(0, this.maxInvocationMs - this.safetyMarginMs);
+    this.budgetTimer = setTimeout(() => {
+      if (this.isAlive && !this.budgetAbortController.signal.aborted) {
+        this.budgetAbortController.abort(new Error("WORKER_BUDGET_EXPIRED"));
+      }
+    }, budgetThresholdMs);
+
+    if (typeof this.budgetTimer?.unref === "function") {
+      this.budgetTimer.unref();
+    }
   }
 
   /**
    * Indica si el presupuesto de tiempo de ejecución del worker está próximo a agotarse.
    */
   public isBudgetExpiring(): boolean {
+    if (this.budgetAbortController.signal.aborted) return true;
     const elapsed = Date.now() - this.startTime;
-    return elapsed >= this.maxInvocationMs - this.safetyMarginMs;
+    const expiring = elapsed >= this.maxInvocationMs - this.safetyMarginMs;
+    if (expiring && !this.budgetAbortController.signal.aborted) {
+      this.budgetAbortController.abort(new Error("WORKER_BUDGET_EXPIRED"));
+    }
+    return expiring;
+  }
+
+  /**
+   * Obtiene la señal de aborto que se dispara al alcanzarse el umbral de seguridad del presupuesto.
+   */
+  public getBudgetSignal(): AbortSignal {
+    return this.budgetAbortController.signal;
+  }
+
+  /**
+   * Dispara inmediatamente la señal de expiración del presupuesto (para pruebas o interrupción forzada).
+   */
+  public triggerBudgetExceeded() {
+    if (!this.budgetAbortController.signal.aborted) {
+      this.budgetAbortController.abort(new Error("WORKER_BUDGET_EXPIRED"));
+    }
   }
 
   /**
@@ -87,6 +122,10 @@ export class LeaseManager {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
+    }
+    if (this.budgetTimer) {
+      clearTimeout(this.budgetTimer);
+      this.budgetTimer = null;
     }
   }
 

@@ -139,12 +139,14 @@ export class EpisodicWorker {
             .eq("job_run_id", run.id)
             .maybeSingle();
 
+          const budgetSignal = leaseManager.getBudgetSignal();
+
           if (existingAgentRun) {
         // Recuperación y Reanudación de Agent Run existente
             executionResult = await defaultAgentRuntime.resumeInterruptedRun(
               existingAgentRun.id,
               supabase,
-              undefined,
+              budgetSignal,
               {
                 fencingToken: run.fencing_token,
                 workerId,
@@ -163,7 +165,8 @@ export class EpisodicWorker {
                 fencing_token: run.fencing_token,
                 worker_id: workerId,
               },
-              supabase
+              supabase,
+              budgetSignal
             );
           }
 
@@ -234,6 +237,29 @@ export class EpisodicWorker {
           };
         } catch (err: any) {
           leaseManager.stopHeartbeat();
+
+          // Interceptar interrupción por agotamiento de presupuesto serverless
+          const isBudgetExpired =
+            err?.code === "WORKER_BUDGET_EXPIRED" ||
+            err?.message === "WORKER_BUDGET_EXPIRED" ||
+            leaseManager.isBudgetExpiring();
+
+          if (isBudgetExpired) {
+            await defaultJobQueue.checkpointAndRequeue(run.id, workerId, run.fencing_token, supabase);
+            await jobSpan.end({
+              status: "completed",
+              attributes: { outcome: "checkpoint_requeued" },
+            });
+
+            return {
+              processed: true,
+              workerId,
+              runId: run.id,
+              status: "checkpoint_requeued",
+              message: "Presupuesto de ejecución alcanzado; run re-encolado para continuación.",
+            };
+          }
+
           const errorCode = err?.code || AgentErrorCodes.INTERNAL_AGENT_ERROR;
           const errorMessage = err?.message || "Fallo en la ejecución del job.";
 
