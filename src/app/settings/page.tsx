@@ -17,12 +17,13 @@ import {
   CheckCircle2,
   AlertCircle,
   Sparkles,
-  Layers,
   ArrowRight,
   Users,
   Shield,
   Check,
   Ban,
+  X,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { CANONICAL_PERMISSIONS_CATALOG, DEFAULT_ROLE_PERMISSIONS } from "@/lib/agents/governance/permissions";
@@ -37,6 +38,7 @@ export default function SettingsPage() {
   const [members, setMembers] = useState<any[]>([]);
   const [overrides, setOverrides] = useState<any[]>([]);
   const [selectedMember, setSelectedMember] = useState<any | null>(null);
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
 
   useEffect(() => {
     if (profile?.full_name) {
@@ -389,11 +391,14 @@ export default function SettingsPage() {
                   : "Nivel inicial para experimentación autónoma y pipelines de prueba."}
               </p>
             </div>
-            <Link href="/dashboard#upgrade">
-              <Button variant="outline" size="sm" rightIcon={<ArrowRight className="w-3.5 h-3.5" />}>
-                Gestionar Suscripción
-              </Button>
-            </Link>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsPlanModalOpen(true)}
+              rightIcon={<ArrowRight className="w-3.5 h-3.5" />}
+            >
+              Gestionar Suscripción
+            </Button>
           </div>
         </Card>
 
@@ -436,6 +441,122 @@ export default function SettingsPage() {
           <span>© 2026 Nexora Texter</span>
         </div>
       </div>
+
+      {/* MODAL GESTIONAR SUSCRIPCIÓN & CUOTAS */}
+      {isPlanModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-2xl rounded-2xl bg-texter-surface border border-texter-border shadow-2xl overflow-hidden p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-texter-border">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-texter-emerald" />
+                <div>
+                  <h2 className="text-base font-bold text-white">
+                    Gestión de Suscripción & Cuotas
+                  </h2>
+                  <p className="text-xs text-texter-text-muted">
+                    Límites operativos y beneficios de tu cuenta en NEXTEХ
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPlanModalOpen(false)}
+                className="text-texter-text-muted hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Banner de Estado Actual */}
+            <div className="p-4 rounded-xl bg-gradient-to-r from-texter-indigo/20 to-texter-cyan/20 border border-texter-indigo/40 flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono uppercase tracking-wider text-texter-cyan font-bold">
+                    Estado Actual
+                  </span>
+                  <Badge variant="indigo" size="sm" dot>
+                    PLAN {userPlan} ACTIVO
+                  </Badge>
+                </div>
+                <p className="text-sm font-bold text-white mt-1">
+                  5,000,000 Tokens Diarios • 2,000 Peticiones / Día
+                </p>
+                <p className="text-[11px] text-texter-text-muted mt-0.5">
+                  El cupo se restablece automáticamente todos los días a las 00:00 UTC.
+                </p>
+              </div>
+
+              <div className="text-right">
+                <span className="text-[11px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-2 py-1 rounded">
+                  ✓ Facturación Gestionada
+                </span>
+              </div>
+            </div>
+
+            {/* Comparativa de Niveles */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+              {/* FREE */}
+              <div className="p-4 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-2 opacity-75">
+                <span className="text-xs font-bold text-texter-text-muted uppercase">Nivel Free</span>
+                <p className="text-lg font-bold text-white font-mono">$0 <span className="text-xs text-texter-text-dim">/ mes</span></p>
+                <ul className="text-[11px] text-texter-text-muted space-y-1 font-mono">
+                  <li>• 150k tokens / día</li>
+                  <li>• 100 peticiones / día</li>
+                  <li>• Modelos básicos</li>
+                  <li>• Concurrencia: 2 máx</li>
+                </ul>
+              </div>
+
+              {/* PRO (ACTUAL) */}
+              <div className="p-4 rounded-xl bg-texter-indigo/10 border-2 border-texter-indigo space-y-2 relative shadow-lg">
+                <div className="absolute -top-2.5 right-3 bg-texter-indigo text-white text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                  Tu Plan
+                </div>
+                <span className="text-xs font-bold text-texter-cyan uppercase">Nivel PRO</span>
+                <p className="text-lg font-bold text-white font-mono">Activo <span className="text-xs text-texter-text-dim">(Asignado)</span></p>
+                <ul className="text-[11px] text-white space-y-1 font-mono">
+                  <li>✓ <strong>5,000,000 tokens</strong> / día</li>
+                  <li>✓ <strong>2,000 peticiones</strong> / día</li>
+                  <li>✓ Acceso a todos los modelos</li>
+                  <li>✓ Concurrencia: <strong>10 máx</strong></li>
+                  <li>✓ Pipelines durables & Cron</li>
+                </ul>
+              </div>
+
+              {/* ENTERPRISE */}
+              <div className="p-4 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-2">
+                <span className="text-xs font-bold text-texter-text-muted uppercase">Enterprise</span>
+                <p className="text-lg font-bold text-white font-mono">Personalizado</p>
+                <ul className="text-[11px] text-texter-text-muted space-y-1 font-mono">
+                  <li>• 50M tokens / día</li>
+                  <li>• 100,000 peticiones / día</li>
+                  <li>• Servidores e infraestructura dedicada</li>
+                  <li>• SLA 99.9% garantizado</li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Información de Soporte */}
+            <div className="p-3.5 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-texter-text-muted flex items-start gap-2">
+              <Zap className="w-4 h-4 text-texter-amber shrink-0 mt-0.5" />
+              <p className="leading-relaxed">
+                Tu cuenta tiene privilegios de inquilino <strong>PRO</strong> otorgados directamente en tu base de datos de Nexora Texter. Si necesitas una ampliación de cuota a escala Enterprise o integración personalizada, contacta al administrador del sistema.
+              </p>
+            </div>
+
+            <div className="pt-3 border-t border-texter-border flex items-center justify-end">
+              <Button
+                variant="primary"
+                size="md"
+                type="button"
+                onClick={() => setIsPlanModalOpen(false)}
+              >
+                Entendido
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardShell>
   );
 }
