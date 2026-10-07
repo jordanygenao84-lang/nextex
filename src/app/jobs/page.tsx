@@ -14,14 +14,9 @@ import {
   Play,
   Pause,
   Archive,
-  RefreshCw,
-  Clock,
   Terminal,
   AlertCircle,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  Calendar,
+  X,
 } from "lucide-react";
 
 export default function JobsPage() {
@@ -30,7 +25,7 @@ export default function JobsPage() {
   const [runs, setRuns] = useState<JobRun[]>([]);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [filter, setFilter] = useState("all");
+  const [agents, setAgents] = useState<{ id: string; name: string; model_id?: string }[]>([]);
 
   // Crear Job Modal
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -41,10 +36,12 @@ export default function JobsPage() {
   const [timeoutSeconds, setTimeoutSeconds] = useState(300);
   const [maxConcurrentRuns, setMaxConcurrentRuns] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
     if (workspace?.id) {
       loadJobs();
+      loadAgents();
     }
   }, [workspace?.id]);
 
@@ -63,6 +60,22 @@ export default function JobsPage() {
     }
   };
 
+  const loadAgents = async () => {
+    try {
+      const res = await fetch(`/api/agents?workspaceId=${workspace?.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        const loaded = data.agents || [];
+        setAgents(loaded);
+        if (loaded.length > 0) {
+          setAgentId((prev) => prev || loaded[0].id);
+        }
+      }
+    } catch {
+      // Fallback
+    }
+  };
+
   const loadJobRuns = async (jobId: string) => {
     try {
       const res = await fetch(`/api/jobs/${jobId}/runs`);
@@ -77,7 +90,20 @@ export default function JobsPage() {
 
   const handleCreateJob = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !input || !agentId) return;
+    setCreateError(null);
+
+    if (!name.trim()) {
+      setCreateError("El nombre del Job es obligatorio.");
+      return;
+    }
+    if (!agentId) {
+      setCreateError("Debes seleccionar un agente.");
+      return;
+    }
+    if (!input.trim()) {
+      setCreateError("El input o payload inicial es obligatorio.");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -87,23 +113,27 @@ export default function JobsPage() {
         body: JSON.stringify({
           workspaceId: workspace?.id,
           agentId,
-          name,
-          description,
-          input,
-          timeoutSeconds,
-          maxConcurrentRuns,
+          name: name.trim(),
+          description: description.trim() || undefined,
+          input: input.trim(),
+          timeoutSeconds: Number(timeoutSeconds),
+          maxConcurrentRuns: Number(maxConcurrentRuns),
         }),
       });
 
-      if (res.ok) {
-        setIsCreateOpen(false);
-        setName("");
-        setDescription("");
-        setInput("");
-        loadJobs();
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error?.message || "Error al crear el Job.");
       }
-    } catch {
-      // Error
+
+      setIsCreateOpen(false);
+      setName("");
+      setDescription("");
+      setInput("");
+      setCreateError(null);
+      loadJobs();
+    } catch (err: any) {
+      setCreateError(err?.message || "Ocurrió un error inesperado al crear el Job.");
     } finally {
       setIsSubmitting(false);
     }
@@ -163,6 +193,26 @@ export default function JobsPage() {
             Nuevo Job
           </Button>
         </div>
+
+        {/* Empty State si no hay jobs */}
+        {jobs.length === 0 && !isLoading && (
+          <Card variant="elevated" className="text-center py-12 space-y-3">
+            <Briefcase className="w-10 h-10 text-texter-indigo/60 mx-auto" />
+            <h3 className="text-sm font-semibold text-white">No hay Jobs creados</h3>
+            <p className="text-xs text-texter-text-muted max-w-sm mx-auto">
+              Crea tu primer Job autónomo durable para orquestar ejecuciones asíncronas con reintentos y control de concurrencia.
+            </p>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsCreateOpen(true)}
+              className="inline-flex items-center gap-1.5 mt-2"
+            >
+              <Plus className="w-4 h-4" />
+              Nuevo Job
+            </Button>
+          </Card>
+        )}
 
         {/* Lista de Jobs */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -291,6 +341,146 @@ export default function JobsPage() {
           </Card>
         )}
       </div>
+
+      {/* Modal Crear Job */}
+      {isCreateOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-xl rounded-2xl bg-texter-surface border border-texter-border shadow-2xl overflow-hidden p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-texter-border">
+              <div className="flex items-center gap-2">
+                <Briefcase className="w-5 h-5 text-texter-indigo" />
+                <h2 className="text-base font-bold text-white">
+                  Crear Nuevo Job Autónomo
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCreateOpen(false);
+                  setCreateError(null);
+                }}
+                className="text-texter-text-muted hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {createError && (
+              <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                <span>{createError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateJob} className="space-y-4">
+              <Input
+                label="Nombre del Job"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="ej: Sincronización de datos o auditoría"
+                required
+              />
+
+              <Input
+                label="Descripción (opcional)"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Breve propósito del trabajo"
+              />
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-texter-text-secondary">
+                  Agente Asignado
+                </label>
+                {agents.length === 0 ? (
+                  <div className="p-3 rounded-xl bg-texter-surface-subtle border border-amber-500/40 text-xs text-amber-300 flex items-center justify-between">
+                    <span>No tienes agentes creados en este workspace.</span>
+                    <a
+                      href="/agents"
+                      className="text-texter-indigo hover:underline font-semibold ml-2"
+                    >
+                      Crear Agente &rarr;
+                    </a>
+                  </div>
+                ) : (
+                  <select
+                    value={agentId}
+                    onChange={(e) => setAgentId(e.target.value)}
+                    required
+                    className="w-full p-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white outline-none font-mono"
+                  >
+                    <option value="" disabled>
+                      Selecciona un agente...
+                    </option>
+                    {agents.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} ({a.model_id || "default"})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-texter-text-secondary">
+                  Input / Payload Inicial del Job
+                </label>
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder='ej: { "task": "run_audit", "batch_size": 50 }'
+                  rows={3}
+                  required
+                  className="w-full p-3 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white placeholder:text-texter-text-dim outline-none resize-none font-mono"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Input
+                  label="Timeout (segundos)"
+                  type="number"
+                  value={timeoutSeconds.toString()}
+                  onChange={(e) => setTimeoutSeconds(Number(e.target.value))}
+                  min={10}
+                  max={3600}
+                />
+
+                <Input
+                  label="Concurrencia Máxima"
+                  type="number"
+                  value={maxConcurrentRuns.toString()}
+                  onChange={(e) => setMaxConcurrentRuns(Number(e.target.value))}
+                  min={1}
+                  max={10}
+                />
+              </div>
+
+              <div className="pt-3 border-t border-texter-border flex items-center justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="md"
+                  type="button"
+                  onClick={() => {
+                    setIsCreateOpen(false);
+                    setCreateError(null);
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
+                  type="submit"
+                  isLoading={isSubmitting}
+                  disabled={isSubmitting || agents.length === 0}
+                >
+                  Crear Job
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </DashboardShell>
   );
 }

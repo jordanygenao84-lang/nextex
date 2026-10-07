@@ -62,6 +62,42 @@ function getBaseUrl(env: DispatcherEnv): string {
   return parsed.toString().replace(/\/$/, "");
 }
 
+function sanitizeDiagnosticString(value: unknown, secret: string): string {
+  if (value === null || value === undefined) return "";
+  let str = String(value);
+  if (secret && secret.trim()) {
+    str = str.split(secret).join("[REDACTED_SECRET]");
+  }
+  str = str.replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [REDACTED]");
+  str = str.replace(/:\/\/([^:@]+):([^@]+)@/g, "://[REDACTED_AUTH]@");
+  str = str.replace(/(token|secret|password|key|auth)=[^&\s]+/gi, "$1=[REDACTED]");
+  str = str.replace(/cookie:\s*[^;\r\n]+/gi, "Cookie: [REDACTED]");
+  return str;
+}
+
+function extractSanitizedCause(cause: unknown, secret: string): unknown {
+  if (cause === null || cause === undefined) return undefined;
+  if (cause instanceof Error) {
+    const safeCause: Record<string, unknown> = {
+      name: cause.name,
+      message: sanitizeDiagnosticString(cause.message, secret),
+    };
+    if ("code" in cause && (cause as { code?: unknown }).code !== undefined) {
+      safeCause.code = (cause as { code: unknown }).code;
+    }
+    return safeCause;
+  }
+  if (typeof cause === "object") {
+    const causeObj = cause as Record<string, unknown>;
+    const safeCause: Record<string, unknown> = {};
+    if (typeof causeObj.name === "string") safeCause.name = causeObj.name;
+    if (causeObj.message !== undefined) safeCause.message = sanitizeDiagnosticString(causeObj.message, secret);
+    if (causeObj.code !== undefined) safeCause.code = causeObj.code;
+    return Object.keys(safeCause).length > 0 ? safeCause : sanitizeDiagnosticString(String(cause), secret);
+  }
+  return sanitizeDiagnosticString(cause, secret);
+}
+
 async function dispatchEndpoint(
   baseUrl: string,
   secret: string,
@@ -77,14 +113,14 @@ async function dispatchEndpoint(
   try {
     response = await fetch(`${baseUrl}${endpoint}`, {
       method: "POST",
-      redirect: "error",
+      redirect: "manual",
       headers: {
         Authorization: `Bearer ${secret}`,
         "Content-Type": "application/json",
       },
       signal: controller.signal,
     });
-  } catch {
+  } catch (error: unknown) {
     if (controller.signal.aborted) {
       console.error(
         JSON.stringify({
@@ -97,12 +133,44 @@ async function dispatchEndpoint(
       throw new Error(`Cron dispatch failed for ${endpoint} (timeout after ${timeoutMs}ms)`);
     }
 
-    console.error(
-      JSON.stringify({ event: "cron_dispatch_failed", endpoint, reason: "transport" }),
-    );
+    const err = error instanceof Error ? error : null;
+    const errorName =
+      err?.name ||
+      (typeof error === "object" && error !== null && "name" in error
+        ? String((error as { name: unknown }).name)
+        : "Error");
+    const rawMessage =
+      err?.message || (typeof error === "string" ? error : "Unknown transport error");
+    const errorMessage = sanitizeDiagnosticString(rawMessage, secret) || "Unknown transport error";
+    const cause = err && "cause" in err ? extractSanitizedCause(err.cause, secret) : undefined;
+
+    const logPayload: Record<string, unknown> = {
+      event: "cron_dispatch_failed",
+      endpoint,
+      reason: "transport",
+      name: errorName,
+      message: errorMessage,
+    };
+    if (cause !== undefined) {
+      logPayload.cause = cause;
+    }
+
+    console.error(JSON.stringify(logPayload));
     throw new Error(`Cron dispatch failed for ${endpoint} (transport)`);
   } finally {
     clearTimeout(timer);
+  }
+
+  if (response.status >= 300 && response.status < 400) {
+    console.error(
+      JSON.stringify({
+        event: "cron_dispatch_failed",
+        endpoint,
+        reason: "redirect",
+        status: response.status,
+      }),
+    );
+    throw new Error(`Cron dispatch failed for ${endpoint} (redirect HTTP ${response.status})`);
   }
 
   if (!response.ok) {

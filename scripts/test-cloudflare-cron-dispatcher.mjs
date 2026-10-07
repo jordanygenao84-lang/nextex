@@ -73,7 +73,7 @@ async function run() {
       "/api/internal/worker/tick",
     ]);
     assert.deepEqual(calls.map(({ init }) => init.method), ["POST", "POST"]);
-    assert.deepEqual(calls.map(({ init }) => init.redirect), ["error", "error"]);
+    assert.deepEqual(calls.map(({ init }) => init.redirect), ["manual", "manual"]);
     assert.deepEqual(
       calls.map(({ init }) => new Headers(init.headers).get("Content-Type")),
       ["application/json", "application/json"],
@@ -401,7 +401,42 @@ async function run() {
     ]);
   }
 
-  console.log("PASS: Cloudflare cron dispatcher contract (10/10 test blocks passed)");
+  // Test 11: Explicit rejection of HTTP redirects (301, 302, 307, 308) without following
+  {
+    for (const redirectStatus of [301, 302, 307, 308]) {
+      const calls = [];
+      let thrown;
+      const output = await captureOutput(() =>
+        withFetch(async (url, init) => {
+          calls.push({ url: pathname(url), redirect: init.redirect });
+          return new Response(null, {
+            status: redirectStatus,
+            headers: { Location: "https://evil.example/redirect" },
+          });
+        }, async () => {
+          try {
+            await dispatcher.scheduled(event, env);
+          } catch (error) {
+            thrown = error;
+          }
+        }),
+      );
+
+      assert.ok(thrown, `redirect ${redirectStatus} must reject the scheduled invocation`);
+      assert.match(
+        thrown.message,
+        new RegExp(`Cron dispatch failed for /api/internal/scheduler/tick \\(redirect HTTP ${redirectStatus}\\)`),
+        `expected explicit redirect error for status ${redirectStatus}`,
+      );
+      assert.deepEqual(calls.map(({ url }) => url), ["/api/internal/scheduler/tick"], "worker must NOT be called on redirect");
+      assert.equal(calls[0].redirect, "manual", "fetch must use redirect: 'manual'");
+      assert.ok(output.includes(`"reason":"redirect"`), "structured log must report reason: redirect");
+      assert.ok(output.includes(`"status":${redirectStatus}`), `structured log must report status: ${redirectStatus}`);
+      assert.ok(!`${output}\n${thrown}`.includes(secret), "CRON_SECRET must not appear in output or error");
+    }
+  }
+
+  console.log("PASS: Cloudflare cron dispatcher contract (11/11 test blocks passed)");
 }
 
 run().catch((error) => {
