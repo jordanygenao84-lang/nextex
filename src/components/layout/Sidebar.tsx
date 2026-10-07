@@ -19,6 +19,7 @@ import {
   X,
   Loader2,
   Bot,
+  Briefcase,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Logo } from "@/components/ui/Logo";
@@ -66,18 +67,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       name: "Tareas & Jobs",
-      href: "/dashboard#jobs",
-      icon: Cpu,
-      badge: "5 activos",
+      href: "/jobs",
+      icon: Briefcase,
+      badge: "Durable",
     },
     {
       name: "Automatizaciones",
-      href: "/dashboard#automations",
+      href: "/automations",
       icon: Workflow,
     },
     {
       name: "Herramientas e IA",
-      href: "/dashboard#tools",
+      href: "/integrations",
       icon: Layers,
     },
   ];
@@ -85,7 +86,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const secondaryNav = [
     {
       name: "Seguridad & RLS",
-      href: "/dashboard#security",
+      href: "/control-plane",
       icon: ShieldCheck,
     },
     {

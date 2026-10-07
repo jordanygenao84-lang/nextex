@@ -16,7 +16,7 @@ export const QuickActions: React.FC = () => {
     {
       title: "Diseñar Pipeline de Automatización",
       desc: "Conecta fuentes de datos, triggers y modelos de IA",
-      href: "/dashboard#new-pipeline",
+      href: "/automations",
       icon: Workflow,
       color: "text-texter-cyan",
       border: "hover:border-cyan-500/40",
@@ -24,7 +24,7 @@ export const QuickActions: React.FC = () => {
     {
       title: "Auditoría de Políticas de Supabase",
       desc: "Verifica permisos RBAC y aislamiento de datos por usuario",
-      href: "/dashboard#audit",
+      href: "/control-plane/audit",
       icon: ShieldAlert,
       color: "text-texter-emerald",
       border: "hover:border-emerald-500/40",
