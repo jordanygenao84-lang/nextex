@@ -26,6 +26,7 @@ export default function JobsPage() {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [agents, setAgents] = useState<{ id: string; name: string; model_id?: string }[]>([]);
+  const [runningJobId, setRunningJobId] = useState<string | null>(null);
 
   // Crear Job Modal
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -126,6 +127,11 @@ export default function JobsPage() {
         throw new Error(data.error?.message || "Error al crear el Job.");
       }
 
+      // Activar automáticamente el job recién creado para que quede listo para ejecutarse
+      if (data.job?.id && data.job?.status !== "active") {
+        await fetch(`/api/jobs/${data.job.id}/activate`, { method: "POST" });
+      }
+
       setIsCreateOpen(false);
       setName("");
       setDescription("");
@@ -139,14 +145,23 @@ export default function JobsPage() {
     }
   };
 
-  const handleTriggerRun = async (jobId: string) => {
+  const handleTriggerRun = async (job: Job) => {
+    setRunningJobId(job.id);
     try {
-      const res = await fetch(`/api/jobs/${jobId}/run`, { method: "POST" });
+      // Si el job no está activo, activarlo automáticamente antes de disparar el run
+      if (job.status !== "active") {
+        await fetch(`/api/jobs/${job.id}/activate`, { method: "POST" });
+        await loadJobs();
+      }
+      const res = await fetch(`/api/jobs/${job.id}/run`, { method: "POST" });
       if (res.ok) {
-        loadJobRuns(jobId);
+        setSelectedJob(job);
+        loadJobRuns(job.id);
       }
     } catch {
       // Error
+    } finally {
+      setRunningJobId(null);
     }
   };
 
@@ -246,18 +261,38 @@ export default function JobsPage() {
               </div>
 
               <div className="flex items-center justify-between pt-2 border-t border-texter-border">
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1.5">
                   {job.status === "active" ? (
-                    <Button variant="ghost" size="sm" onClick={() => handleStatusChange(job.id, "pause")} title="Pausar Job">
-                      <Pause className="w-3.5 h-3.5" />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleStatusChange(job.id, "pause")}
+                      className="text-xs text-texter-text-muted hover:text-white flex items-center gap-1"
+                      title="Pausar Job"
+                    >
+                      <Pause className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Pausar</span>
                     </Button>
                   ) : (
-                    <Button variant="ghost" size="sm" onClick={() => handleStatusChange(job.id, "activate")} title="Activar Job">
-                      <Play className="w-3.5 h-3.5 text-texter-success" />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleStatusChange(job.id, "activate")}
+                      className="text-xs text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 flex items-center gap-1"
+                      title="Activar Job"
+                    >
+                      <Play className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Activar</span>
                     </Button>
                   )}
-                  <Button variant="ghost" size="sm" onClick={() => handleStatusChange(job.id, "archive")} title="Archivar Job">
-                    <Archive className="w-3.5 h-3.5 text-texter-text-dim" />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleStatusChange(job.id, "archive")}
+                    className="text-xs text-texter-text-dim hover:text-rose-400"
+                    title="Archivar Job"
+                  >
+                    <Archive className="w-3.5 h-3.5" />
                   </Button>
                 </div>
 
@@ -275,12 +310,13 @@ export default function JobsPage() {
                   <Button
                     variant="primary"
                     size="sm"
-                    disabled={job.status !== "active"}
-                    onClick={() => handleTriggerRun(job.id)}
+                    disabled={job.status === "archived" || runningJobId === job.id}
+                    isLoading={runningJobId === job.id}
+                    onClick={() => handleTriggerRun(job)}
                     className="flex items-center gap-1"
                   >
                     <Play className="w-3 h-3" />
-                    Ejecutar
+                    {job.status === "active" ? "Ejecutar" : "Activar y Ejecutar"}
                   </Button>
                 </div>
               </div>
