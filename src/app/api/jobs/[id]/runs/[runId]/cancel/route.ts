@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { defaultPermissionEngine } from "@/lib/agents/governance/permissions";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +40,8 @@ export async function POST(
       );
     }
 
-    const { data: updated, error } = await (supabase.from("job_runs") as any)
+    const serviceClient = createServiceClient();
+    const { data: updated, error } = await (serviceClient.from("job_runs") as any)
       .update({
         status: "cancelled",
         completed_at: new Date().toISOString(),

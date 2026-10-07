@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { defaultJobEngine } from "@/lib/jobs/engine";
 import { defaultPermissionEngine } from "@/lib/agents/governance/permissions";
 
@@ -24,7 +24,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: { code: "PERMISSION_DENIED", message: canRun.reason, statusCode: 403 } }, { status: 403 });
     }
 
-    const run = await defaultJobEngine.triggerManualRun(params.id, job.workspace_id, user.id, supabase);
+    // La tabla job_runs no permite INSERT directo a clientes authenticated por política RLS.
+    // Tras validar permisos y sesión, el encolamiento durable se realiza mediante serviceClient.
+    const serviceClient = createServiceClient();
+    const run = await defaultJobEngine.triggerManualRun(params.id, job.workspace_id, user.id, serviceClient);
     return NextResponse.json({ run }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } }, { status: 500 });

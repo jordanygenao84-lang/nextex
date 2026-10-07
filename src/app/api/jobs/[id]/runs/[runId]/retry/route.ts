@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { defaultPermissionEngine } from "@/lib/agents/governance/permissions";
 
 export const dynamic = "force-dynamic";
@@ -33,8 +33,9 @@ export async function POST(
       return NextResponse.json({ error: { code: "PERMISSION_DENIED", message: canRun.reason, statusCode: 403 } }, { status: 403 });
     }
 
-    // Iniciar nuevo run conservando linaje
-    const { data: newRun, error } = await (supabase.from("job_runs") as any)
+    // Iniciar nuevo run conservando linaje usando serviceClient
+    const serviceClient = createServiceClient();
+    const { data: newRun, error } = await (serviceClient.from("job_runs") as any)
       .insert({
         workspace_id: run.workspace_id,
         job_id: run.job_id,
