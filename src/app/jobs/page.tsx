@@ -16,7 +16,9 @@ import {
   Archive,
   Terminal,
   AlertCircle,
+  CheckCircle2,
   X,
+  Pencil,
 } from "lucide-react";
 
 export default function JobsPage() {
@@ -27,6 +29,8 @@ export default function JobsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [agents, setAgents] = useState<{ id: string; name: string; model_id?: string }[]>([]);
   const [runningJobId, setRunningJobId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
   // Crear Job Modal
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -38,6 +42,16 @@ export default function JobsPage() {
   const [maxConcurrentRuns, setMaxConcurrentRuns] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // Editar Job Modal
+  const [editingJob, setEditingJob] = useState<Job | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editInput, setEditInput] = useState("");
+  const [editTimeoutSeconds, setEditTimeoutSeconds] = useState(300);
+  const [editMaxConcurrentRuns, setEditMaxConcurrentRuns] = useState(1);
+  const [isEditSubmitting, setIsEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   useEffect(() => {
     if (workspace?.id) {
@@ -127,7 +141,7 @@ export default function JobsPage() {
         throw new Error(data.error?.message || "Error al crear el Job.");
       }
 
-      // Activar automáticamente el job recién creado para que quede listo para ejecutarse
+      // Activar automáticamente el job recién creado
       if (data.job?.id && data.job?.status !== "active") {
         await fetch(`/api/jobs/${data.job.id}/activate`, { method: "POST" });
       }
@@ -137,6 +151,7 @@ export default function JobsPage() {
       setDescription("");
       setInput("");
       setCreateError(null);
+      setActionSuccess(`Job "${name.trim()}" creado y activado exitosamente.`);
       loadJobs();
     } catch (err: any) {
       setCreateError(err?.message || "Ocurrió un error inesperado al crear el Job.");
@@ -145,21 +160,83 @@ export default function JobsPage() {
     }
   };
 
+  const handleOpenEdit = (job: Job) => {
+    setEditingJob(job);
+    setEditName(job.name);
+    setEditDescription(job.description || "");
+    setEditInput(job.input);
+    setEditTimeoutSeconds(job.timeout_seconds);
+    setEditMaxConcurrentRuns(job.max_concurrent_runs);
+    setEditError(null);
+  };
+
+  const handleUpdateJob = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingJob) return;
+    setEditError(null);
+
+    if (!editName.trim()) {
+      setEditError("El nombre del Job es obligatorio.");
+      return;
+    }
+    if (!editInput.trim()) {
+      setEditError("El input o payload es obligatorio.");
+      return;
+    }
+
+    setIsEditSubmitting(true);
+    try {
+      const res = await fetch(`/api/jobs/${editingJob.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editName.trim(),
+          description: editDescription.trim() || null,
+          input: editInput.trim(),
+          timeout_seconds: Number(editTimeoutSeconds),
+          max_concurrent_runs: Number(editMaxConcurrentRuns),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error?.message || "Error al actualizar el Job.");
+      }
+
+      setEditingJob(null);
+      setActionSuccess(`Job "${editName.trim()}" actualizado correctamente.`);
+      loadJobs();
+    } catch (err: any) {
+      setEditError(err?.message || "Ocurrió un error al actualizar el Job.");
+    } finally {
+      setIsEditSubmitting(false);
+    }
+  };
+
   const handleTriggerRun = async (job: Job) => {
     setRunningJobId(job.id);
+    setActionError(null);
+    setActionSuccess(null);
     try {
-      // Si el job no está activo, activarlo automáticamente antes de disparar el run
       if (job.status !== "active") {
-        await fetch(`/api/jobs/${job.id}/activate`, { method: "POST" });
+        const actRes = await fetch(`/api/jobs/${job.id}/activate`, { method: "POST" });
+        if (!actRes.ok) {
+          const actData = await actRes.json();
+          throw new Error(actData.error?.message || "No se pudo activar el Job.");
+        }
         await loadJobs();
       }
       const res = await fetch(`/api/jobs/${job.id}/run`, { method: "POST" });
-      if (res.ok) {
-        setSelectedJob(job);
-        loadJobRuns(job.id);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error?.message || "Error al disparar la ejecución del Job.");
       }
-    } catch {
-      // Error
+
+      setSelectedJob(job);
+      await loadJobRuns(job.id);
+      setActionSuccess(`Ejecución disparada exitosamente para "${job.name}".`);
+    } catch (err: any) {
+      setActionError(err?.message || "Ocurrió un error al ejecutar el Job.");
     } finally {
       setRunningJobId(null);
     }
@@ -170,6 +247,7 @@ export default function JobsPage() {
       const res = await fetch(`/api/jobs/${jobId}/${action}`, { method: "POST" });
       if (res.ok) {
         loadJobs();
+        setActionSuccess(`Job ${action === "activate" ? "activado" : action === "pause" ? "pausado" : "archivado"} con éxito.`);
       }
     } catch {
       // Error
@@ -209,7 +287,32 @@ export default function JobsPage() {
           </Button>
         </div>
 
-        {/* Empty State si no hay jobs */}
+        {/* Notificaciones */}
+        {actionSuccess && (
+          <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 flex items-center justify-between">
+            <span className="flex items-center gap-2 font-mono">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              {actionSuccess}
+            </span>
+            <button onClick={() => setActionSuccess(null)} className="text-emerald-400 hover:text-white">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {actionError && (
+          <div className="p-3.5 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-center justify-between">
+            <span className="flex items-center gap-2 font-mono">
+              <AlertCircle className="w-4 h-4 text-texter-rose shrink-0" />
+              {actionError}
+            </span>
+            <button onClick={() => setActionError(null)} className="text-rose-400 hover:text-white">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Empty State */}
         {jobs.length === 0 && !isLoading && (
           <Card variant="elevated" className="text-center py-12 space-y-3">
             <Briefcase className="w-10 h-10 text-texter-indigo/60 mx-auto" />
@@ -232,36 +335,38 @@ export default function JobsPage() {
         {/* Lista de Jobs */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {jobs.map((job) => (
-            <Card key={job.id} variant="elevated" className="space-y-3">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="font-semibold text-white text-base">{job.name}</h3>
-                  <p className="text-xs text-texter-text-muted line-clamp-1">{job.description || "Sin descripción"}</p>
+            <Card key={job.id} variant="elevated" className="space-y-3 flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-semibold text-white text-base">{job.name}</h3>
+                    <p className="text-xs text-texter-text-muted line-clamp-1">{job.description || "Sin descripción"}</p>
+                  </div>
+                  {getStatusBadge(job.status)}
                 </div>
-                {getStatusBadge(job.status)}
+
+                <div className="text-xs font-mono bg-texter-surface-subtle p-2 rounded border border-texter-border space-y-1">
+                  <div className="flex justify-between text-texter-text-dim">
+                    <span>Trigger:</span>
+                    <span className="text-white capitalize">{job.trigger_type}</span>
+                  </div>
+                  <div className="flex justify-between text-texter-text-dim">
+                    <span>Timeout:</span>
+                    <span className="text-white">{job.timeout_seconds}s</span>
+                  </div>
+                  <div className="flex justify-between text-texter-text-dim">
+                    <span>Concurrencia:</span>
+                    <span className="text-white">{job.max_concurrent_runs} máx</span>
+                  </div>
+                  <div className="flex justify-between text-texter-text-dim">
+                    <span>Versión Config:</span>
+                    <span className="text-texter-cyan">v{job.configuration_version}</span>
+                  </div>
+                </div>
               </div>
 
-              <div className="text-xs font-mono bg-texter-surface-subtle p-2 rounded border border-texter-border space-y-1">
-                <div className="flex justify-between text-texter-text-dim">
-                  <span>Trigger:</span>
-                  <span className="text-white capitalize">{job.trigger_type}</span>
-                </div>
-                <div className="flex justify-between text-texter-text-dim">
-                  <span>Timeout:</span>
-                  <span className="text-white">{job.timeout_seconds}s</span>
-                </div>
-                <div className="flex justify-between text-texter-text-dim">
-                  <span>Concurrencia:</span>
-                  <span className="text-white">{job.max_concurrent_runs} máx</span>
-                </div>
-                <div className="flex justify-between text-texter-text-dim">
-                  <span>Versión Config:</span>
-                  <span className="text-texter-cyan">v{job.configuration_version}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-2 border-t border-texter-border">
-                <div className="flex items-center gap-1.5">
+              <div className="flex items-center justify-between pt-2 border-t border-texter-border mt-3">
+                <div className="flex items-center gap-1">
                   {job.status === "active" ? (
                     <Button
                       variant="ghost"
@@ -285,6 +390,18 @@ export default function JobsPage() {
                       <span>Activar</span>
                     </Button>
                   )}
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleOpenEdit(job)}
+                    className="text-xs text-texter-cyan hover:text-white flex items-center gap-1"
+                    title="Editar Job"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    <span>Editar</span>
+                  </Button>
+
                   <Button
                     variant="ghost"
                     size="sm"
@@ -511,6 +628,109 @@ export default function JobsPage() {
                   disabled={isSubmitting || agents.length === 0}
                 >
                   Crear Job
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Editar Job */}
+      {editingJob && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-xl rounded-2xl bg-texter-surface border border-texter-border shadow-2xl overflow-hidden p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-texter-border">
+              <div className="flex items-center gap-2">
+                <Pencil className="w-5 h-5 text-texter-cyan" />
+                <div>
+                  <h2 className="text-base font-bold text-white">
+                    Modificar Configuración de Job
+                  </h2>
+                  <p className="text-xs text-texter-text-muted font-mono">
+                    ID: {editingJob.id.substring(0, 8)}... • Versión actual: v{editingJob.configuration_version}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingJob(null)}
+                className="text-texter-text-muted hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {editError && (
+              <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                <span>{editError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateJob} className="space-y-4">
+              <Input
+                label="Nombre del Job"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                required
+              />
+
+              <Input
+                label="Descripción (opcional)"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                placeholder="Breve propósito del trabajo"
+              />
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-texter-text-secondary">
+                  Input / Payload Inicial del Job
+                </label>
+                <textarea
+                  value={editInput}
+                  onChange={(e) => setEditInput(e.target.value)}
+                  rows={4}
+                  required
+                  className="w-full p-3 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white placeholder:text-texter-text-dim outline-none resize-none font-mono"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Input
+                  label="Timeout (segundos)"
+                  type="number"
+                  value={editTimeoutSeconds.toString()}
+                  onChange={(e) => setEditTimeoutSeconds(Number(e.target.value))}
+                  min={10}
+                  max={3600}
+                />
+
+                <Input
+                  label="Concurrencia Máxima"
+                  type="number"
+                  value={editMaxConcurrentRuns.toString()}
+                  onChange={(e) => setEditMaxConcurrentRuns(Number(e.target.value))}
+                  min={1}
+                  max={10}
+                />
+              </div>
+
+              <div className="pt-3 border-t border-texter-border flex items-center justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="md"
+                  type="button"
+                  onClick={() => setEditingJob(null)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
+                  type="submit"
+                  isLoading={isEditSubmitting}
+                >
+                  Guardar Modificaciones
                 </Button>
               </div>
             </form>

@@ -27,6 +27,7 @@ import {
   Loader2,
   Clock,
   ShieldAlert,
+  Pencil,
 } from "lucide-react";
 
 export default function AgentsPage() {
@@ -34,6 +35,69 @@ export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isLoading, setIsLoading] = useState(true);
+
+  // Estados para modal de edición
+  const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editInstructions, setEditInstructions] = useState("");
+  const [editModelId, setEditModelId] = useState("nextex-simulation");
+  const [editMaxSteps, setEditMaxSteps] = useState(10);
+  const [editMaxTokens, setEditMaxTokens] = useState(8000);
+  const [editTimeoutSeconds, setEditTimeoutSeconds] = useState(60);
+  const [isEditSubmitting, setIsEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const handleOpenEditAgent = (agent: Agent) => {
+    setEditingAgent(agent);
+    setEditName(agent.name);
+    setEditDescription(agent.description || "");
+    setEditInstructions(agent.system_instructions || "");
+    setEditModelId(agent.model_id);
+    setEditMaxSteps(agent.max_steps);
+    setEditMaxTokens(agent.max_tokens);
+    setEditTimeoutSeconds(agent.timeout_seconds);
+    setEditError(null);
+  };
+
+  const handleUpdateAgent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAgent) return;
+    if (!editName.trim() || !editInstructions.trim()) {
+      setEditError("El nombre y las instrucciones del sistema son obligatorios.");
+      return;
+    }
+
+    setIsEditSubmitting(true);
+    setEditError(null);
+    try {
+      const res = await fetch(`/api/agents/${editingAgent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editName.trim(),
+          description: editDescription.trim() || null,
+          system_instructions: editInstructions.trim(),
+          model_id: editModelId,
+          max_steps: editMaxSteps,
+          max_tokens: editMaxTokens,
+          timeout_seconds: editTimeoutSeconds,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error?.message || "No se pudo actualizar el agente.");
+      }
+
+      setAgents((prev) => prev.map((a) => (a.id === editingAgent.id ? { ...a, ...json.agent } : a)));
+      setEditingAgent(null);
+    } catch (err: any) {
+      setEditError(err?.message || "Error inesperado al actualizar el agente.");
+    } finally {
+      setIsEditSubmitting(false);
+    }
+  };
 
   // Estados para modal de creación
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -459,21 +523,33 @@ export default function AgentsPage() {
                         )}
                       </button>
 
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={!isActive}
-                        onClick={() => {
-                          setActiveAgent(agent);
-                          setCurrentRun(null);
-                          setCurrentSteps([]);
-                          setRunError(null);
-                          setRunInput("");
-                        }}
-                        rightIcon={<ChevronRight className="w-3.5 h-3.5" />}
-                      >
-                        Ejecutar Run
-                      </Button>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleOpenEditAgent(agent)}
+                          className="text-xs text-texter-cyan hover:text-white flex items-center gap-1"
+                          title="Editar Agente"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          <span>Editar</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={!isActive}
+                          onClick={() => {
+                            setActiveAgent(agent);
+                            setCurrentRun(null);
+                            setCurrentSteps([]);
+                            setRunError(null);
+                            setRunInput("");
+                          }}
+                          rightIcon={<ChevronRight className="w-3.5 h-3.5" />}
+                        >
+                          Ejecutar Run
+                        </Button>
+                      </div>
                     </div>
                   </Card>
                 );
@@ -745,6 +821,136 @@ export default function AgentsPage() {
                 </p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDITAR AGENTE */}
+      {editingAgent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-xl rounded-2xl bg-texter-surface border border-texter-border shadow-2xl overflow-hidden p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-texter-border">
+              <div className="flex items-center gap-2">
+                <Pencil className="w-5 h-5 text-texter-cyan" />
+                <div>
+                  <h2 className="text-base font-bold text-white">
+                    Modificar Agente: {editingAgent.name}
+                  </h2>
+                  <p className="text-xs text-texter-text-muted font-mono">
+                    ID: {editingAgent.id.substring(0, 8)}... • Estado: {editingAgent.status.toUpperCase()}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingAgent(null)}
+                className="text-texter-text-muted hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {editError && (
+              <div className="p-3.5 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                <span>{editError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateAgent} className="space-y-4">
+              <Input
+                label="Nombre del Agente"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                required
+              />
+
+              <Input
+                label="Descripción funcional"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                placeholder="Breve propósito del agente"
+              />
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-texter-text-secondary">
+                  Instrucciones del Sistema (System Prompt)
+                </label>
+                <textarea
+                  value={editInstructions}
+                  onChange={(e) => setEditInstructions(e.target.value)}
+                  rows={5}
+                  required
+                  className="w-full p-3 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white placeholder:text-texter-text-dim outline-none resize-none leading-relaxed font-mono"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-texter-text-secondary">
+                    Modelo de Inferencia
+                  </label>
+                  <select
+                    value={editModelId}
+                    onChange={(e) => setEditModelId(e.target.value)}
+                    className="w-full p-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white outline-none font-mono"
+                  >
+                    {CANONICAL_MODELS.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.displayName} ({m.provider})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <Input
+                  label="Límite de Pasos Operativos"
+                  type="number"
+                  value={editMaxSteps.toString()}
+                  onChange={(e) => setEditMaxSteps(Number(e.target.value))}
+                  min={1}
+                  max={50}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Input
+                  label="Tokens Máximos por Run"
+                  type="number"
+                  value={editMaxTokens.toString()}
+                  onChange={(e) => setEditMaxTokens(Number(e.target.value))}
+                  min={1000}
+                  max={128000}
+                />
+
+                <Input
+                  label="Timeout (segundos)"
+                  type="number"
+                  value={editTimeoutSeconds.toString()}
+                  onChange={(e) => setEditTimeoutSeconds(Number(e.target.value))}
+                  min={5}
+                  max={300}
+                />
+              </div>
+
+              <div className="pt-3 border-t border-texter-border flex items-center justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="md"
+                  type="button"
+                  onClick={() => setEditingAgent(null)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
+                  type="submit"
+                  isLoading={isEditSubmitting}
+                >
+                  Guardar Modificaciones
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}
