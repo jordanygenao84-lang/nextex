@@ -168,7 +168,7 @@ export default function JobDetailPage() {
                         Linaje de Agente: {r.agent_runs[0].agent_id || "N/A"} (Run ID: {r.agent_runs[0].id.slice(0, 8)})
                       </div>
                       <div className="flex flex-wrap gap-2 pt-1">
-                        {(r.agent_runs[0].agent_steps || []).map((step: any) => (
+                        {(r.agent_runs[0]?.agent_run_steps || []).map((step: any) => (
                           <div
                             key={step.id}
                             className="px-2.5 py-1 rounded bg-texter-surface border border-texter-border flex items-center gap-2 text-[10px]"

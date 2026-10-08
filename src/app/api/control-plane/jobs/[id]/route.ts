@@ -56,7 +56,7 @@ export async function GET(
 
     // Consultar Job Runs con Agent Runs y Steps
     const { data: runs } = await (supabase.from("job_runs") as any)
-      .select("*, agent_runs(*, agent_steps(*))")
+      .select("*, agent_runs(*, agent_run_steps(*))")
       .eq("job_id", job.id)
       .order("created_at", { ascending: false })
       .limit(20);

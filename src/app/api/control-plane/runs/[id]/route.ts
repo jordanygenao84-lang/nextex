@@ -34,7 +34,7 @@ export async function GET(
     }
 
     const { data: run, error: runErr } = await (supabase.from("job_runs") as any)
-      .select("*, jobs(id, name, automation_id), workers(id, worker_identity, instance_identity)")
+      .select("*, jobs(id, name, automation_id)")
       .eq("id", params.id)
       .maybeSingle();
 
@@ -55,7 +55,7 @@ export async function GET(
 
     // Consultar Agent Runs vinculados
     const { data: agentRuns } = await (supabase.from("agent_runs") as any)
-      .select("*, agent_steps(*)")
+      .select("*, agent_run_steps(*)")
       .eq("job_run_id", run.id);
 
     // Consultar Auditoría histórica del run
@@ -81,7 +81,7 @@ export async function GET(
     }
 
     // Agregar pasos del agente
-    const steps = (agentRuns || []).flatMap((ar: any) => ar.agent_steps || []);
+    const steps = (agentRuns || []).flatMap((ar: any) => ar.agent_run_steps || []);
     steps.sort((a: any, b: any) => a.step_number - b.step_number);
 
     for (const st of steps) {

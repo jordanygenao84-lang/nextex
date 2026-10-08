@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
     const status = req.nextUrl.searchParams.get("status");
 
     let query = (supabase.from("approval_requests") as any)
-      .select("*, agent_runs(id, job_run_id, agent_id), agent_steps(id, step_number, tool_id)")
+      .select("*, agent_runs(id, job_run_id, agent_id), agent_run_steps(id, step_number, tool_id)")
       .eq("workspace_id", member.workspace_id);
 
     if (status) query = query.eq("status", status);
