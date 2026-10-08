@@ -104,26 +104,26 @@ export default function ChatPage() {
 
           if (dataStr === "[DONE]") break;
 
+          let parsed: any;
           try {
-            const parsed = JSON.parse(dataStr);
-            if (parsed.error) {
-              throw new Error(parsed.error.message || "Error devuelto por el gateway.");
-            }
-            if (parsed.delta) {
-              accumulatedContent += parsed.delta;
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMsgId
-                    ? { ...msg, content: accumulatedContent }
-                    : msg
-                )
-              );
-            }
-          } catch (jsonErr: any) {
-            // Ignorar eventos intermedios que no sean error fatal
-            if (jsonErr?.message?.includes("gateway")) {
-              throw jsonErr;
-            }
+            parsed = JSON.parse(dataStr);
+          } catch {
+            continue;
+          }
+
+          if (parsed.error) {
+            throw new Error(parsed.error.message || "Error devuelto por el gateway de IA.");
+          }
+
+          if (parsed.delta) {
+            accumulatedContent += parsed.delta;
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMsgId
+                  ? { ...msg, content: accumulatedContent }
+                  : msg
+              )
+            );
           }
         }
       }

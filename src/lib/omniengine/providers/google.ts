@@ -43,15 +43,31 @@ export class GoogleGeminiProvider implements AIProvider {
     let systemInstruction: any = undefined;
     const contents: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = [];
 
+    const nonSystemMessages: ChatMessage[] = [];
     for (const msg of messages) {
       if (msg.role === "system") {
         systemInstruction = {
           parts: [{ text: msg.content }],
         };
+      } else if (msg.content && msg.content.trim().length > 0) {
+        nonSystemMessages.push(msg);
+      }
+    }
+
+    const firstUserIndex = nonSystemMessages.findIndex((m) => m.role === "user");
+    const validTurnMessages =
+      firstUserIndex !== -1 ? nonSystemMessages.slice(firstUserIndex) : nonSystemMessages;
+
+    for (const msg of validTurnMessages) {
+      const role = msg.role === "assistant" ? "model" : "user";
+      const text = msg.content.trim();
+
+      if (contents.length > 0 && contents[contents.length - 1].role === role) {
+        contents[contents.length - 1].parts.push({ text });
       } else {
         contents.push({
-          role: msg.role === "assistant" ? "model" : "user",
-          parts: [{ text: msg.content }],
+          role,
+          parts: [{ text }],
         });
       }
     }
@@ -245,33 +261,55 @@ export class GoogleGeminiProvider implements AIProvider {
           if (!trimmed || !trimmed.startsWith("data: ")) continue;
           const dataStr = trimmed.replace(/^data: /, "").trim();
 
+          let parsed: any;
           try {
-            const parsed = JSON.parse(dataStr);
-            const candidate = parsed.candidates?.[0];
-            const delta =
-              candidate?.content?.parts
-                ?.map((p: any) => p.text)
-                ?.join("") || "";
-
-            const usageMetadata = parsed.usageMetadata;
-            const usage = usageMetadata
-              ? {
-                  inputTokens: usageMetadata.promptTokenCount || 0,
-                  outputTokens: usageMetadata.candidatesTokenCount || 0,
-                  totalTokens: usageMetadata.totalTokenCount || 0,
-                }
-              : undefined;
-
-            if (delta || usage || candidate?.finishReason) {
-              yield {
-                id: reqId,
-                delta,
-                finishReason: candidate?.finishReason === "STOP" ? "stop" : undefined,
-                usage,
-              };
-            }
+            parsed = JSON.parse(dataStr);
           } catch {
-            // Ignorar líneas intermedias
+            continue;
+          }
+
+          if (parsed.error) {
+            throw new OmniEngineError({
+              code: OmniErrorCodes.PROVIDER_ERROR,
+              message: `Error de Google Gemini: ${parsed.error.message || JSON.stringify(parsed.error)}`,
+              statusCode: parsed.error.code || 400,
+              provider: this.id,
+              model: model.id,
+            });
+          }
+
+          if (parsed.promptFeedback?.blockReason) {
+            throw new OmniEngineError({
+              code: OmniErrorCodes.PROVIDER_ERROR,
+              message: `Gemini bloqueó la solicitud por seguridad (${parsed.promptFeedback.blockReason}).`,
+              statusCode: 400,
+              provider: this.id,
+              model: model.id,
+            });
+          }
+
+          const candidate = parsed.candidates?.[0];
+          const delta =
+            candidate?.content?.parts
+              ?.map((p: any) => p.text)
+              ?.join("") || "";
+
+          const usageMetadata = parsed.usageMetadata;
+          const usage = usageMetadata
+            ? {
+                inputTokens: usageMetadata.promptTokenCount || 0,
+                outputTokens: usageMetadata.candidatesTokenCount || 0,
+                totalTokens: usageMetadata.totalTokenCount || 0,
+              }
+            : undefined;
+
+          if (delta || usage || candidate?.finishReason) {
+            yield {
+              id: reqId,
+              delta,
+              finishReason: candidate?.finishReason === "STOP" ? "stop" : undefined,
+              usage,
+            };
           }
         }
       }
