@@ -7,7 +7,45 @@
 import { ModelMetadata, AIProviderId } from "../types";
 
 export const CANONICAL_MODELS: Omit<ModelMetadata, "status">[] = [
-  // --- GOOGLE GEMINI ---
+    // --- GOOGLE GEMINI ---
+  {
+    id: "gemini-2.0-flash",
+    provider: "google",
+    displayName: "Gemini 2.0 Flash",
+    family: "Gemini",
+    lifecycle: "active",
+    contextWindow: 1048576,
+    maxOutputTokens: 8192,
+    capabilities: ["streaming", "vision", "toolCalling", "structuredOutput"],
+    supportsStreaming: true,
+    supportsVision: true,
+    supportsToolCalling: true,
+    supportsStructuredOutput: true,
+    configurationRequirement: {
+      envKey: "GEMINI_API_KEY",
+      description: "API Key de Google AI Studio o Vertex AI",
+    },
+    recommendedFor: ["Velocidad extrema", "Respuestas en tiempo real", "Chat interactivo"],
+  },
+  {
+    id: "gemini-2.5-flash",
+    provider: "google",
+    displayName: "Gemini 2.5 Flash",
+    family: "Gemini",
+    lifecycle: "active",
+    contextWindow: 1048576,
+    maxOutputTokens: 8192,
+    capabilities: ["streaming", "vision", "toolCalling", "structuredOutput"],
+    supportsStreaming: true,
+    supportsVision: true,
+    supportsToolCalling: true,
+    supportsStructuredOutput: true,
+    configurationRequirement: {
+      envKey: "GEMINI_API_KEY",
+      description: "API Key de Google AI Studio o Vertex AI",
+    },
+    recommendedFor: ["Última generación", "Razonamiento rápido"],
+  },
   {
     id: "gemini-1.5-flash",
     provider: "google",

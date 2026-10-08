@@ -23,6 +23,17 @@ export class GoogleGeminiProvider implements AIProvider {
     return (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY)?.trim() || null;
   }
 
+  
+  private resolveModelId(modelId: string): string {
+    const aliases: Record<string, string> = {
+      "gemini-1.5-flash": "gemini-2.0-flash",
+      "gemini-1.5-flash-latest": "gemini-2.0-flash",
+      "gemini-1.5-pro": "gemini-2.5-pro",
+      "gemini-1.5-pro-latest": "gemini-2.5-pro",
+    };
+    return aliases[modelId] || modelId;
+  }
+
   public isConfigured(): boolean {
     return Boolean(this.getApiKey());
   }
@@ -97,7 +108,8 @@ export class GoogleGeminiProvider implements AIProvider {
     );
 
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:generateContent?key=${apiKey}`;
+      const resolvedModel = this.resolveModelId(model.id);
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${resolvedModel}:generateContent?key=${apiKey}`;
 
       const response = await fetch(url, {
         method: "POST",
@@ -213,7 +225,8 @@ export class GoogleGeminiProvider implements AIProvider {
     const apiKey = this.getApiKey()!;
     const { systemInstruction, contents } = this.formatContents(messages);
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:streamGenerateContent?alt=sse&key=${apiKey}`;
+    const resolvedModel = this.resolveModelId(model.id);
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${resolvedModel}:streamGenerateContent?alt=sse&key=${apiKey}`;
 
     const response = await fetch(url, {
       method: "POST",
