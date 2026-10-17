@@ -33,6 +33,8 @@ import {
   Clock,
   ShieldCheck,
   Key,
+  MessageSquare,
+  Code2,
   Link2,
   Copy,
   RotateCcw,
@@ -126,6 +128,24 @@ interface ClientIdBinding {
   updated_at: string;
 }
 
+
+interface ClientWidget {
+  id: string;
+  client_id: string;
+  name: string;
+  embed_key: string;
+  allowed_sources: string[];
+  theme: {
+    primary_color?: string;
+    primaryColor?: string;
+    position?: "bottom-right" | "bottom-left" | string;
+  };
+  greeting: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 interface ClientDetailData {
   client: Client;
   workspace?: { id: string; name: string; slug?: string; owner_id?: string };
@@ -165,7 +185,27 @@ export default function ClientsPage() {
 
 
   // Estados Pestaña IA (IA-3)
-  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "ai" | "integrations" | "connections">("general");
+  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "ai" | "integrations" | "connections" | "widget">("general");
+
+  // Estados Pestaña Widget (WIDGET-3)
+  const [widgets, setWidgets] = useState<ClientWidget[]>([]);
+  const [isLoadingWidgets, setIsLoadingWidgets] = useState(false);
+  const [widgetsError, setWidgetsError] = useState<string | null>(null);
+
+  // Modal Crear Widget
+  const [isCreateWidgetOpen, setIsCreateWidgetOpen] = useState(false);
+  const [widgetName, setWidgetName] = useState("");
+  const [widgetGreeting, setWidgetGreeting] = useState("¡Hola! ¿En qué podemos ayudarte hoy?");
+  const [widgetPrimaryColor, setWidgetPrimaryColor] = useState("#4f46e5");
+  const [widgetPosition, setWidgetPosition] = useState<"bottom-right" | "bottom-left">("bottom-right");
+  const [widgetAllowedSources, setWidgetAllowedSources] = useState<string[]>(["web"]);
+  const [isCreatingWidget, setIsCreatingWidget] = useState(false);
+  const [createWidgetError, setCreateWidgetError] = useState<string | null>(null);
+
+  // Modal Confirmar Desactivar Widget
+  const [deletingWidget, setDeletingWidget] = useState<ClientWidget | null>(null);
+  const [isDeletingWidget, setIsDeletingWidget] = useState(false);
+  const [copiedSnippetId, setCopiedSnippetId] = useState<string | null>(null);
 
   // Estados Pestaña Conexiones (CONEX-3)
   const [siteKeys, setSiteKeys] = useState<ClientSiteKey[]>([]);
@@ -803,6 +843,95 @@ export default function ClientsPage() {
     }
   };
 
+
+  const loadWidgets = useCallback(async (clientId: string) => {
+    setIsLoadingWidgets(true);
+    setWidgetsError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/widgets`);
+      if (res.ok) {
+        const data = await res.json();
+        setWidgets(Array.isArray(data) ? data : []);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setWidgetsError(data?.error?.message || "No se pudieron cargar los widgets.");
+      }
+    } catch (err: any) {
+      setWidgetsError(err?.message || "Error al consultar widgets.");
+    } finally {
+      setIsLoadingWidgets(false);
+    }
+  }, []);
+
+  const handleCreateWidget = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClient) return;
+
+    setIsCreatingWidget(true);
+    setCreateWidgetError(null);
+
+    try {
+      const res = await fetch(`/api/clients/${selectedClient.id}/widgets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: widgetName.trim() || undefined,
+          greeting: widgetGreeting.trim() || undefined,
+          theme: {
+            primary_color: widgetPrimaryColor,
+            position: widgetPosition,
+          },
+          allowed_sources: widgetAllowedSources,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setCreateWidgetError(data?.error?.message || "Error al crear widget.");
+        return;
+      }
+
+      await loadWidgets(selectedClient.id);
+      setIsCreateWidgetOpen(false);
+      setWidgetName("");
+      setWidgetGreeting("¡Hola! ¿En qué podemos ayudarte hoy?");
+      setWidgetPrimaryColor("#4f46e5");
+      setWidgetPosition("bottom-right");
+      setWidgetAllowedSources(["web"]);
+      setFeedback({ type: "success", message: `Widget "${data.name}" creado exitosamente.` });
+    } catch (err: any) {
+      setCreateWidgetError(err?.message || "Error inesperado al crear widget.");
+    } finally {
+      setIsCreatingWidget(false);
+    }
+  };
+
+  const handleConfirmDeleteWidget = async () => {
+    if (!selectedClient || !deletingWidget) return;
+
+    setIsDeletingWidget(true);
+    try {
+      const res = await fetch(
+        `/api/clients/${selectedClient.id}/widgets/${deletingWidget.id}`,
+        { method: "DELETE" }
+      );
+
+      if (res.ok) {
+        await loadWidgets(selectedClient.id);
+        setFeedback({ type: "success", message: `Widget "${deletingWidget.name}" desactivado exitosamente.` });
+        setDeletingWidget(null);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setFeedback({ type: "error", message: data?.error?.message || "No se pudo desactivar el widget." });
+      }
+    } catch (err: any) {
+      setFeedback({ type: "error", message: err?.message || "Error de red al desactivar widget." });
+    } finally {
+      setIsDeletingWidget(false);
+    }
+  };
+
   const handleOpenDetail = (client: Client) => {
     setSelectedClient(client);
     loadClientDetail(client.id);
@@ -811,6 +940,7 @@ export default function ClientsPage() {
     loadClientIntegrations(client.id);
     loadSiteKeys(client.id);
     loadBindings(client.id);
+    loadWidgets(client.id);
     setActiveDetailTab("general");
   };
 
@@ -1402,6 +1532,29 @@ export default function ClientsPage() {
                   </Badge>
                 )}
               </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveDetailTab("widget");
+                  if (selectedClient) {
+                    loadWidgets(selectedClient.id);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  activeDetailTab === "widget"
+                    ? "bg-blue-600 text-white shadow-sm font-bold"
+                    : "text-texter-text-muted hover:text-white hover:bg-texter-surface-hover"
+                }`}
+              >
+                <Bot className="w-3.5 h-3.5" />
+                <span>Widget</span>
+                {widgets.filter((w) => w.is_active).length > 0 && (
+                  <Badge variant="cyan" size="sm" className="ml-1 text-[10px] px-1.5 py-0 font-mono">
+                    {widgets.filter((w) => w.is_active).length}
+                  </Badge>
+                )}
+              </button>
             </div>
 
             {/* PESTAÑA 1: GENERAL */}
@@ -1899,6 +2052,143 @@ export default function ClientsPage() {
                       </tbody>
                     </table>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* PESTAÑA 5: WIDGET (WIDGET-3) */}
+            {activeDetailTab === "widget" && (
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-texter-border pb-2.5">
+                  <div>
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Bot className="w-4 h-4 text-blue-400" />
+                      Widget de Chat Web Embebible
+                    </h4>
+                    <p className="text-xs text-texter-text-muted">
+                      Incrusta un agente de atención inteligente en la web del cliente mediante un snippet HTML
+                    </p>
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      setIsCreateWidgetOpen(true);
+                      setCreateWidgetError(null);
+                    }}
+                    className="flex items-center gap-1.5 text-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Crear widget
+                  </Button>
+                </div>
+
+                {widgetsError && (
+                  <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                    <span>{widgetsError}</span>
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  {widgets.map((w) => {
+                    const snippet = `<script src="https://nextex-seven.vercel.app/widget/nextex-chat.js" data-key="${w.embed_key}"></script>`;
+
+                    return (
+                      <div
+                        key={w.id}
+                        className="p-4 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-3.5"
+                      >
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-texter-border/50 pb-2.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-white text-sm">{w.name}</span>
+                            {w.is_active ? (
+                              <Badge variant="success" size="sm" dot>Activo</Badge>
+                            ) : (
+                              <Badge variant="default" size="sm" dot>Inactivo</Badge>
+                            )}
+                            <div className="flex items-center gap-1.5 font-mono text-xs bg-texter-surface px-2 py-0.5 rounded border border-texter-border">
+                              <span className="text-texter-text-dim text-[11px]">Key:</span>
+                              <span className="text-texter-cyan">{w.embed_key}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(w.embed_key);
+                                  setCopiedSnippetId("key_" + w.id);
+                                  setTimeout(() => setCopiedSnippetId(null), 2500);
+                                }}
+                                className="text-texter-text-dim hover:text-white ml-1"
+                                title="Copiar embed_key"
+                              >
+                                {copiedSnippetId === "key_" + w.id ? (
+                                  <Check className="w-3 h-3 text-emerald-400" />
+                                ) : (
+                                  <Copy className="w-3 h-3" />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+
+                          {w.is_active && (
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              onClick={() => setDeletingWidget(w)}
+                              className="text-[11px] h-7 px-2"
+                              title="Desactivar widget"
+                            >
+                              <Trash2 className="w-3 h-3 mr-1" />
+                              <span>Eliminar</span>
+                            </Button>
+                          )}
+                        </div>
+
+                        {/* Bloque: Instalar en tu web */}
+                        <div className="p-3.5 rounded-xl bg-texter-surface border border-texter-border space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                              <Code2 className="w-3.5 h-3.5 text-texter-cyan" />
+                              Instalar en tu web
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                navigator.clipboard.writeText(snippet);
+                                setCopiedSnippetId(w.id);
+                                setTimeout(() => setCopiedSnippetId(null), 2500);
+                              }}
+                              className="text-[11px] h-7 px-2.5 flex items-center gap-1.5"
+                            >
+                              {copiedSnippetId === w.id ? (
+                                <>
+                                  <Check className="w-3 h-3 text-emerald-400" />
+                                  <span className="text-emerald-400 font-bold">¡Copiado!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3 text-texter-cyan" />
+                                  <span>Copiar Snippet</span>
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                          <p className="text-[11px] text-texter-text-muted">
+                            Pega esta etiqueta antes del cierre de <code className="text-texter-cyan">&lt;/body&gt;</code> en el HTML del cliente:
+                          </p>
+                          <div className="p-2.5 rounded-lg bg-black/40 border border-texter-border/70 font-mono text-[11px] text-emerald-300 break-all select-all">
+                            {snippet}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {widgets.length === 0 && !isLoadingWidgets && (
+                    <div className="p-8 text-center text-texter-text-dim text-xs bg-texter-surface-subtle rounded-xl border border-texter-border">
+                      No hay widgets de chat configurados para este cliente. Haz clic en "Crear widget" para generar el código de integración.
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -2738,6 +3028,137 @@ export default function ClientsPage() {
               </Button>
               <Button variant="danger" size="sm" onClick={handleConfirmDeleteBinding} isLoading={isDeletingBinding}>
                 Confirmar Liberación
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+
+      {/* MODAL: CREAR WIDGET */}
+      {isCreateWidgetOpen && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-texter-border">
+            <div className="flex items-center justify-between border-b border-texter-border pb-3">
+              <div className="flex items-center gap-2">
+                <Bot className="w-5 h-5 text-blue-400" />
+                <h3 className="text-base font-bold text-white">Crear Widget de Chat</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateWidgetOpen(false)}
+                className="text-texter-text-muted hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {createWidgetError && (
+              <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                <span>{createWidgetError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateWidget} className="space-y-3.5">
+              <Input
+                label="Nombre del Widget"
+                value={widgetName}
+                onChange={(e) => setWidgetName(e.target.value)}
+                placeholder="ej: Asistente Web Principal"
+              />
+
+              <Input
+                label="Mensaje de Bienvenida (Greeting)"
+                value={widgetGreeting}
+                onChange={(e) => setWidgetGreeting(e.target.value)}
+                placeholder="¡Hola! ¿En qué podemos ayudarte hoy?"
+              />
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-texter-text-secondary">Color Principal</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={widgetPrimaryColor}
+                      onChange={(e) => setWidgetPrimaryColor(e.target.value)}
+                      className="w-9 h-9 rounded-lg border border-texter-border bg-texter-surface-subtle cursor-pointer p-0.5"
+                    />
+                    <input
+                      type="text"
+                      value={widgetPrimaryColor}
+                      onChange={(e) => setWidgetPrimaryColor(e.target.value)}
+                      className="flex-1 p-2 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-texter-text-secondary">Posición</label>
+                  <select
+                    value={widgetPosition}
+                    onChange={(e) => setWidgetPosition(e.target.value as any)}
+                    className="w-full p-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white outline-none font-mono"
+                  >
+                    <option value="bottom-right">Inferior Derecha</option>
+                    <option value="bottom-left">Inferior Izquierda</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 pt-1">
+                <label className="text-xs font-medium text-texter-text-secondary">Fuentes de Datos Autorizadas</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="srcWeb"
+                    checked={widgetAllowedSources.includes("web")}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setWidgetAllowedSources([...widgetAllowedSources, "web"]);
+                      } else {
+                        setWidgetAllowedSources(widgetAllowedSources.filter((s) => s !== "web"));
+                      }
+                    }}
+                    className="rounded border-texter-border text-texter-cyan focus:ring-texter-cyan/40 bg-texter-surface-subtle"
+                  />
+                  <label htmlFor="srcWeb" className="text-xs text-white cursor-pointer">
+                    Contenido Web del Negocio (Web Crawling & QA)
+                  </label>
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+                <Button variant="ghost" size="sm" type="button" onClick={() => setIsCreateWidgetOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button variant="primary" size="sm" type="submit" isLoading={isCreatingWidget}>
+                  Crear Widget
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR DESACTIVAR WIDGET */}
+      {deletingWidget && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-texter-rose/40">
+            <div className="flex items-center gap-2.5 text-texter-rose font-bold text-base">
+              <Trash2 className="w-5 h-5" />
+              Desactivar Widget
+            </div>
+            <p className="text-xs text-texter-text-muted leading-relaxed">
+              ¿Estás seguro de que deseas desactivar el widget <strong className="text-white">&quot;{deletingWidget.name}&quot;</strong>? La burbuja de chat dejará de responder inmediatamente en las páginas web donde esté incrustado.
+            </p>
+            <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+              <Button variant="ghost" size="sm" onClick={() => setDeletingWidget(null)}>
+                Volver
+              </Button>
+              <Button variant="danger" size="sm" onClick={handleConfirmDeleteWidget} isLoading={isDeletingWidget}>
+                Confirmar Desactivación
               </Button>
             </div>
           </Card>
