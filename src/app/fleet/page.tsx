@@ -81,10 +81,15 @@ interface FleetMetric {
   ts: string;
   vus: number;
   rps: number;
-  p50: number;
-  p95: number;
-  p99: number;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  p99_ms: number | null;
   errors: number;
+}
+
+function formatMs(v: number | null | undefined): string {
+  if (v == null || isNaN(v)) return "—";
+  return `${Math.round(v)} ms`;
 }
 
 function formatRelativeTime(dateStr?: string | null): string {
@@ -772,9 +777,11 @@ export default function FleetPage() {
             {/* Tarjetas de Métricas en Vivo */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
-                <span className="text-[11px] text-texter-text-muted uppercase font-mono">VUs Actuales</span>
+                <span className="text-[11px] text-texter-text-muted uppercase font-mono">VUs Pico</span>
                 <p className="text-xl font-bold font-mono text-white mt-1">
-                  {latestMetric?.vus ?? selectedJob.vus}
+                  {jobMetrics.length > 0
+                    ? Math.max(...jobMetrics.map((m) => m.vus ?? 0), selectedJob.vus ?? 0)
+                    : selectedJob.vus ?? 0}
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
@@ -786,19 +793,19 @@ export default function FleetPage() {
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
                 <span className="text-[11px] text-texter-text-muted uppercase font-mono">p50</span>
                 <p className="text-xl font-bold font-mono text-emerald-400 mt-1">
-                  {latestMetric ? `${latestMetric.p50} ms` : "—"}
+                  {formatMs(latestMetric?.p50_ms)}
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
                 <span className="text-[11px] text-texter-text-muted uppercase font-mono">p95</span>
                 <p className="text-xl font-bold font-mono text-amber-400 mt-1">
-                  {latestMetric ? `${latestMetric.p95} ms` : "—"}
+                  {formatMs(latestMetric?.p95_ms)}
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
                 <span className="text-[11px] text-texter-text-muted uppercase font-mono">p99</span>
                 <p className="text-xl font-bold font-mono text-rose-400 mt-1">
-                  {latestMetric ? `${latestMetric.p99} ms` : "—"}
+                  {formatMs(latestMetric?.p99_ms)}
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
@@ -833,7 +840,7 @@ export default function FleetPage() {
                         </td>
                         <td className="p-2.5 text-white">{m.vus}</td>
                         <td className="p-2.5 text-texter-cyan">{m.rps}</td>
-                        <td className="p-2.5 text-amber-300">{m.p95}ms</td>
+                        <td className="p-2.5 text-amber-300">{formatMs(m.p95_ms)}</td>
                         <td className="p-2.5 text-texter-rose">{m.errors}</td>
                       </tr>
                     ))}
