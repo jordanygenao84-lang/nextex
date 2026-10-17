@@ -1,0 +1,262 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
+
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const userClient = createClient();
+    const {
+      data: { user },
+    } = await userClient.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: { code: "AUTH_REQUIRED", message: "Sesión de usuario requerida." } },
+        { status: 401 }
+      );
+    }
+
+    const serviceClient = createServiceClient();
+    const clientId = params.id;
+
+    const { data: client, error } = await (serviceClient.from("clients") as any)
+      .select("*, workspace:workspaces(id, name, slug, owner_id)")
+      .eq("id", clientId)
+      .maybeSingle();
+
+    if (error || !client) {
+      return NextResponse.json(
+        { error: { code: "NOT_FOUND", message: "Cliente no encontrado." } },
+        { status: 404 }
+      );
+    }
+
+    const [autoRes, jobsRes, agentsRes] = await Promise.all([
+      serviceClient
+        .from("automations")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", client.workspace_id),
+      serviceClient
+        .from("jobs")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", client.workspace_id),
+      serviceClient
+        .from("agents")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", client.workspace_id),
+    ]);
+
+    const counts = {
+      automations: autoRes.count || 0,
+      jobs: jobsRes.count || 0,
+      agents: agentsRes.count || 0,
+    };
+
+    return NextResponse.json({
+      client,
+      workspace: client.workspace || { id: client.workspace_id, name: client.display_name },
+      counts,
+    });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al obtener detalle de cliente." } },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const userClient = createClient();
+    const {
+      data: { user },
+    } = await userClient.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: { code: "AUTH_REQUIRED", message: "Sesión de usuario requerida." } },
+        { status: 401 }
+      );
+    }
+
+    const serviceClient = createServiceClient();
+    const clientId = params.id;
+
+    const { data: existing, error: findError } = await (serviceClient.from("clients") as any)
+      .select("id, workspace_id, display_name")
+      .eq("id", clientId)
+      .maybeSingle();
+
+    if (findError || !existing) {
+      return NextResponse.json(
+        { error: { code: "NOT_FOUND", message: "Cliente no encontrado." } },
+        { status: 404 }
+      );
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const updates: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (body.display_name !== undefined) {
+      if (typeof body.display_name !== "string" || !body.display_name.trim()) {
+        return NextResponse.json(
+          { error: { code: "INVALID_PARAMETERS", message: "El campo 'display_name' no puede estar vacío." } },
+          { status: 400 }
+        );
+      }
+      updates.display_name = body.display_name.trim();
+    }
+
+    if (body.website_url !== undefined) {
+      if (body.website_url && typeof body.website_url === "string" && body.website_url.trim()) {
+        try {
+          const u = new URL(body.website_url.trim());
+          if (u.protocol !== "http:" && u.protocol !== "https:") {
+            return NextResponse.json(
+              { error: { code: "INVALID_URL", message: "La URL debe ser http o https válida." } },
+              { status: 400 }
+            );
+          }
+        } catch {
+          return NextResponse.json(
+            { error: { code: "INVALID_URL", message: "URL inválida." } },
+            { status: 400 }
+          );
+        }
+        updates.website_url = body.website_url.trim();
+      } else {
+        updates.website_url = null;
+      }
+    }
+
+    if (body.contact_name !== undefined) {
+      updates.contact_name = body.contact_name ? String(body.contact_name).trim() : null;
+    }
+    if (body.contact_email !== undefined) {
+      updates.contact_email = body.contact_email ? String(body.contact_email).trim() : null;
+    }
+    if (body.contact_phone !== undefined) {
+      updates.contact_phone = body.contact_phone ? String(body.contact_phone).trim() : null;
+    }
+    if (body.status !== undefined) {
+      if (!["active", "inactive"].includes(body.status)) {
+        return NextResponse.json(
+          { error: { code: "INVALID_STATUS", message: "El estado debe ser 'active' o 'inactive'." } },
+          { status: 400 }
+        );
+      }
+      updates.status = body.status;
+    }
+    if (body.credit_limit_monthly !== undefined) {
+      updates.credit_limit_monthly = body.credit_limit_monthly != null ? Number(body.credit_limit_monthly) : null;
+    }
+    if (body.notes !== undefined) {
+      updates.notes = body.notes ? String(body.notes).trim() : null;
+    }
+
+    const { data: updatedClient, error: updateError } = await (serviceClient.from("clients") as any)
+      .update(updates)
+      .eq("id", clientId)
+      .select("*, workspace:workspaces(id, name)")
+      .single();
+
+    if (updateError || !updatedClient) {
+      return NextResponse.json(
+        { error: { code: "DB_ERROR", message: updateError?.message || "Error al actualizar cliente." } },
+        { status: 500 }
+      );
+    }
+
+    if (updates.display_name) {
+      await (serviceClient.from("workspaces") as any)
+        .update({ name: updates.display_name, updated_at: updates.updated_at })
+        .eq("id", existing.workspace_id);
+    }
+
+    return NextResponse.json(updatedClient);
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al actualizar cliente." } },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const userClient = createClient();
+    const {
+      data: { user },
+    } = await userClient.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: { code: "AUTH_REQUIRED", message: "Sesión de usuario requerida." } },
+        { status: 401 }
+      );
+    }
+
+    const serviceClient = createServiceClient();
+    const clientId = params.id;
+
+    const { data: client, error: findError } = await (serviceClient.from("clients") as any)
+      .select("id, workspace_id")
+      .eq("id", clientId)
+      .maybeSingle();
+
+    if (findError || !client) {
+      return NextResponse.json(
+        { error: { code: "NOT_FOUND", message: "Cliente no encontrado." } },
+        { status: 404 }
+      );
+    }
+
+    // Verificar si tiene jobs con ejecuciones en running o queued
+    const { data: wsJobs } = await (serviceClient.from("jobs") as any)
+      .select("id")
+      .eq("workspace_id", client.workspace_id);
+
+    if (wsJobs && wsJobs.length > 0) {
+      const jobIds = wsJobs.map((j: any) => j.id);
+      const { data: activeRuns } = await (serviceClient.from("job_runs") as any)
+        .select("id, status")
+        .in("job_id", jobIds)
+        .in("status", ["running", "queued"])
+        .limit(1);
+
+      if (activeRuns && activeRuns.length > 0) {
+        return NextResponse.json(
+          {
+            error: {
+              code: "ACTIVE_RUNS_EXIST",
+              message: "No se puede eliminar el cliente porque tiene ejecuciones de jobs activas o en cola.",
+            },
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    // Borrar workspace (ON DELETE CASCADE borra el cliente)
+    const { error: delError } = await (serviceClient.from("workspaces") as any)
+      .delete()
+      .eq("id", client.workspace_id);
+
+    if (delError) {
+      return NextResponse.json(
+        { error: { code: "DB_ERROR", message: delError.message } },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al eliminar cliente." } },
+      { status: 500 }
+    );
+  }
+}
