@@ -74,6 +74,33 @@ interface ClientAiConfig {
   monthly_token_cap: number | null;
 }
 
+
+interface BlueprintCredentialSpec {
+  key: string;
+  label?: string;
+  type?: "password" | "text" | "oauth" | string;
+  help?: string;
+  required?: boolean;
+}
+
+interface Blueprint {
+  slug: string;
+  name: string;
+  description: string;
+  category: string;
+  required_credentials: BlueprintCredentialSpec[];
+  default_config: Record<string, any>;
+}
+
+interface ClientIntegration {
+  id: string;
+  blueprint_slug: string;
+  blueprint_name: string;
+  label: string;
+  is_active: boolean;
+  created_at: string;
+}
+
 interface ClientDetailData {
   client: Client;
   workspace?: { id: string; name: string; slug?: string; owner_id?: string };
@@ -113,7 +140,25 @@ export default function ClientsPage() {
 
 
   // Estados Pestaña IA (IA-3)
-  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "ai">("general");
+  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "ai" | "integrations">("general");
+
+  // Estados Pestaña Integraciones (BLUEPRINTS-3)
+  const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
+  const [clientIntegrations, setClientIntegrations] = useState<ClientIntegration[]>([]);
+  const [isLoadingIntegrations, setIsLoadingIntegrations] = useState(false);
+  const [integrationsError, setIntegrationsError] = useState<string | null>(null);
+
+  // Modal Dinámico de Instalación
+  const [installingBlueprint, setInstallingBlueprint] = useState<Blueprint | null>(null);
+  const [installLabel, setInstallLabel] = useState("");
+  const [installCredentials, setInstallCredentials] = useState<Record<string, string>>({});
+  const [oauthPending, setOauthPending] = useState(false);
+  const [isInstalling, setIsInstalling] = useState(false);
+  const [installError, setInstallError] = useState<string | null>(null);
+
+  // Modal Confirmar Desinstalación
+  const [uninstallingIntegration, setUninstallingIntegration] = useState<ClientIntegration | null>(null);
+  const [isUninstalling, setIsUninstalling] = useState(false);
   const [aiConfig, setAiConfig] = useState<ClientAiConfig | null>(null);
   const [aiKeys, setAiKeys] = useState<ClientApiKey[]>([]);
   const [isLoadingAi, setIsLoadingAi] = useState(false);
@@ -359,10 +404,131 @@ export default function ClientsPage() {
     }
   };
 
+
+  const loadBlueprints = useCallback(async () => {
+    try {
+      const res = await fetch("/api/blueprints");
+      if (res.ok) {
+        const data = await res.json();
+        setBlueprints(Array.isArray(data) ? data : []);
+      }
+    } catch (err: any) {
+      console.error("Error al cargar blueprints:", err);
+    }
+  }, []);
+
+  const loadClientIntegrations = useCallback(async (clientId: string) => {
+    setIsLoadingIntegrations(true);
+    setIntegrationsError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/integrations`);
+      if (res.ok) {
+        const data = await res.json();
+        setClientIntegrations(Array.isArray(data) ? data : []);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setIntegrationsError(data?.error?.message || "No se pudieron cargar las integraciones.");
+      }
+    } catch (err: any) {
+      setIntegrationsError(err?.message || "Error al consultar integraciones.");
+    } finally {
+      setIsLoadingIntegrations(false);
+    }
+  }, []);
+
+  const handleInstallIntegration = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClient || !installingBlueprint) return;
+
+    setIsInstalling(true);
+    setInstallError(null);
+
+    try {
+      const payload: any = {
+        blueprint_slug: installingBlueprint.slug,
+        label: installLabel.trim() || undefined,
+        credentials: { ...installCredentials },
+      };
+
+      if (oauthPending) {
+        payload.credentials.oauth_pending = true;
+      }
+
+      const res = await fetch(`/api/clients/${selectedClient.id}/integrations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        // Regla: si falla 400 mostrar mensaje visible dentro del modal SIN cerrarlo
+        const errorMsg =
+          typeof data.error === "string"
+            ? data.error
+            : data?.error?.message || "Error al instalar la integración.";
+        setInstallError(errorMsg);
+        return;
+      }
+
+      // Éxito: refrescar lista, cerrar modal y limpiar
+      await loadClientIntegrations(selectedClient.id);
+      setInstallingBlueprint(null);
+      setInstallLabel("");
+      setInstallCredentials({});
+      setOauthPending(false);
+      setFeedback({
+        type: "success",
+        message: `Integración "${installingBlueprint.name}" instalada exitosamente.`,
+      });
+    } catch (err: any) {
+      setInstallError(err?.message || "Error inesperado al conectar con el servidor.");
+    } finally {
+      setIsInstalling(false);
+    }
+  };
+
+  const handleConfirmUninstall = async () => {
+    if (!selectedClient || !uninstallingIntegration) return;
+
+    setIsUninstalling(true);
+    try {
+      const res = await fetch(
+        `/api/clients/${selectedClient.id}/integrations/${uninstallingIntegration.id}`,
+        { method: "DELETE" }
+      );
+
+      if (res.ok) {
+        await loadClientIntegrations(selectedClient.id);
+        setFeedback({
+          type: "success",
+          message: `Integración "${uninstallingIntegration.label}" desinstalada correctamente.`,
+        });
+        setUninstallingIntegration(null);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setFeedback({
+          type: "error",
+          message: data?.error?.message || "No se pudo desinstalar la integración.",
+        });
+      }
+    } catch (err: any) {
+      setFeedback({
+        type: "error",
+        message: err?.message || "Error de red al desinstalar.",
+      });
+    } finally {
+      setIsUninstalling(false);
+    }
+  };
+
   const handleOpenDetail = (client: Client) => {
     setSelectedClient(client);
     loadClientDetail(client.id);
     loadClientAiData(client.id);
+    loadBlueprints();
+    loadClientIntegrations(client.id);
     setActiveDetailTab("general");
   };
 
@@ -905,6 +1071,30 @@ export default function ClientsPage() {
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>Configuración de IA</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveDetailTab("integrations");
+                  if (selectedClient) {
+                    loadBlueprints();
+                    loadClientIntegrations(selectedClient.id);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  activeDetailTab === "integrations"
+                    ? "bg-purple-600 text-white shadow-sm font-bold"
+                    : "text-texter-text-muted hover:text-white hover:bg-texter-surface-hover"
+                }`}
+              >
+                <Workflow className="w-3.5 h-3.5" />
+                <span>Integraciones</span>
+                {clientIntegrations.filter((i) => i.is_active).length > 0 && (
+                  <Badge variant="cyan" size="sm" className="ml-1 text-[10px] px-1.5 py-0 font-mono">
+                    {clientIntegrations.filter((i) => i.is_active).length}
+                  </Badge>
+                )}
               </button>
             </div>
 
@@ -1586,6 +1776,135 @@ export default function ClientsPage() {
               </Button>
               <Button variant="danger" size="sm" onClick={handleConfirmDeleteKey} isLoading={isDeletingKey}>
                 Confirmar Eliminación
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+
+      {/* MODAL: INSTALAR BLUEPRINT (DINÁMICO) */}
+      {installingBlueprint && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-texter-border">
+            <div className="flex items-center justify-between border-b border-texter-border pb-3">
+              <div className="flex items-center gap-2">
+                <Workflow className="w-5 h-5 text-purple-400" />
+                <div>
+                  <h3 className="text-base font-bold text-white">Instalar {installingBlueprint.name}</h3>
+                  <p className="text-xs text-texter-text-muted">Cliente: {selectedClient.display_name}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setInstallingBlueprint(null);
+                  setInstallError(null);
+                }}
+                className="text-texter-text-muted hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {installError && (
+              <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                <span>{installError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleInstallIntegration} className="space-y-3.5">
+              <Input
+                label="Etiqueta / Nombre de la Instalación"
+                value={installLabel}
+                onChange={(e) => setInstallLabel(e.target.value)}
+                placeholder={installingBlueprint.name}
+              />
+
+              {Array.isArray(installingBlueprint.required_credentials) &&
+                installingBlueprint.required_credentials.map((spec) => {
+                  if (spec.type === "oauth") {
+                    return (
+                      <div key={spec.key} className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-2">
+                        <label className="text-xs font-medium text-texter-text-secondary">{spec.label || spec.key}</label>
+                        <p className="text-[11px] text-texter-text-muted">
+                          {spec.help || "Conexión OAuth con proveedor externo."}
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setOauthPending(true)}
+                          className="w-full flex items-center justify-center gap-2 text-xs"
+                        >
+                          <Globe className="w-3.5 h-3.5 text-texter-cyan" />
+                          <span>Conectar con Google (OAuth)</span>
+                        </Button>
+                        <p className="text-[10px] text-amber-400/90 font-mono">
+                          * OAuth pendiente de configuración en esta fase. Se registrará como pendiente.
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <Input
+                      key={spec.key}
+                      label={spec.label || spec.key}
+                      type={spec.type === "password" ? "password" : "text"}
+                      value={installCredentials[spec.key] || ""}
+                      onChange={(e) =>
+                        setInstallCredentials((prev) => ({
+                          ...prev,
+                          [spec.key]: e.target.value,
+                        }))
+                      }
+                      placeholder={spec.type === "password" ? "••••••••••••" : spec.key}
+                      hint={spec.help}
+                      required={spec.required !== false}
+                    />
+                  );
+                })}
+
+              <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={() => {
+                    setInstallingBlueprint(null);
+                    setInstallError(null);
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button variant="primary" size="sm" type="submit" isLoading={isInstalling}>
+                  Validar e Instalar
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR DESINSTALAR INTEGRACIÓN */}
+      {uninstallingIntegration && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-texter-rose/40">
+            <div className="flex items-center gap-2.5 text-texter-rose font-bold text-base">
+              <Trash2 className="w-5 h-5" />
+              Desinstalar Integración
+            </div>
+            <p className="text-xs text-texter-text-muted leading-relaxed">
+              ¿Estás seguro de que deseas desinstalar la integración <strong className="text-white">&quot;{uninstallingIntegration.label}&quot;</strong> ({uninstallingIntegration.blueprint_name})? El agente dejará de atender eventos provenientes de este canal para <strong className="text-white">{selectedClient.display_name}</strong>.
+            </p>
+            <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+              <Button variant="ghost" size="sm" onClick={() => setUninstallingIntegration(null)}>
+                Volver
+              </Button>
+              <Button variant="danger" size="sm" onClick={handleConfirmUninstall} isLoading={isUninstalling}>
+                Confirmar Desinstalación
               </Button>
             </div>
           </Card>
