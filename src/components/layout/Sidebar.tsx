@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
+  Users,
   Gauge,
   MessageSquareCode,
   Workflow,
@@ -87,6 +88,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       href: "/fleet",
       icon: Gauge,
       badge: "VUs",
+    },
+    {
+      name: "Clientes",
+      href: "/clients",
+      icon: Users,
     },
   ];
 

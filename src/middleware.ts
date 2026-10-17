@@ -51,6 +51,7 @@ export async function middleware(request: NextRequest) {
     "/automations",
     "/observability",
     "/fleet",
+    "/clients",
   ];
   const isProtectedPath = protectedPrefixes.some((prefix) => pathname.startsWith(prefix));
   const isAuthPath =
