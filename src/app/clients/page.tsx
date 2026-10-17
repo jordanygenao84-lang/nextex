@@ -32,6 +32,10 @@ import {
   Phone,
   Clock,
   ShieldCheck,
+  Key,
+  Cpu,
+  Sparkles,
+  Lock,
 } from "lucide-react";
 
 interface Client {
@@ -50,6 +54,24 @@ interface Client {
     id: string;
     name: string;
   } | null;
+}
+
+
+interface ClientApiKey {
+  id: string;
+  provider: "openai" | "google" | "anthropic" | string;
+  label: string;
+  key_hint: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+interface ClientAiConfig {
+  client_id: string;
+  mode: "nextex_keys" | "byok";
+  default_model: string;
+  model_allowlist: string[];
+  monthly_token_cap: number | null;
 }
 
 interface ClientDetailData {
@@ -88,6 +110,36 @@ export default function ClientsPage() {
   const [notes, setNotes] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+
+  // Estados Pestaña IA (IA-3)
+  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "ai">("general");
+  const [aiConfig, setAiConfig] = useState<ClientAiConfig | null>(null);
+  const [aiKeys, setAiKeys] = useState<ClientApiKey[]>([]);
+  const [isLoadingAi, setIsLoadingAi] = useState(false);
+
+  // Selector de Modo & Confirmación
+  const [pendingModeChange, setPendingModeChange] = useState<"nextex_keys" | "byok" | null>(null);
+  const [isChangingMode, setIsChangingMode] = useState(false);
+
+  // Modal Agregar Clave BYOK
+  const [isAddKeyOpen, setIsAddKeyOpen] = useState(false);
+  const [newKeyProvider, setNewKeyProvider] = useState<"openai" | "google" | "anthropic">("openai");
+  const [newKeyLabel, setNewKeyLabel] = useState("");
+  const [newKeySecret, setNewKeySecret] = useState("");
+  const [isSubmittingKey, setIsSubmittingKey] = useState(false);
+  const [createKeyError, setCreateKeyError] = useState<string | null>(null);
+
+  // Modal Confirmar Eliminar Clave
+  const [deletingKey, setDeletingKey] = useState<ClientApiKey | null>(null);
+  const [isDeletingKey, setIsDeletingKey] = useState(false);
+
+  // Configuración de Modelos y Límites
+  const [cfgDefaultModel, setCfgDefaultModel] = useState("gemini-1.5-flash");
+  const [cfgAllowlistStr, setCfgAllowlistStr] = useState("gemini-1.5-flash, gemini-1.5-pro");
+  const [cfgMonthlyCap, setCfgMonthlyCap] = useState<string>("");
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [aiActionError, setAiActionError] = useState<string | null>(null);
 
   // Modal Detalle
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
@@ -158,9 +210,160 @@ export default function ClientsPage() {
     }
   };
 
+
+  const loadClientAiData = useCallback(async (clientId: string) => {
+    setIsLoadingAi(true);
+    setAiActionError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/ai`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.config) {
+          setAiConfig(data.config);
+          setCfgDefaultModel(data.config.default_model || "gemini-1.5-flash");
+          setCfgAllowlistStr(Array.isArray(data.config.model_allowlist) ? data.config.model_allowlist.join(", ") : "");
+          setCfgMonthlyCap(data.config.monthly_token_cap != null ? String(data.config.monthly_token_cap) : "");
+        }
+        if (Array.isArray(data.keys)) {
+          setAiKeys(data.keys.filter((k: ClientApiKey) => k.is_active !== false));
+        }
+      }
+    } catch (err: any) {
+      console.error("Error al cargar configuración de IA:", err);
+    } finally {
+      setIsLoadingAi(false);
+    }
+  }, []);
+
+  const handleConfirmModeChange = async () => {
+    if (!selectedClient || !pendingModeChange) return;
+    setIsChangingMode(true);
+    setAiActionError(null);
+    try {
+      const res = await fetch(`/api/clients/${selectedClient.id}/ai`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: pendingModeChange }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setAiActionError(data?.error?.message || "No se pudo actualizar el modo de IA.");
+      } else {
+        setAiConfig((prev) => (prev ? { ...prev, mode: pendingModeChange } : null));
+        setFeedback({
+          type: "success",
+          message: pendingModeChange === "byok" ? "Modo cambiado a Claves propias (BYOK)." : "Modo cambiado a Claves NEXTEX (premium).",
+        });
+      }
+    } catch (err: any) {
+      setAiActionError(err?.message || "Error al cambiar el modo.");
+    } finally {
+      setIsChangingMode(false);
+      setPendingModeChange(null);
+    }
+  };
+
+  const handleAddApiKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClient || !newKeySecret.trim()) return;
+
+    setIsSubmittingKey(true);
+    setCreateKeyError(null);
+    try {
+      const res = await fetch(`/api/clients/${selectedClient.id}/ai/keys`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: newKeyProvider,
+          label: newKeyLabel.trim() || undefined,
+          api_key: newKeySecret.trim(),
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const errorMsg = typeof data.error === "string" ? data.error : data?.error?.message || "La clave de API no es válida.";
+        setCreateKeyError(errorMsg);
+        return;
+      }
+
+      await loadClientAiData(selectedClient.id);
+      setIsAddKeyOpen(false);
+      setNewKeySecret("");
+      setNewKeyLabel("");
+      setFeedback({ type: "success", message: `Clave para ${newKeyProvider.toUpperCase()} agregada correctamente.` });
+    } catch (err: any) {
+      setCreateKeyError(err?.message || "Error inesperado al registrar la clave.");
+    } finally {
+      setIsSubmittingKey(false);
+    }
+  };
+
+  const handleConfirmDeleteKey = async () => {
+    if (!selectedClient || !deletingKey) return;
+    setIsDeletingKey(true);
+    try {
+      const res = await fetch(`/api/clients/${selectedClient.id}/ai/keys/${deletingKey.id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setAiKeys((prev) => prev.filter((k) => k.id !== deletingKey.id));
+        setFeedback({ type: "success", message: `Clave "${deletingKey.label}" eliminada exitosamente.` });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setAiActionError(data?.error?.message || "Error al eliminar la clave.");
+      }
+    } catch (err: any) {
+      setAiActionError(err?.message || "Error de red al eliminar la clave.");
+    } finally {
+      setIsDeletingKey(false);
+      setDeletingKey(null);
+    }
+  };
+
+  const handleSaveAiConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClient) return;
+
+    setIsSavingConfig(true);
+    setAiActionError(null);
+    try {
+      const allowlist = cfgAllowlistStr
+        .split(",")
+        .map((m) => m.trim())
+        .filter(Boolean);
+
+      const tokenCap = cfgMonthlyCap.trim() === "" ? null : Number(cfgMonthlyCap);
+
+      const res = await fetch(`/api/clients/${selectedClient.id}/ai`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          default_model: cfgDefaultModel.trim() || "gemini-1.5-flash",
+          model_allowlist: allowlist.length > 0 ? allowlist : ["gemini-1.5-flash"],
+          monthly_token_cap: tokenCap,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setAiActionError(data?.error?.message || "Error al guardar la configuración de IA.");
+      } else {
+        setFeedback({ type: "success", message: "Configuración de IA actualizada correctamente." });
+        await loadClientAiData(selectedClient.id);
+      }
+    } catch (err: any) {
+      setAiActionError(err?.message || "Error al guardar la configuración.");
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
   const handleOpenDetail = (client: Client) => {
     setSelectedClient(client);
     loadClientDetail(client.id);
+    loadClientAiData(client.id);
+    setActiveDetailTab("general");
   };
 
   // 1. Crear Cliente
@@ -673,96 +876,313 @@ export default function ClientsPage() {
               </div>
             </div>
 
-            {/* Conteos de Recursos Vinculados */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="p-3.5 rounded-xl bg-texter-surface-subtle border border-texter-border flex items-center justify-between">
-                <div>
-                  <span className="text-[11px] text-texter-text-muted uppercase font-mono">Automatizaciones</span>
-                  <p className="text-xl font-bold font-mono text-texter-cyan mt-1">
-                    {isLoadingDetail ? "..." : clientDetail?.counts?.automations ?? 0}
-                  </p>
-                </div>
-                <Workflow className="w-6 h-6 text-texter-cyan/40" />
-              </div>
+            {/* Selector de Pestañas */}
+            <div className="flex items-center gap-2 border-b border-texter-border pb-2">
+              <button
+                type="button"
+                onClick={() => setActiveDetailTab("general")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  activeDetailTab === "general"
+                    ? "bg-texter-indigo text-white shadow-sm"
+                    : "text-texter-text-muted hover:text-white hover:bg-texter-surface-hover"
+                }`}
+              >
+                <Briefcase className="w-3.5 h-3.5" />
+                <span>General & Recursos</span>
+              </button>
 
-              <div className="p-3.5 rounded-xl bg-texter-surface-subtle border border-texter-border flex items-center justify-between">
-                <div>
-                  <span className="text-[11px] text-texter-text-muted uppercase font-mono">Trabajos (Jobs)</span>
-                  <p className="text-xl font-bold font-mono text-texter-indigo mt-1">
-                    {isLoadingDetail ? "..." : clientDetail?.counts?.jobs ?? 0}
-                  </p>
-                </div>
-                <Briefcase className="w-6 h-6 text-texter-indigo/40" />
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-texter-surface-subtle border border-texter-border flex items-center justify-between">
-                <div>
-                  <span className="text-[11px] text-texter-text-muted uppercase font-mono">Agentes Autónomos</span>
-                  <p className="text-xl font-bold font-mono text-emerald-400 mt-1">
-                    {isLoadingDetail ? "..." : clientDetail?.counts?.agents ?? 0}
-                  </p>
-                </div>
-                <Bot className="w-6 h-6 text-emerald-400/40" />
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveDetailTab("ai");
+                  if (selectedClient) loadClientAiData(selectedClient.id);
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  activeDetailTab === "ai"
+                    ? "bg-texter-cyan text-texter-bg shadow-sm font-bold"
+                    : "text-texter-text-muted hover:text-white hover:bg-texter-surface-hover"
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Configuración de IA</span>
+              </button>
             </div>
 
-            {/* Datos Completos */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs">
-              <div className="space-y-1">
-                <span className="text-texter-text-dim font-mono">Sitio Web:</span>
-                <p className="text-white font-mono break-all">
-                  {selectedClient.website_url ? (
-                    <a
-                      href={selectedClient.website_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-texter-cyan hover:underline inline-flex items-center gap-1"
-                    >
-                      {selectedClient.website_url}
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  ) : (
-                    "No configurado"
+            {/* PESTAÑA 1: GENERAL */}
+            {activeDetailTab === "general" && (
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-3.5 rounded-xl bg-texter-surface-subtle border border-texter-border flex items-center justify-between">
+                    <div>
+                      <span className="text-[11px] text-texter-text-muted uppercase font-mono">Automatizaciones</span>
+                      <p className="text-xl font-bold font-mono text-texter-cyan mt-1">
+                        {isLoadingDetail ? "..." : clientDetail?.counts?.automations ?? 0}
+                      </p>
+                    </div>
+                    <Workflow className="w-6 h-6 text-texter-cyan/40" />
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-texter-surface-subtle border border-texter-border flex items-center justify-between">
+                    <div>
+                      <span className="text-[11px] text-texter-text-muted uppercase font-mono">Trabajos (Jobs)</span>
+                      <p className="text-xl font-bold font-mono text-texter-indigo mt-1">
+                        {isLoadingDetail ? "..." : clientDetail?.counts?.jobs ?? 0}
+                      </p>
+                    </div>
+                    <Briefcase className="w-6 h-6 text-texter-indigo/40" />
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-texter-surface-subtle border border-texter-border flex items-center justify-between">
+                    <div>
+                      <span className="text-[11px] text-texter-text-muted uppercase font-mono">Agentes Autónomos</span>
+                      <p className="text-xl font-bold font-mono text-emerald-400 mt-1">
+                        {isLoadingDetail ? "..." : clientDetail?.counts?.agents ?? 0}
+                      </p>
+                    </div>
+                    <Bot className="w-6 h-6 text-emerald-400/40" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs">
+                  <div className="space-y-1">
+                    <span className="text-texter-text-dim font-mono">Sitio Web:</span>
+                    <p className="text-white font-mono break-all">
+                      {selectedClient.website_url ? (
+                        <a
+                          href={selectedClient.website_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-texter-cyan hover:underline inline-flex items-center gap-1"
+                        >
+                          {selectedClient.website_url}
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : (
+                        "No configurado"
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <span className="text-texter-text-dim font-mono">Contacto:</span>
+                    <p className="text-white">{selectedClient.contact_name || "—"}</p>
+                    {selectedClient.contact_email && (
+                      <p className="text-texter-text-muted font-mono">{selectedClient.contact_email}</p>
+                    )}
+                    {selectedClient.contact_phone && (
+                      <p className="text-texter-text-muted font-mono">{selectedClient.contact_phone}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <span className="text-texter-text-dim font-mono">Límite de Créditos:</span>
+                    <p className="text-white font-mono">
+                      {selectedClient.credit_limit_monthly != null
+                        ? `${selectedClient.credit_limit_monthly.toLocaleString()} / mes`
+                        : "Sin límite mensual"}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <span className="text-texter-text-dim font-mono">Workspace Vinculado:</span>
+                    <p className="text-white font-mono truncate">
+                      {clientDetail?.workspace?.name || selectedClient.workspace?.name || "Workspace Dedicado"}
+                    </p>
+                  </div>
+
+                  {selectedClient.notes && (
+                    <div className="col-span-full pt-2 border-t border-texter-border space-y-1">
+                      <span className="text-texter-text-dim font-mono">Notas del Cliente:</span>
+                      <p className="text-texter-text-secondary leading-relaxed bg-texter-surface p-2.5 rounded-lg border border-texter-border">
+                        {selectedClient.notes}
+                      </p>
+                    </div>
                   )}
-                </p>
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-texter-text-dim font-mono">Contacto:</span>
-                <p className="text-white">{selectedClient.contact_name || "—"}</p>
-                {selectedClient.contact_email && (
-                  <p className="text-texter-text-muted font-mono">{selectedClient.contact_email}</p>
-                )}
-                {selectedClient.contact_phone && (
-                  <p className="text-texter-text-muted font-mono">{selectedClient.contact_phone}</p>
-                )}
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-texter-text-dim font-mono">Límite de Créditos:</span>
-                <p className="text-white font-mono">
-                  {selectedClient.credit_limit_monthly != null
-                    ? `${selectedClient.credit_limit_monthly.toLocaleString()} / mes`
-                    : "Sin límite mensual"}
-                </p>
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-texter-text-dim font-mono">Workspace Vinculado:</span>
-                <p className="text-white font-mono truncate">
-                  {clientDetail?.workspace?.name || selectedClient.workspace?.name || "Workspace Dedicado"}
-                </p>
-              </div>
-
-              {selectedClient.notes && (
-                <div className="col-span-full pt-2 border-t border-texter-border space-y-1">
-                  <span className="text-texter-text-dim font-mono">Notas del Cliente:</span>
-                  <p className="text-texter-text-secondary leading-relaxed bg-texter-surface p-2.5 rounded-lg border border-texter-border">
-                    {selectedClient.notes}
-                  </p>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+
+            {/* PESTAÑA 2: CONFIGURACIÓN DE IA */}
+            {activeDetailTab === "ai" && (
+              <div className="space-y-5">
+                {aiActionError && (
+                  <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                    <span>{aiActionError}</span>
+                  </div>
+                )}
+
+                {/* 1. Selector de Modo IA */}
+                <div className="p-4 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-3">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <div>
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Cpu className="w-4 h-4 text-texter-cyan" />
+                        Modo de Facturación de IA
+                      </h4>
+                      <p className="text-xs text-texter-text-muted">
+                        Define si el cliente consume la cuenta central de NEXTEX o utiliza sus propias claves (BYOK).
+                      </p>
+                    </div>
+                    <Badge variant={aiConfig?.mode === "byok" ? "indigo" : "cyan"} size="md">
+                      {aiConfig?.mode === "byok" ? "Claves Propias (BYOK)" : "NEXTEX Premium"}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div
+                      onClick={() => {
+                        if (aiConfig?.mode !== "nextex_keys") setPendingModeChange("nextex_keys");
+                      }}
+                      className={`p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between gap-2 ${
+                        aiConfig?.mode === "nextex_keys"
+                          ? "bg-texter-cyan/10 border-cyan-500/50 shadow-sm"
+                          : "bg-texter-surface border-texter-border hover:border-texter-hover"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-xs text-white">Claves NEXTEX (Premium)</span>
+                        {aiConfig?.mode === "nextex_keys" && <Check className="w-4 h-4 text-texter-cyan" />}
+                      </div>
+                      <p className="text-[11px] text-texter-text-dim">
+                        Las peticiones de IA se canalizan por la infraestructura central de NEXTEX según el plan.
+                      </p>
+                    </div>
+
+                    <div
+                      onClick={() => {
+                        if (aiConfig?.mode !== "byok") setPendingModeChange("byok");
+                      }}
+                      className={`p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between gap-2 ${
+                        aiConfig?.mode === "byok"
+                          ? "bg-texter-indigo/15 border-indigo-500/50 shadow-sm"
+                          : "bg-texter-surface border-texter-border hover:border-texter-hover"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-xs text-white">Claves Propias (BYOK)</span>
+                        {aiConfig?.mode === "byok" && <Check className="w-4 h-4 text-texter-indigo" />}
+                      </div>
+                      <p className="text-[11px] text-texter-text-dim">
+                        El cliente aporta sus propias API Keys de OpenAI, Gemini o Anthropic cifradas en la bóveda AES-GCM.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Bóveda de Claves de Proveedor (BYOK) */}
+                <div className="p-4 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-3">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-texter-border pb-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Key className="w-4 h-4 text-amber-400" />
+                        Bóveda de Claves de Proveedores (BYOK)
+                      </h4>
+                      <p className="text-xs text-texter-text-muted">
+                        Claves validadas contra las APIs oficiales y cifradas en reposo con AES-256-GCM.
+                      </p>
+                    </div>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => {
+                        setIsAddKeyOpen(true);
+                        setCreateKeyError(null);
+                        setNewKeySecret("");
+                        setNewKeyLabel("");
+                      }}
+                      className="flex items-center gap-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Agregar Clave</span>
+                    </Button>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="text-texter-text-muted uppercase border-b border-texter-border">
+                        <tr>
+                          <th className="py-2.5 px-3">Proveedor</th>
+                          <th className="py-2.5 px-3">Etiqueta</th>
+                          <th className="py-2.5 px-3">Terminación</th>
+                          <th className="py-2.5 px-3">Fecha</th>
+                          <th className="py-2.5 px-3 text-right">Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-texter-border/50">
+                        {aiKeys.map((k) => (
+                          <tr key={k.id} className="hover:bg-texter-surface-hover/50 transition-colors">
+                            <td className="py-2.5 px-3 uppercase text-texter-cyan font-bold">{k.provider}</td>
+                            <td className="py-2.5 px-3 text-white font-sans">{k.label}</td>
+                            <td className="py-2.5 px-3 text-texter-text-muted">••••{k.key_hint}</td>
+                            <td className="py-2.5 px-3 text-texter-text-dim text-[11px]">
+                              {new Date(k.created_at).toLocaleDateString()}
+                            </td>
+                            <td className="py-2.5 px-3 text-right">
+                              <button
+                                type="button"
+                                onClick={() => setDeletingKey(k)}
+                                className="p-1 text-texter-text-dim hover:text-rose-400 transition-colors rounded"
+                                title="Eliminar clave"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        {aiKeys.length === 0 && !isLoadingAi && (
+                          <tr>
+                            <td colSpan={5} className="py-6 text-center text-texter-text-dim font-sans">
+                              No hay claves configuradas para este cliente. Haz clic en "Agregar Clave" para registrar una.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* 3. Configuración de Modelos y Cuotas */}
+                <form onSubmit={handleSaveAiConfig} className="p-4 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-4">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2 border-b border-texter-border pb-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    Parámetros de Modelo y Control de Cuota
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Input
+                      label="Modelo por Defecto"
+                      value={cfgDefaultModel}
+                      onChange={(e) => setCfgDefaultModel(e.target.value)}
+                      placeholder="gemini-1.5-flash"
+                      required
+                    />
+
+                    <Input
+                      label="Límite Mensual de Tokens (opcional)"
+                      type="number"
+                      value={cfgMonthlyCap}
+                      onChange={(e) => setCfgMonthlyCap(e.target.value)}
+                      placeholder="ej: 1000000 (vacío para sin límite)"
+                    />
+                  </div>
+
+                  <Input
+                    label="Modelos Permitidos (Allowlist separados por coma)"
+                    value={cfgAllowlistStr}
+                    onChange={(e) => setCfgAllowlistStr(e.target.value)}
+                    placeholder="gemini-1.5-flash, gemini-1.5-pro, gpt-4o"
+                    required
+                  />
+
+                  <div className="flex justify-end pt-2 border-t border-texter-border">
+                    <Button variant="primary" size="sm" type="submit" isLoading={isSavingConfig}>
+                      Guardar Configuración de IA
+                    </Button>
+                  </div>
+                </form>
+              </div>
+            )}
           </Card>
         )}
       </div>
@@ -1047,6 +1467,131 @@ export default function ClientsPage() {
           </Card>
         </div>
       )}
+
+      {/* MODAL: CONFIRMAR CAMBIO DE MODO IA */}
+      {pendingModeChange && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-texter-border">
+            <div className="flex items-center gap-2.5 text-texter-warning font-bold text-base">
+              <AlertTriangle className="w-5 h-5" />
+              Cambiar Modo de Proveedor IA
+            </div>
+            <p className="text-xs text-texter-text-muted leading-relaxed">
+              ¿Deseas cambiar el modo a <strong className="text-white">{pendingModeChange === "byok" ? "\"Claves propias (BYOK)\"" : "\"Claves NEXTEX (premium)\""}</strong>?
+              {pendingModeChange === "byok" && " Las peticiones se facturarán directamente a las claves del cliente en la bóveda."}
+              {pendingModeChange === "nextex_keys" && " Las peticiones usarán la cuenta central de NEXTEX sujeta al plan del cliente."}
+            </p>
+            <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+              <Button variant="ghost" size="sm" onClick={() => setPendingModeChange(null)}>
+                Cancelar
+              </Button>
+              <Button variant="primary" size="sm" onClick={handleConfirmModeChange} isLoading={isChangingMode}>
+                Confirmar Cambio
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL: AGREGAR CLAVE BYOK */}
+      {isAddKeyOpen && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-texter-border">
+            <div className="flex items-center justify-between border-b border-texter-border pb-3">
+              <div className="flex items-center gap-2">
+                <Key className="w-5 h-5 text-texter-cyan" />
+                <h3 className="text-base font-bold text-white">Agregar Clave de Proveedor (BYOK)</h3>
+              </div>
+              <button onClick={() => setIsAddKeyOpen(false)} className="text-texter-text-muted hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {createKeyError && (
+              <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                <span>{createKeyError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleAddApiKey} className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-texter-text-secondary">Proveedor</label>
+                <select
+                  value={newKeyProvider}
+                  onChange={(e) => setNewKeyProvider(e.target.value as any)}
+                  className="w-full p-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white outline-none font-mono"
+                >
+                  <option value="openai">OpenAI</option>
+                  <option value="google">Google Gemini</option>
+                  <option value="anthropic">Anthropic Claude</option>
+                </select>
+              </div>
+
+              <Input
+                label="Etiqueta / Nombre (opcional)"
+                value={newKeyLabel}
+                onChange={(e) => setNewKeyLabel(e.target.value)}
+                placeholder="ej: Producción OpenAI GPT-4"
+              />
+
+              <Input
+                label="Clave Secreta de API (API Key)"
+                type="password"
+                value={newKeySecret}
+                onChange={(e) => setNewKeySecret(e.target.value)}
+                placeholder="sk-..."
+                required
+              />
+
+              <p className="text-[11px] text-texter-text-dim">
+                La clave se valida contra el proveedor externo antes de ser cifrada en la bóveda AES-GCM.
+              </p>
+
+              <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={() => {
+                    setIsAddKeyOpen(false);
+                    setCreateKeyError(null);
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button variant="primary" size="sm" type="submit" isLoading={isSubmittingKey}>
+                  Validar y Guardar Clave
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR ELIMINAR CLAVE */}
+      {deletingKey && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-texter-rose/40">
+            <div className="flex items-center gap-2.5 text-texter-rose font-bold text-base">
+              <Trash2 className="w-5 h-5" />
+              Eliminar Clave de IA
+            </div>
+            <p className="text-xs text-texter-text-muted leading-relaxed">
+              ¿Estás seguro de que deseas eliminar la clave <strong className="text-white">"{deletingKey.label}"</strong> ({deletingKey.provider.toUpperCase()} ••••{deletingKey.key_hint})? El cliente dejará de poder usar este proveedor en modo BYOK.
+            </p>
+            <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+              <Button variant="ghost" size="sm" onClick={() => setDeletingKey(null)}>
+                Volver
+              </Button>
+              <Button variant="danger" size="sm" onClick={handleConfirmDeleteKey} isLoading={isDeletingKey}>
+                Confirmar Eliminación
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
     </DashboardShell>
   );
 }
