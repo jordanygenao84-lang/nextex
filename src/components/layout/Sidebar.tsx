@@ -22,6 +22,7 @@ import {
   Loader2,
   Bot,
   Briefcase,
+  MessageSquare,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Logo } from "@/components/ui/Logo";
@@ -93,6 +94,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       name: "Clientes",
       href: "/clients",
       icon: Users,
+    },
+    {
+      name: "Conversaciones",
+      href: "/conversations",
+      icon: MessageSquare,
+      badge: "Inbox",
     },
   ];
 
