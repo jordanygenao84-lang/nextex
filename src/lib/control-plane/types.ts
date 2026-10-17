@@ -132,7 +132,7 @@ export class ControlPlaneError extends Error {
     if (code === "CAPACITY_EXCEEDED" || msg.includes("capacity") || msg.includes("concurrencia")) {
       return new ControlPlaneError("Capacidad del control plane excedida", "CAPACITY", err);
     }
-    if (code === "JOB_CANCEL_REQUESTED" || code === "ALREADY_TERMINAL" || msg.includes("cancell")) {
+    if (code === "JOB_CANCEL_REQUESTED" || code === "ALREADY_TERMINAL") {
       return new ControlPlaneError("Operación sobre job cancelado", "CANCELLATION", err);
     }
     if (msg.includes("timeout") || msg.includes("connection") || msg.includes("fetch failed") || msg.includes("econnreset")) {
