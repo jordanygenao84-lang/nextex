@@ -23,7 +23,7 @@ function isPrivateIPv4(ip: string): boolean {
 }
 
 function isPrivateIPv6(ip: string): boolean {
-  const cleanIp = ip.replace(/^[|]$/g, "").toLowerCase().trim();
+  const cleanIp = ip.replace(/^\[|\]$/g, "").toLowerCase().trim();
   if (
     cleanIp === "::1" ||
     cleanIp === "::" ||
@@ -106,6 +106,8 @@ export function validateUrlForSsrf(rawUrl: string): URL {
   return parsed;
 }
 
+export const validateHttpUrl = validateUrlForSsrf;
+
 export function redactSensitiveHeaders(headers: Record<string, string>): Record<string, string> {
   const clean: Record<string, string> = {};
   for (const [key, val] of Object.entries(headers)) {
@@ -131,6 +133,7 @@ export interface HttpResponseData {
   status: number;
   headers: Record<string, string>;
   bodyText: string;
+  rawText?: string;
   bodyJson: any | null;
   finalUrl: string;
   durationMs: number;
@@ -187,7 +190,7 @@ export async function executeSafeHttpRequest(
       return await processResponse(res, currentUrl, startTime);
     } catch (err: any) {
       if (err.name === "AbortError" || err.message?.includes("aborted")) {
-        throw new Error(`Tiempo de espera agotado tras ${safeTimeoutMs}ms.`);
+        throw new Error("timeout");
       }
       throw err;
     } finally {
@@ -213,14 +216,14 @@ async function processResponse(
   if (contentLengthHeader) {
     const len = parseInt(contentLengthHeader, 10);
     if (!isNaN(len) && len > MAX_RESPONSE_BYTES) {
-      throw new Error(`La respuesta excede el límite de 2MB (${len} bytes).`);
+      throw new Error("respuesta muy grande");
     }
   }
 
   let bodyBuffer: Buffer;
   if (res.body) {
     const reader = res.body.getReader();
-    const chunks = [];
+    const chunks: Uint8Array[] = [];
     let receivedBytes = 0;
     try {
       while (true) {
@@ -230,7 +233,7 @@ async function processResponse(
           receivedBytes += value.length;
           if (receivedBytes > MAX_RESPONSE_BYTES) {
             await reader.cancel();
-            throw new Error(`La respuesta excede el límite de 2MB (${receivedBytes} bytes).`);
+            throw new Error("respuesta muy grande");
           }
           chunks.push(value);
         }
@@ -242,7 +245,7 @@ async function processResponse(
   } else {
     const arrayBuf = await res.arrayBuffer();
     if (arrayBuf.byteLength > MAX_RESPONSE_BYTES) {
-      throw new Error(`La respuesta excede el límite de 2MB (${arrayBuf.byteLength} bytes).`);
+      throw new Error("respuesta muy grande");
     }
     bodyBuffer = Buffer.from(arrayBuf);
   }
@@ -264,6 +267,7 @@ async function processResponse(
     status: res.status,
     headers,
     bodyText,
+    rawText,
     bodyJson,
     finalUrl,
     durationMs,

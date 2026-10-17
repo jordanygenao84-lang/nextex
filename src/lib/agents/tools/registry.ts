@@ -10,8 +10,53 @@ import { databaseWriteToolHandler } from "./builtins/database_write";
 import { whatsappToolHandler } from "./builtins/whatsapp";
 import { httpGetToolHandler } from "./builtins/http_get";
 import { httpPostToolHandler } from "./builtins/http_post";
+import { webFetchToolHandler } from "./builtins/web_fetch";
 
 export const CANONICAL_TOOLS: ToolDefinition[] = [
+  {
+    id: "web_fetch",
+    name: "Lector Web",
+    description: "Extracción y limpieza de texto visible y enlaces de páginas web sin tags HTML y con protección anti-SSRF.",
+    version: "1.0.0",
+    category: "integration",
+    riskLevel: "read",
+    requiresApproval: false,
+    status: "active",
+    enabled: true,
+    timeoutMs: 30000,
+    parameters: {
+      url: {
+        type: "string",
+        description: "URL de la página web a consultar (http o https)",
+        required: true,
+      },
+      maxChars: {
+        type: "number",
+        description: "Límite máximo de caracteres del texto extraído (default 20000, máx 100000)",
+        required: false,
+        minimum: 100,
+        maximum: 100000,
+      },
+      includeLinks: {
+        type: "boolean",
+        description: "Si es true, extrae e incluye la lista de enlaces de la página",
+        required: false,
+      },
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string" },
+        finalUrl: { type: "string" },
+        title: { type: "string" },
+        text: { type: "string" },
+        links: { type: "array" },
+        truncated: { type: "boolean" },
+        durationMs: { type: "number" },
+      },
+    },
+    handler: webFetchToolHandler,
+  },
   {
     id: "http_get",
     name: "Lector HTTP",
