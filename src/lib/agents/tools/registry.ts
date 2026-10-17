@@ -319,7 +319,7 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
     version: "1.0.0",
     category: "communication",
     riskLevel: "external",
-    requiresApproval: false,
+    requiresApproval: true,
     status: "active",
     enabled: true,
     timeoutMs: 8000,
