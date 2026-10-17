@@ -2,7 +2,7 @@ import React from "react";
 import { cn } from "@/lib/utils";
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
-  variant?: "default" | "indigo" | "cyan" | "success" | "warning" | "error" | "outline";
+  variant?: "default" | "indigo" | "cyan" | "success" | "warning" | "error" | "danger" | "outline";
   size?: "sm" | "md";
   dot?: boolean;
 }
@@ -22,6 +22,7 @@ export const Badge: React.FC<BadgeProps> = ({
     success: "bg-texter-emerald/10 text-emerald-400 border-emerald-500/25",
     warning: "bg-texter-amber/10 text-amber-400 border-amber-500/25",
     error: "bg-texter-rose/10 text-rose-400 border-rose-500/25",
+    danger: "bg-texter-rose/10 text-rose-400 border-rose-500/25",
     outline: "bg-transparent text-texter-text-muted border-texter-border",
   };
 
@@ -32,6 +33,7 @@ export const Badge: React.FC<BadgeProps> = ({
     success: "bg-texter-emerald",
     warning: "bg-texter-amber",
     error: "bg-texter-rose",
+    danger: "bg-texter-rose",
     outline: "bg-texter-text-dim",
   };
 

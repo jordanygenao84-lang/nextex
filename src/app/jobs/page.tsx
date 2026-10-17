@@ -267,6 +267,35 @@ export default function JobsPage() {
     }
   };
 
+  const getRunStatusBadge = (status: string) => {
+    switch (status) {
+      case "queued":
+        return <Badge variant="warning" size="sm" dot>En cola</Badge>;
+      case "claimed":
+        return <Badge variant="cyan" size="sm" dot>Reclamado</Badge>;
+      case "running":
+        return <Badge variant="cyan" size="sm" dot>En ejecución</Badge>;
+      case "waiting_approval":
+        return <Badge variant="warning" size="sm" dot>Esperando aprobación</Badge>;
+      case "retry_scheduled":
+        return <Badge variant="warning" size="sm" dot>Reintento programado</Badge>;
+      case "cancellation_requested":
+        return <Badge variant="warning" size="sm" dot>Cancelación solicitada</Badge>;
+      case "completed":
+        return <Badge variant="success" size="sm" dot>Completado</Badge>;
+      case "failed":
+        return <Badge variant="danger" size="sm" dot>Fallido</Badge>;
+      case "cancelled":
+        return <Badge variant="default" size="sm" dot>Cancelado</Badge>;
+      case "timeout":
+        return <Badge variant="danger" size="sm" dot>Timeout</Badge>;
+      case "dead_letter":
+        return <Badge variant="danger" size="sm" dot>Descartado</Badge>;
+      default:
+        return <Badge variant="default" size="sm" dot>{status}</Badge>;
+    }
+  };
+
   return (
     <DashboardShell>
       <div className="space-y-6">
@@ -471,7 +500,7 @@ export default function JobsPage() {
                   {runs.map((r) => (
                     <tr key={r.id} className="hover:bg-texter-surface-hover/50">
                       <td className="p-3 font-mono text-white">{r.id.substring(0, 8)}...</td>
-                      <td className="p-3">{getStatusBadge(r.status)}</td>
+                      <td className="p-3">{getRunStatusBadge(r.status)}</td>
                       <td className="p-3 capitalize">{r.priority}</td>
                       <td className="p-3">{r.attempt} / {r.max_attempts}</td>
                       <td className="p-3 font-mono text-texter-text-dim">
