@@ -26,7 +26,9 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const workspaceId = searchParams.get("workspaceId");
 
-    let query = (supabase.from("agents") as any).select("*, agent_tools(tool_id, enabled)");
+    let query = (supabase.from("agents") as any)
+      .select("*, agent_tools(tool_id, enabled)")
+      .neq("status", "archived");
 
     if (workspaceId) {
       query = query.eq("workspace_id", workspaceId);

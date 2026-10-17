@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/context/AuthContext";
+import { createClient } from "@/lib/supabase/client";
 import { Agent, AgentRun, AgentRunStep, ApprovalRequest } from "@/lib/agents/types";
 import { CANONICAL_MODELS } from "@/lib/omniengine/registry/models";
 import {
@@ -28,10 +29,16 @@ import {
   Clock,
   ShieldAlert,
   Pencil,
+  Trash2,
 } from "lucide-react";
 
 export default function AgentsPage() {
-  const { workspace } = useAuth();
+  const { user, workspace } = useAuth();
+  const [userRole, setUserRole] = useState<string>("member");
+  const [deletingAgent, setDeletingAgent] = useState<Agent | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteFeedback, setDeleteFeedback] = useState<string | null>(null);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isLoading, setIsLoading] = useState(true);
@@ -142,6 +149,23 @@ export default function AgentsPage() {
           const json = await apprRes.json();
           setApprovals(json.approvals || []);
         }
+
+        if (user?.id) {
+          if (workspace.owner_id === user.id) {
+            setUserRole("owner");
+          } else {
+            const supabase = createClient();
+            const { data: member } = await (supabase.from("workspace_members") as any)
+              .select("role")
+              .eq("workspace_id", workspace.id)
+              .eq("user_id", user.id)
+              .maybeSingle();
+
+            if (member?.role) {
+              setUserRole(member.role);
+            }
+          }
+        }
       } catch {
         // Fallback
       } finally {
@@ -150,7 +174,7 @@ export default function AgentsPage() {
     }
 
     loadData();
-  }, [workspace?.id]);
+  }, [workspace?.id, workspace?.owner_id, user?.id]);
 
   const handleCreateAgent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -187,6 +211,35 @@ export default function AgentsPage() {
       console.error("Error al crear agente:", err);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const canDeleteAgent =
+    userRole === "owner" ||
+    userRole === "admin" ||
+    Boolean(workspace?.owner_id && user?.id && workspace.owner_id === user.id);
+
+  const handleDeleteAgent = async () => {
+    if (!deletingAgent) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/agents/${deletingAgent.id}`, {
+        method: "DELETE",
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error?.message || "No se pudo eliminar el agente.");
+      }
+
+      setAgents((prev) => prev.filter((a) => a.id !== deletingAgent.id));
+      setDeleteFeedback(`El agente "${deletingAgent.name}" se archivó correctamente.`);
+      setTimeout(() => setDeleteFeedback(null), 4000);
+      setDeletingAgent(null);
+    } catch (err: any) {
+      setDeleteError(err?.message || "Error al eliminar el agente.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -282,6 +335,20 @@ export default function AgentsPage() {
       subtitle="Definición declarativa, gobernanza de permisos y telemetría de ejecución"
     >
       <div className="space-y-6">
+        {deleteFeedback && (
+          <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 text-xs text-emerald-300 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{deleteFeedback}</span>
+            </div>
+            <button
+              onClick={() => setDeleteFeedback(null)}
+              className="text-texter-text-muted hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
         {/* Banner Superior & Acciones Rápidas */}
         <div className="p-5 rounded-2xl bg-gradient-to-r from-texter-surface to-texter-surface-elevated border border-texter-border flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
           <div className="space-y-1">
@@ -534,6 +601,21 @@ export default function AgentsPage() {
                           <Pencil className="w-3.5 h-3.5" />
                           <span>Editar</span>
                         </Button>
+                        {canDeleteAgent && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setDeletingAgent(agent);
+                              setDeleteError(null);
+                            }}
+                            className="text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 flex items-center gap-1"
+                            title="Eliminar Agente"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                            <span>Eliminar</span>
+                          </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"
@@ -951,6 +1033,68 @@ export default function AgentsPage() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMAR ELIMINAR AGENTE */}
+      {deletingAgent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl bg-texter-surface border border-texter-border shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-texter-border">
+              <div className="flex items-center gap-2 text-rose-400">
+                <Trash2 className="w-5 h-5 text-rose-400" />
+                <h3 className="text-base font-bold text-white">Eliminar Agente</h3>
+              </div>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDeletingAgent(null)}
+                className="text-texter-text-muted hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <p className="text-texter-text-secondary leading-relaxed">
+                ¿Eliminar el agente <strong className="text-white font-semibold">"{deletingAgent.name}"</strong>?
+              </p>
+              <p className="text-texter-text-muted leading-relaxed">
+                Se archivará y dejará de estar disponible.
+              </p>
+            </div>
+
+            {deleteError && (
+              <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                <span>{deleteError}</span>
+              </div>
+            )}
+
+            <div className="pt-3 border-t border-texter-border flex items-center justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDeletingAgent(null)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                type="button"
+                disabled={isDeleting}
+                isLoading={isDeleting}
+                onClick={handleDeleteAgent}
+                className="bg-rose-600 hover:bg-rose-700 text-white border-rose-500"
+                leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+              >
+                Eliminar Agente
+              </Button>
+            </div>
           </div>
         </div>
       )}
