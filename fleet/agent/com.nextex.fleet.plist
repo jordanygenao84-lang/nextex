@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.nextex.fleet</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <!-- Ruta a Node.js (ej: /opt/homebrew/bin/node en Apple Silicon o /usr/local/bin/node en Intel) -->
+        <string>/opt/homebrew/bin/node</string>
+        <string>/Users/jordanycastanosgenao/Proyectos/texter/fleet/agent/agent.mjs</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/jordanycastanosgenao/Proyectos/texter/fleet/agent</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>NEXTER_FLEET_URL</key>
+        <string>https://nextex-seven.vercel.app</string>
+        <!-- Reemplaza el valor de abajo con la API key obtenida en /fleet -->
+        <key>NEXTER_FLEET_KEY</key>
+        <string>REEMPLAZAR_CON_TU_API_KEY</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/nextex-fleet-agent.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/nextex-fleet-agent.err</string>
+</dict>
+</plist>
