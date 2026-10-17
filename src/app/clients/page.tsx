@@ -33,6 +33,10 @@ import {
   Clock,
   ShieldCheck,
   Key,
+  Link2,
+  Copy,
+  RotateCcw,
+  Hash,
   Cpu,
   Sparkles,
   Lock,
@@ -101,6 +105,27 @@ interface ClientIntegration {
   created_at: string;
 }
 
+
+interface ClientSiteKey {
+  id: string;
+  name: string;
+  key_prefix: string;
+  is_active: boolean;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+interface ClientIdBinding {
+  id: string;
+  client_id: string;
+  external_id: string;
+  phone: string | null;
+  channel: "web" | "whatsapp" | "instagram" | "other";
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 interface ClientDetailData {
   client: Client;
   workspace?: { id: string; name: string; slug?: string; owner_id?: string };
@@ -140,7 +165,45 @@ export default function ClientsPage() {
 
 
   // Estados Pestaña IA (IA-3)
-  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "ai" | "integrations">("general");
+  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "ai" | "integrations" | "connections">("general");
+
+  // Estados Pestaña Conexiones (CONEX-3)
+  const [siteKeys, setSiteKeys] = useState<ClientSiteKey[]>([]);
+  const [isLoadingSiteKeys, setIsLoadingSiteKeys] = useState(false);
+  const [siteKeysError, setSiteKeysError] = useState<string | null>(null);
+
+  const [bindings, setBindings] = useState<ClientIdBinding[]>([]);
+  const [isLoadingBindings, setIsLoadingBindings] = useState(false);
+  const [bindingsError, setBindingsError] = useState<string | null>(null);
+
+  // Modales Site Keys
+  const [isGenerateKeyOpen, setIsGenerateKeyOpen] = useState(false);
+  const [newSiteKeyName, setNewSiteKeyName] = useState("");
+  const [isGeneratingKey, setIsGeneratingKey] = useState(false);
+  const [generatedKeyResult, setGeneratedKeyResult] = useState<{ id: string; name: string; key: string; key_prefix: string; warning: string } | null>(null);
+  const [hasCopiedKey, setHasCopiedKey] = useState(false);
+
+  const [regeneratingKey, setRegeneratingKey] = useState<ClientSiteKey | null>(null);
+  const [isRegeneratingKey, setIsRegeneratingKey] = useState(false);
+
+  const [revokingKey, setRevokingKey] = useState<ClientSiteKey | null>(null);
+  const [isRevokingKey, setIsRevokingKey] = useState(false);
+
+  // Modales ID Bindings
+  const [isCreateBindingOpen, setIsCreateBindingOpen] = useState(false);
+  const [bindingExternalId, setBindingExternalId] = useState("");
+  const [bindingPhone, setBindingPhone] = useState("");
+  const [bindingChannel, setBindingChannel] = useState<"web" | "whatsapp" | "instagram" | "other">("web");
+  const [isCreatingBinding, setIsCreatingBinding] = useState(false);
+  const [createBindingError, setCreateBindingError] = useState<string | null>(null);
+
+  const [editingBinding, setEditingBinding] = useState<ClientIdBinding | null>(null);
+  const [editBindingPhone, setEditBindingPhone] = useState("");
+  const [editBindingIsActive, setEditBindingIsActive] = useState(true);
+  const [isUpdatingBinding, setIsUpdatingBinding] = useState(false);
+
+  const [deletingBinding, setDeletingBinding] = useState<ClientIdBinding | null>(null);
+  const [isDeletingBinding, setIsDeletingBinding] = useState(false);
 
   // Estados Pestaña Integraciones (BLUEPRINTS-3)
   const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
@@ -523,12 +586,231 @@ export default function ClientsPage() {
     }
   };
 
+
+  const loadSiteKeys = useCallback(async (clientId: string) => {
+    setIsLoadingSiteKeys(true);
+    setSiteKeysError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/site-keys`);
+      if (res.ok) {
+        const data = await res.json();
+        setSiteKeys(Array.isArray(data) ? data : []);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setSiteKeysError(data?.error?.message || "No se pudieron cargar las site keys.");
+      }
+    } catch (err: any) {
+      setSiteKeysError(err?.message || "Error al consultar site keys.");
+    } finally {
+      setIsLoadingSiteKeys(false);
+    }
+  }, []);
+
+  const loadBindings = useCallback(async (clientId: string) => {
+    setIsLoadingBindings(true);
+    setBindingsError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/bindings`);
+      if (res.ok) {
+        const data = await res.json();
+        setBindings(Array.isArray(data) ? data : []);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setBindingsError(data?.error?.message || "No se pudieron cargar los bindings.");
+      }
+    } catch (err: any) {
+      setBindingsError(err?.message || "Error al consultar bindings.");
+    } finally {
+      setIsLoadingBindings(false);
+    }
+  }, []);
+
+  const handleGenerateSiteKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClient) return;
+
+    setIsGeneratingKey(true);
+    try {
+      const res = await fetch(`/api/clients/${selectedClient.id}/site-keys`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newSiteKeyName.trim() || undefined }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setFeedback({ type: "error", message: data?.error?.message || "Error al generar site key." });
+        return;
+      }
+
+      setGeneratedKeyResult(data);
+      setNewSiteKeyName("");
+      setHasCopiedKey(false);
+    } catch (err: any) {
+      setFeedback({ type: "error", message: err?.message || "Error inesperado al generar site key." });
+    } finally {
+      setIsGeneratingKey(false);
+    }
+  };
+
+  const handleConfirmRegenerateKey = async () => {
+    if (!selectedClient || !regeneratingKey) return;
+
+    setIsRegeneratingKey(true);
+    try {
+      const res = await fetch(`/api/clients/${selectedClient.id}/site-keys/${regeneratingKey.id}/regenerate`, {
+        method: "POST",
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setFeedback({ type: "error", message: data?.error?.message || "Error al regenerar site key." });
+        return;
+      }
+
+      setRegeneratingKey(null);
+      setGeneratedKeyResult(data);
+      setHasCopiedKey(false);
+      setIsGenerateKeyOpen(true);
+    } catch (err: any) {
+      setFeedback({ type: "error", message: err?.message || "Error inesperado al regenerar site key." });
+    } finally {
+      setIsRegeneratingKey(false);
+    }
+  };
+
+  const handleConfirmRevokeKey = async () => {
+    if (!selectedClient || !revokingKey) return;
+
+    setIsRevokingKey(true);
+    try {
+      const res = await fetch(`/api/clients/${selectedClient.id}/site-keys/${revokingKey.id}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        await loadSiteKeys(selectedClient.id);
+        setFeedback({ type: "success", message: `Site key "${revokingKey.name}" revocada exitosamente.` });
+        setRevokingKey(null);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setFeedback({ type: "error", message: data?.error?.message || "Error al revocar site key." });
+      }
+    } catch (err: any) {
+      setFeedback({ type: "error", message: err?.message || "Error de red al revocar site key." });
+    } finally {
+      setIsRevokingKey(false);
+    }
+  };
+
+  const handleCreateBinding = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClient || !bindingExternalId.trim()) return;
+
+    setIsCreatingBinding(true);
+    setCreateBindingError(null);
+
+    try {
+      const res = await fetch(`/api/clients/${selectedClient.id}/bindings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          external_id: bindingExternalId.trim(),
+          phone: bindingPhone.trim() || undefined,
+          channel: bindingChannel,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 409) {
+        setCreateBindingError("Ese ID ya está vinculado en ese canal.");
+        return;
+      }
+
+      if (!res.ok) {
+        setCreateBindingError(data?.error?.message || "Error al vincular ID.");
+        return;
+      }
+
+      await loadBindings(selectedClient.id);
+      setIsCreateBindingOpen(false);
+      setBindingExternalId("");
+      setBindingPhone("");
+      setFeedback({ type: "success", message: "ID vinculado correctamente." });
+    } catch (err: any) {
+      setCreateBindingError(err?.message || "Error inesperado al vincular ID.");
+    } finally {
+      setIsCreatingBinding(false);
+    }
+  };
+
+  const handleUpdateBinding = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClient || !editingBinding) return;
+
+    setIsUpdatingBinding(true);
+    try {
+      const res = await fetch(`/api/clients/${selectedClient.id}/bindings/${editingBinding.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: editBindingPhone.trim() || null,
+          is_active: editBindingIsActive,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setFeedback({ type: "error", message: data?.error?.message || "Error al actualizar binding." });
+        return;
+      }
+
+      await loadBindings(selectedClient.id);
+      setEditingBinding(null);
+      setFeedback({ type: "success", message: "ID binding actualizado correctamente." });
+    } catch (err: any) {
+      setFeedback({ type: "error", message: err?.message || "Error inesperado al actualizar binding." });
+    } finally {
+      setIsUpdatingBinding(false);
+    }
+  };
+
+  const handleConfirmDeleteBinding = async () => {
+    if (!selectedClient || !deletingBinding) return;
+
+    setIsDeletingBinding(true);
+    try {
+      const res = await fetch(`/api/clients/${selectedClient.id}/bindings/${deletingBinding.id}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        await loadBindings(selectedClient.id);
+        setFeedback({ type: "success", message: "ID liberado exitosamente." });
+        setDeletingBinding(null);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setFeedback({ type: "error", message: data?.error?.message || "Error al liberar ID." });
+      }
+    } catch (err: any) {
+      setFeedback({ type: "error", message: err?.message || "Error de red al liberar ID." });
+    } finally {
+      setIsDeletingBinding(false);
+    }
+  };
+
   const handleOpenDetail = (client: Client) => {
     setSelectedClient(client);
     loadClientDetail(client.id);
     loadClientAiData(client.id);
     loadBlueprints();
     loadClientIntegrations(client.id);
+    loadSiteKeys(client.id);
+    loadBindings(client.id);
     setActiveDetailTab("general");
   };
 
@@ -1096,6 +1378,30 @@ export default function ClientsPage() {
                   </Badge>
                 )}
               </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveDetailTab("connections");
+                  if (selectedClient) {
+                    loadSiteKeys(selectedClient.id);
+                    loadBindings(selectedClient.id);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  activeDetailTab === "connections"
+                    ? "bg-emerald-600 text-white shadow-sm font-bold"
+                    : "text-texter-text-muted hover:text-white hover:bg-texter-surface-hover"
+                }`}
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                <span>Conexiones</span>
+                {siteKeys.filter((k) => k.is_active).length > 0 && (
+                  <Badge variant="success" size="sm" className="ml-1 text-[10px] px-1.5 py-0 font-mono">
+                    {siteKeys.filter((k) => k.is_active).length}
+                  </Badge>
+                )}
+              </button>
             </div>
 
             {/* PESTAÑA 1: GENERAL */}
@@ -1371,6 +1677,229 @@ export default function ClientsPage() {
                     </Button>
                   </div>
                 </form>
+              </div>
+            )}
+
+            {/* PESTAÑA 4: CONEXIONES (CONEX-3) */}
+            {activeDetailTab === "connections" && (
+              <div className="space-y-8">
+                {/* 1. SECCIÓN: API KEYS DEL SITIO */}
+                <div className="space-y-3">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-texter-border pb-2.5">
+                    <div>
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Key className="w-4 h-4 text-texter-cyan" />
+                        API Keys del Sitio
+                      </h4>
+                      <p className="text-xs text-texter-text-muted">
+                        Credenciales de autenticación para que la web del cliente invoque el backend de nextex
+                      </p>
+                    </div>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => {
+                        setIsGenerateKeyOpen(true);
+                        setGeneratedKeyResult(null);
+                        setNewSiteKeyName("");
+                      }}
+                      className="flex items-center gap-1.5 text-xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Generar key
+                    </Button>
+                  </div>
+
+                  {siteKeysError && (
+                    <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                      <span>{siteKeysError}</span>
+                    </div>
+                  )}
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="bg-texter-surface-subtle text-texter-text-muted border-b border-texter-border uppercase tracking-wider">
+                        <tr>
+                          <th className="p-2.5">Nombre</th>
+                          <th className="p-2.5">Prefijo</th>
+                          <th className="p-2.5">Estado</th>
+                          <th className="p-2.5">Último Uso</th>
+                          <th className="p-2.5 text-right">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-texter-border/50">
+                        {siteKeys.map((k) => (
+                          <tr key={k.id} className="hover:bg-texter-surface-hover/50 transition-colors">
+                            <td className="p-2.5 font-bold text-white font-sans">{k.name}</td>
+                            <td className="p-2.5 text-texter-cyan font-bold">{k.key_prefix}...</td>
+                            <td className="p-2.5">
+                              {k.is_active ? (
+                                <Badge variant="success" size="sm" dot>Activa</Badge>
+                              ) : (
+                                <Badge variant="default" size="sm" dot>Revocada</Badge>
+                              )}
+                            </td>
+                            <td className="p-2.5 text-texter-text-dim text-[11px]">
+                              {k.last_used_at ? new Date(k.last_used_at).toLocaleString() : "Nunca"}
+                            </td>
+                            <td className="p-2.5 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setRegeneratingKey(k)}
+                                  className="text-[11px] h-7 px-2"
+                                  title="Regenerar clave"
+                                >
+                                  <RotateCcw className="w-3 h-3 mr-1" />
+                                  <span>Regenerar</span>
+                                </Button>
+                                {k.is_active && (
+                                  <Button
+                                    variant="danger"
+                                    size="sm"
+                                    onClick={() => setRevokingKey(k)}
+                                    className="text-[11px] h-7 px-2"
+                                    title="Revocar clave"
+                                  >
+                                    <Trash2 className="w-3 h-3 mr-1" />
+                                    <span>Revocar</span>
+                                  </Button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                        {siteKeys.length === 0 && !isLoadingSiteKeys && (
+                          <tr>
+                            <td colSpan={5} className="p-6 text-center text-texter-text-dim font-sans">
+                              No hay API keys generadas para este cliente. Haz clic en "Generar key" para habilitar el acceso web.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* 2. SECCIÓN: IDs VINCULADOS */}
+                <div className="space-y-3">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-texter-border pb-2.5">
+                    <div>
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Hash className="w-4 h-4 text-purple-400" />
+                        IDs Vinculados (Web ↔ Teléfono)
+                      </h4>
+                      <p className="text-xs text-texter-text-muted">
+                        Mapeo de identificadores externos de visitantes web a números telefónicos del cliente
+                      </p>
+                    </div>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => {
+                        setIsCreateBindingOpen(true);
+                        setBindingExternalId("");
+                        setBindingPhone("");
+                        setBindingChannel("web");
+                        setCreateBindingError(null);
+                      }}
+                      className="flex items-center gap-1.5 text-xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Vincular ID
+                    </Button>
+                  </div>
+
+                  {bindingsError && (
+                    <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                      <span>{bindingsError}</span>
+                    </div>
+                  )}
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="bg-texter-surface-subtle text-texter-text-muted border-b border-texter-border uppercase tracking-wider">
+                        <tr>
+                          <th className="p-2.5">External ID</th>
+                          <th className="p-2.5">Teléfono</th>
+                          <th className="p-2.5">Canal</th>
+                          <th className="p-2.5">Estado</th>
+                          <th className="p-2.5 text-right">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-texter-border/50">
+                        {bindings.map((b) => (
+                          <tr key={b.id} className="hover:bg-texter-surface-hover/50 transition-colors">
+                            <td className="p-2.5 font-bold text-white text-xs">{b.external_id}</td>
+                            <td className="p-2.5 text-texter-text-secondary">{b.phone || "—"}</td>
+                            <td className="p-2.5">
+                              <Badge
+                                variant={
+                                  b.channel === "web"
+                                    ? "cyan"
+                                    : b.channel === "whatsapp"
+                                    ? "success"
+                                    : b.channel === "instagram"
+                                    ? "indigo"
+                                    : "default"
+                                }
+                                size="sm"
+                                className="uppercase text-[10px]"
+                              >
+                                {b.channel}
+                              </Badge>
+                            </td>
+                            <td className="p-2.5">
+                              {b.is_active ? (
+                                <Badge variant="success" size="sm" dot>Activo</Badge>
+                              ) : (
+                                <Badge variant="default" size="sm" dot>Inactivo</Badge>
+                              )}
+                            </td>
+                            <td className="p-2.5 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setEditingBinding(b);
+                                    setEditBindingPhone(b.phone || "");
+                                    setEditBindingIsActive(b.is_active);
+                                  }}
+                                  className="text-[11px] h-7 px-2"
+                                  title="Editar binding"
+                                >
+                                  <Edit3 className="w-3 h-3 mr-1" />
+                                  <span>Editar</span>
+                                </Button>
+                                <Button
+                                  variant="danger"
+                                  size="sm"
+                                  onClick={() => setDeletingBinding(b)}
+                                  className="text-[11px] h-7 px-2"
+                                  title="Liberar ID"
+                                >
+                                  <Trash2 className="w-3 h-3 mr-1" />
+                                  <span>Liberar</span>
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                        {bindings.length === 0 && !isLoadingBindings && (
+                          <tr>
+                            <td colSpan={5} className="p-6 text-center text-texter-text-dim font-sans">
+                              No hay IDs vinculados para este cliente. Haz clic en "Vincular ID" para asociar visitantes web a teléfonos.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             )}
           </Card>
@@ -1905,6 +2434,310 @@ export default function ClientsPage() {
               </Button>
               <Button variant="danger" size="sm" onClick={handleConfirmUninstall} isLoading={isUninstalling}>
                 Confirmar Desinstalación
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+
+      {/* MODAL: GENERAR / MOSTRAR SITE KEY */}
+      {isGenerateKeyOpen && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-texter-border">
+            <div className="flex items-center justify-between border-b border-texter-border pb-3">
+              <div className="flex items-center gap-2">
+                <Key className="w-5 h-5 text-texter-cyan" />
+                <h3 className="text-base font-bold text-white">
+                  {generatedKeyResult ? "Site Key Generada" : "Generar Nueva Site Key"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsGenerateKeyOpen(false);
+                  if (generatedKeyResult) {
+                    setGeneratedKeyResult(null);
+                    loadSiteKeys(selectedClient.id);
+                  }
+                }}
+                className="text-texter-text-muted hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {generatedKeyResult ? (
+              <div className="space-y-4">
+                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="block font-bold">Guárdala ahora</strong>
+                    <span>{generatedKeyResult.warning || "Por razones de seguridad, no se mostrará de nuevo."}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-texter-text-muted uppercase">Clave Secreta Completa:</label>
+                  <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border font-mono text-xs text-white break-all select-all flex items-center justify-between gap-2">
+                    <span>{generatedKeyResult.key}</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex justify-between items-center border-t border-texter-border">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(generatedKeyResult.key);
+                      setHasCopiedKey(true);
+                      setTimeout(() => setHasCopiedKey(false), 3000);
+                    }}
+                    className="flex items-center gap-1.5 text-xs"
+                  >
+                    {hasCopiedKey ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-400 font-bold">¡Copiada!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5 text-texter-cyan" />
+                        <span>Copiar Clave</span>
+                      </>
+                    )}
+                  </Button>
+
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      setIsGenerateKeyOpen(false);
+                      setGeneratedKeyResult(null);
+                      loadSiteKeys(selectedClient.id);
+                    }}
+                  >
+                    Entendido, cerrar
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleGenerateSiteKey} className="space-y-3.5">
+                <Input
+                  label="Nombre / Identificador de la Key (opcional)"
+                  value={newSiteKeyName}
+                  onChange={(e) => setNewSiteKeyName(e.target.value)}
+                  placeholder="ej: Web Producción Principal"
+                />
+
+                <p className="text-[11px] text-texter-text-muted leading-relaxed">
+                  Se generará una clave aleatoria segura de 48 caracteres hexadecimales con prefijo <code className="text-texter-cyan">ntx_</code>.
+                </p>
+
+                <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+                  <Button variant="ghost" size="sm" type="button" onClick={() => setIsGenerateKeyOpen(false)}>
+                    Cancelar
+                  </Button>
+                  <Button variant="primary" size="sm" type="submit" isLoading={isGeneratingKey}>
+                    Generar Clave
+                  </Button>
+                </div>
+              </form>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR REGENERAR SITE KEY */}
+      {regeneratingKey && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-amber-500/40">
+            <div className="flex items-center gap-2.5 text-amber-400 font-bold text-base">
+              <RotateCcw className="w-5 h-5" />
+              Regenerar Site Key
+            </div>
+            <p className="text-xs text-texter-text-muted leading-relaxed">
+              ¿Deseas regenerar la clave <strong className="text-white">&quot;{regeneratingKey.name}&quot;</strong>? La clave actual dejará de funcionar inmediatamente y cualquier integración web que la use deberá actualizarse.
+            </p>
+            <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+              <Button variant="ghost" size="sm" onClick={() => setRegeneratingKey(null)}>
+                Cancelar
+              </Button>
+              <Button variant="primary" size="sm" onClick={handleConfirmRegenerateKey} isLoading={isRegeneratingKey}>
+                Confirmar y Regenerar
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR REVOCAR SITE KEY */}
+      {revokingKey && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-texter-rose/40">
+            <div className="flex items-center gap-2.5 text-texter-rose font-bold text-base">
+              <Trash2 className="w-5 h-5" />
+              Revocar Site Key
+            </div>
+            <p className="text-xs text-texter-text-muted leading-relaxed">
+              ¿Estás seguro de que deseas revocar la clave <strong className="text-white">&quot;{revokingKey.name}&quot;</strong> ({revokingKey.key_prefix}...)? Dejará de tener acceso a las APIs inmediatamente.
+            </p>
+            <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+              <Button variant="ghost" size="sm" onClick={() => setRevokingKey(null)}>
+                Volver
+              </Button>
+              <Button variant="danger" size="sm" onClick={handleConfirmRevokeKey} isLoading={isRevokingKey}>
+                Confirmar Revocación
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL: VINCULAR ID (BINDING) */}
+      {isCreateBindingOpen && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-texter-border">
+            <div className="flex items-center justify-between border-b border-texter-border pb-3">
+              <div className="flex items-center gap-2">
+                <Hash className="w-5 h-5 text-purple-400" />
+                <h3 className="text-base font-bold text-white">Vincular ID Externo</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCreateBindingOpen(false);
+                  setCreateBindingError(null);
+                }}
+                className="text-texter-text-muted hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {createBindingError && (
+              <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                <span>{createBindingError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateBinding} className="space-y-3.5">
+              <Input
+                label="External ID (Identificador Web) *"
+                value={bindingExternalId}
+                onChange={(e) => setBindingExternalId(e.target.value)}
+                placeholder="ej: cr1264 o anon_9f81a"
+                required
+              />
+
+              <Input
+                label="Teléfono Asociado (opcional)"
+                value={bindingPhone}
+                onChange={(e) => setBindingPhone(e.target.value)}
+                placeholder="+18095551234"
+              />
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-texter-text-secondary">Canal</label>
+                <select
+                  value={bindingChannel}
+                  onChange={(e) => setBindingChannel(e.target.value as any)}
+                  className="w-full p-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white outline-none font-mono"
+                >
+                  <option value="web">Web (Widget / Chat)</option>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="instagram">Instagram</option>
+                  <option value="other">Otro</option>
+                </select>
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={() => {
+                    setIsCreateBindingOpen(false);
+                    setCreateBindingError(null);
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button variant="primary" size="sm" type="submit" isLoading={isCreatingBinding}>
+                  Vincular ID
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL: EDITAR BINDING */}
+      {editingBinding && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-texter-border">
+            <div className="flex items-center justify-between border-b border-texter-border pb-3">
+              <div className="flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-texter-cyan" />
+                <h3 className="text-base font-bold text-white">Editar Binding ({editingBinding.external_id})</h3>
+              </div>
+              <button type="button" onClick={() => setEditingBinding(null)} className="text-texter-text-muted hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateBinding} className="space-y-3.5">
+              <Input
+                label="Teléfono"
+                value={editBindingPhone}
+                onChange={(e) => setEditBindingPhone(e.target.value)}
+                placeholder="+18095551234"
+              />
+
+              <div className="flex items-center gap-2.5 pt-1">
+                <input
+                  type="checkbox"
+                  id="editBindingActive"
+                  checked={editBindingIsActive}
+                  onChange={(e) => setEditBindingIsActive(e.target.checked)}
+                  className="rounded border-texter-border text-texter-cyan focus:ring-texter-cyan/40 bg-texter-surface-subtle"
+                />
+                <label htmlFor="editBindingActive" className="text-xs text-white font-medium cursor-pointer">
+                  Estado Activo (desmarcar para desactivar/liberar temporalmente)
+                </label>
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+                <Button variant="ghost" size="sm" type="button" onClick={() => setEditingBinding(null)}>
+                  Cancelar
+                </Button>
+                <Button variant="primary" size="sm" type="submit" isLoading={isUpdatingBinding}>
+                  Guardar Cambios
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR LIBERAR BINDING */}
+      {deletingBinding && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-texter-rose/40">
+            <div className="flex items-center gap-2.5 text-texter-rose font-bold text-base">
+              <Trash2 className="w-5 h-5" />
+              Liberar ID Externo
+            </div>
+            <p className="text-xs text-texter-text-muted leading-relaxed">
+              ¿Estás seguro de que deseas liberar el ID <strong className="text-white">&quot;{deletingBinding.external_id}&quot;</strong> del canal <strong className="text-white">{deletingBinding.channel.toUpperCase()}</strong>? Se eliminará la vinculación permanentemente de la base de datos.
+            </p>
+            <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+              <Button variant="ghost" size="sm" onClick={() => setDeletingBinding(null)}>
+                Volver
+              </Button>
+              <Button variant="danger" size="sm" onClick={handleConfirmDeleteBinding} isLoading={isDeletingBinding}>
+                Confirmar Liberación
               </Button>
             </div>
           </Card>
