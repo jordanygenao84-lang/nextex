@@ -34,6 +34,7 @@ export default function IntegrationsPage() {
   const [name, setName] = useState("");
   const [provider, setProvider] = useState("generic");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Modal de Secreto Único
   const [secretModal, setSecretModal] = useState<{ plainSecret: string; endpointKey: string } | null>(null);
@@ -65,6 +66,7 @@ export default function IntegrationsPage() {
     if (!name) return;
 
     setIsSubmitting(true);
+    setCreateError(null);
     try {
       const res = await fetch("/api/integrations", {
         method: "POST",
@@ -76,31 +78,40 @@ export default function IntegrationsPage() {
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        // Crear un endpoint por defecto para la nueva integración
-        const epRes = await fetch(`/api/integrations/${data.integration.id}/endpoints`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: `${name} Default Inbound`,
-          }),
-        });
+      const data = await res.json().catch(() => ({}));
 
-        if (epRes.ok) {
-          const epData = await epRes.json();
-          setSecretModal({
-            plainSecret: epData.plainSecret,
-            endpointKey: epData.endpoint.endpoint_key,
-          });
-        }
-
-        setIsCreateOpen(false);
-        setName("");
-        loadIntegrations();
+      if (!res.ok) {
+        setCreateError(data?.error?.message || "Error al registrar la integración.");
+        return;
       }
-    } catch {
-      // Error
+
+      // Crear un endpoint por defecto para la nueva integración
+      const epRes = await fetch(`/api/integrations/${data.integration.id}/endpoints`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: `${name} Default Inbound`,
+        }),
+      });
+
+      const epData = await epRes.json().catch(() => ({}));
+
+      if (!epRes.ok) {
+        setCreateError(epData?.error?.message || "Error al generar el endpoint y credenciales de la integración.");
+        return;
+      }
+
+      setSecretModal({
+        plainSecret: epData.plainSecret,
+        endpointKey: epData.endpoint.endpoint_key,
+      });
+
+      setIsCreateOpen(false);
+      setName("");
+      setCreateError(null);
+      loadIntegrations();
+    } catch (err: any) {
+      setCreateError(err?.message || "Error inesperado al crear la integración.");
     } finally {
       setIsSubmitting(false);
     }
@@ -152,7 +163,7 @@ export default function IntegrationsPage() {
               Ingestión segura de webhooks con verificación criptográfica HMAC-SHA256, protección anti-replay y mapeo server-side.
             </p>
           </div>
-          <Button variant="primary" size="sm" onClick={() => setIsCreateOpen(true)} className="flex items-center gap-2">
+          <Button variant="primary" size="sm" onClick={() => { setIsCreateOpen(true); setCreateError(null); }} className="flex items-center gap-2">
             <Plus className="w-4 h-4" />
             Nueva Integración
           </Button>
@@ -202,6 +213,14 @@ export default function IntegrationsPage() {
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 flex items-center justify-center p-4">
             <Card variant="elevated" className="max-w-md w-full space-y-4">
               <h2 className="text-lg font-bold text-white">Crear Nueva Integración</h2>
+
+              {createError && (
+                <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                  <span>{createError}</span>
+                </div>
+              )}
+
               <form onSubmit={handleCreateIntegration} className="space-y-3">
                 <div>
                   <label className="text-xs text-texter-text-muted">Nombre de la Integración:</label>
@@ -212,7 +231,7 @@ export default function IntegrationsPage() {
                   <Input value={provider} onChange={(e) => setProvider(e.target.value)} placeholder="generic, custom, etc." />
                 </div>
                 <div className="flex justify-end gap-2 pt-2">
-                  <Button variant="ghost" size="sm" type="button" onClick={() => setIsCreateOpen(false)}>
+                  <Button variant="ghost" size="sm" type="button" onClick={() => { setIsCreateOpen(false); setCreateError(null); }}>
                     Cancelar
                   </Button>
                   <Button variant="primary" size="sm" type="submit" disabled={isSubmitting}>
