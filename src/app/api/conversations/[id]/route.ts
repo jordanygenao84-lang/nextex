@@ -1,0 +1,91 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * GET /api/conversations/[id]
+ * Detalle de la conversación con su historial de mensajes ordenados cronológicamente (con auth).
+ */
+export async function GET(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const userClient = createClient();
+    const {
+      data: { user },
+    } = await userClient.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: { code: "AUTH_REQUIRED", message: "Sesión de usuario requerida." } },
+        { status: 401 }
+      );
+    }
+
+    const conversationId = params.id;
+    const serviceClient = createServiceClient();
+
+    // 1. Obtener conversación
+    const { data: conv, error: convErr } = await (serviceClient.from("conversations") as any)
+      .select(`
+        id,
+        client_id,
+        channel,
+        external_chat_id,
+        visitor_name,
+        status,
+        last_message_at,
+        created_at,
+        updated_at,
+        client:clients (
+          id,
+          display_name
+        )
+      `)
+      .eq("id", conversationId)
+      .maybeSingle();
+
+    if (convErr || !conv) {
+      return NextResponse.json(
+        { error: { code: "NOT_FOUND", message: "Conversación no encontrada." } },
+        { status: 404 }
+      );
+    }
+
+    // 2. Obtener mensajes ordenados ascendentemente
+    const { data: messages, error: msgErr } = await (serviceClient.from("conversation_messages") as any)
+      .select("id, role, content, created_at")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: true });
+
+    if (msgErr) {
+      return NextResponse.json(
+        { error: { code: "DB_ERROR", message: msgErr.message } },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      conversation: {
+        id: conv.id,
+        client_id: conv.client_id,
+        client_name: conv.client?.display_name || "Cliente",
+        channel: conv.channel,
+        external_chat_id: conv.external_chat_id,
+        visitor_name: conv.visitor_name,
+        status: conv.status,
+        last_message_at: conv.last_message_at,
+        created_at: conv.created_at,
+        updated_at: conv.updated_at,
+      },
+      messages: messages || [],
+    });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al obtener conversación." } },
+      { status: 500 }
+    );
+  }
+}

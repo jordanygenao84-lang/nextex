@@ -39,6 +39,7 @@ function checkRateLimit(key: string): boolean {
  * POST /api/widget/chat
  * Endpoint público para que los visitantes conversen con el agente del cliente.
  * SEGURIDAD CRÍTICA: Resuelve el workspace_id del cliente dueño del embed_key.
+ * CONV-2: Registra la conversación y mensajes, y respeta el takeover humano (status='human').
  */
 export async function POST(req: NextRequest) {
   let fallbackSessionId = `sess_${randomUUID()}`;
@@ -99,6 +100,7 @@ export async function POST(req: NextRequest) {
     const { data: widget, error: widgetErr } = await (serviceClient.from("client_widgets") as any)
       .select(`
         id,
+        client_id,
         embed_key,
         allowed_sources,
         theme,
@@ -128,11 +130,66 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const clientId = widget.client_id;
     const workspaceId = widget.client.workspace_id;
     const businessName = widget.client.display_name || "la empresa";
     const allowedSources = Array.isArray(widget.allowed_sources) ? widget.allowed_sources : ["web"];
 
-    // 4. Obtener owner_id del workspace para autorización en AI Gateway
+    // 4. Buscar o crear la conversación (CONV-2)
+    let conversation: any = null;
+    const { data: existingConv } = await (serviceClient.from("conversations") as any)
+      .select("id, status")
+      .eq("client_id", clientId)
+      .eq("channel", "widget")
+      .eq("external_chat_id", fallbackSessionId)
+      .maybeSingle();
+
+    const nowIso = new Date().toISOString();
+
+    if (existingConv) {
+      conversation = existingConv;
+    } else {
+      const { data: newConv } = await (serviceClient.from("conversations") as any)
+        .insert({
+          client_id: clientId,
+          channel: "widget",
+          external_chat_id: fallbackSessionId,
+          visitor_name: "Visitante Web",
+          status: "bot",
+          last_message_at: nowIso,
+        })
+        .select("id, status")
+        .single();
+      conversation = newConv;
+    }
+
+    // 5. Guardar el mensaje del visitante (role='visitor')
+    if (conversation?.id) {
+      await (serviceClient.from("conversation_messages") as any).insert({
+        conversation_id: conversation.id,
+        role: "visitor",
+        content: cleanMessage,
+        created_at: nowIso,
+      });
+
+      await (serviceClient.from("conversations") as any)
+        .update({ last_message_at: nowIso, updated_at: nowIso })
+        .eq("id", conversation.id);
+    }
+
+    // 6. Si la conversación está en takeover humano (status='human'), NO llamar al bot
+    if (conversation?.status === "human") {
+      return NextResponse.json(
+        {
+          reply: null,
+          human_controlled: true,
+          session_id: fallbackSessionId,
+        },
+        { status: 200, headers: corsHeaders }
+      );
+    }
+
+    // 7. Conversación controlada por bot: Ejecutar agente de IA
     const { data: wsRecord } = await (serviceClient.from("workspaces") as any)
       .select("id, owner_id")
       .eq("id", workspaceId)
@@ -145,7 +202,6 @@ Tu objetivo es responder de manera atenta, clara, profesional y concisa a los vi
 Fuentes e integraciones autorizadas para este canal: ${allowedSources.join(", ")}.
 Responde en el mismo idioma del visitante (por defecto español). Nunca inventes información confidencial y mantén un tono cortés.`;
 
-    // 5. Ejecución del agente con el workspace_id estricto del cliente dueño
     try {
       const aiResponse = await defaultAIGateway.execute(
         {
@@ -165,6 +221,21 @@ Responde en el mismo idioma del visitante (por defecto español). Nunca inventes
         serviceClient
       );
 
+      // Guardar respuesta del bot en la conversación
+      if (conversation?.id) {
+        const botReplyTime = new Date().toISOString();
+        await (serviceClient.from("conversation_messages") as any).insert({
+          conversation_id: conversation.id,
+          role: "bot",
+          content: aiResponse.content,
+          created_at: botReplyTime,
+        });
+
+        await (serviceClient.from("conversations") as any)
+          .update({ last_message_at: botReplyTime, updated_at: botReplyTime })
+          .eq("id", conversation.id);
+      }
+
       return NextResponse.json(
         {
           reply: aiResponse.content,
@@ -173,10 +244,22 @@ Responde en el mismo idioma del visitante (por defecto español). Nunca inventes
         { status: 200, headers: corsHeaders }
       );
     } catch (agentErr: any) {
-      // Regla de resiliencia: Si el agente falla → 200 con reply amable y error: true
+      // Si el agente falla → 200 con reply amable y error: true
+      const politeError = `Hola, en este momento el asistente de ${businessName} está experimentando alta demanda. Por favor intenta de nuevo en unos instantes.`;
+
+      if (conversation?.id) {
+        const botErrorTime = new Date().toISOString();
+        await (serviceClient.from("conversation_messages") as any).insert({
+          conversation_id: conversation.id,
+          role: "bot",
+          content: politeError,
+          created_at: botErrorTime,
+        });
+      }
+
       return NextResponse.json(
         {
-          reply: `Hola, en este momento el asistente de ${businessName} está experimentando alta demanda. Por favor intenta de nuevo en unos instantes.`,
+          reply: politeError,
           session_id: fallbackSessionId,
           error: true,
         },
@@ -184,7 +267,6 @@ Responde en el mismo idioma del visitante (por defecto español). Nunca inventes
       );
     }
   } catch (err: any) {
-    // Si ocurre un error inesperado al parsear, responder amablemente con status 200 para no romper el widget
     return NextResponse.json(
       {
         reply: "No fue posible procesar tu mensaje en este momento. Por favor intenta más tarde.",
