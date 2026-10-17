@@ -89,7 +89,7 @@ export const options = {
   discardResponseBodies: true,
 };
 
-const targetBase = ${JSON.stringify(job.target_url.replace(/\\/$/, ""))};
+const targetBase = ${JSON.stringify(job.target_url.endsWith('/') ? job.target_url.slice(0, -1) : job.target_url)};
 const endpoints = ${JSON.stringify(endpoints)};
 
 function pickEndpoint() {
