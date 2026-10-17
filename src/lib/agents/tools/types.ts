@@ -14,7 +14,8 @@ export type ToolCategory =
   | "calendar"
   | "business"
   | "analytics"
-  | "system";
+  | "system"
+  | "integration";
 
 export type ToolStatus = "draft" | "active" | "disabled" | "deprecated";
 

@@ -1,0 +1,271 @@
+/**
+ * NEXTEХ Agent Core — Seguridad HTTP y Protección Anti-SSRF
+ */
+
+export const AGENT_USER_AGENT = "nextex-agent/1.0";
+export const MAX_RESPONSE_BYTES = 2 * 1024 * 1024; // 2 MB
+export const MAX_BODY_TEXT_CHARS = 50000; // 50k chars
+export const MAX_REDIRECTS = 3;
+
+function isPrivateIPv4(ip: string): boolean {
+  const parts = ip.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((p) => isNaN(p) || p < 0 || p > 255)) {
+    return false;
+  }
+  const [b0, b1] = parts;
+  if (b0 === 0) return true;
+  if (b0 === 127) return true;
+  if (b0 === 10) return true;
+  if (b0 === 172 && b1 >= 16 && b1 <= 31) return true;
+  if (b0 === 192 && b1 === 168) return true;
+  if (b0 === 169 && b1 === 254) return true;
+  return false;
+}
+
+function isPrivateIPv6(ip: string): boolean {
+  const cleanIp = ip.replace(/^[|]$/g, "").toLowerCase().trim();
+  if (
+    cleanIp === "::1" ||
+    cleanIp === "::" ||
+    cleanIp === "0:0:0:0:0:0:0:1" ||
+    cleanIp === "0:0:0:0:0:0:0:0"
+  ) {
+    return true;
+  }
+  if (cleanIp.startsWith("::ffff:") || cleanIp.startsWith("0:0:0:0:0:ffff:")) {
+    const v4 = cleanIp.split(":").pop();
+    if (v4 && isPrivateIPv4(v4)) return true;
+  }
+  if (
+    cleanIp.startsWith("fe8") ||
+    cleanIp.startsWith("fe9") ||
+    cleanIp.startsWith("fea") ||
+    cleanIp.startsWith("feb")
+  ) {
+    return true;
+  }
+  if (cleanIp.startsWith("fc") || cleanIp.startsWith("fd")) {
+    return true;
+  }
+  return false;
+}
+
+export function validateUrlForSsrf(rawUrl: string): URL {
+  if (!rawUrl || typeof rawUrl !== "string" || !rawUrl.trim()) {
+    throw new Error("URL requerida.");
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl.trim());
+  } catch {
+    throw new Error("URL inválida.");
+  }
+
+  const protocol = parsed.protocol.toLowerCase();
+  if (protocol !== "http:" && protocol !== "https:") {
+    throw new Error("protocolo no permitido");
+  }
+
+  const hostname = parsed.hostname.toLowerCase().trim();
+
+  if (hostname === "localhost" || hostname.endsWith(".localhost")) {
+    throw new Error("destino privado no permitido (SSRF)");
+  }
+
+  const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+  if (ipv4Pattern.test(hostname)) {
+    if (isPrivateIPv4(hostname)) {
+      throw new Error("destino privado no permitido (SSRF)");
+    }
+  }
+
+  if (hostname.startsWith("[") || hostname.includes(":")) {
+    if (isPrivateIPv6(hostname)) {
+      throw new Error("destino privado no permitido (SSRF)");
+    }
+  }
+
+  const allowlistEnv = process.env.HTTP_TOOL_ALLOWLIST;
+  if (allowlistEnv && allowlistEnv.trim()) {
+    const allowedDomains = allowlistEnv
+      .split(",")
+      .map((d) => d.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (allowedDomains.length > 0) {
+      const isAllowed = allowedDomains.some((domain) => {
+        return hostname === domain || hostname.endsWith(`.${domain}`);
+      });
+      if (!isAllowed) {
+        throw new Error("dominio no autorizado");
+      }
+    }
+  }
+
+  return parsed;
+}
+
+export function redactSensitiveHeaders(headers: Record<string, string>): Record<string, string> {
+  const clean: Record<string, string> = {};
+  for (const [key, val] of Object.entries(headers)) {
+    const lower = key.toLowerCase();
+    if (lower === "authorization" || lower === "proxy-authorization") {
+      clean[key] = "***";
+    } else {
+      clean[key] = val;
+    }
+  }
+  return clean;
+}
+
+export interface HttpRequestExecutionOptions {
+  url: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  timeoutMs?: number;
+}
+
+export interface HttpResponseData {
+  status: number;
+  headers: Record<string, string>;
+  bodyText: string;
+  bodyJson: any | null;
+  finalUrl: string;
+  durationMs: number;
+}
+
+export async function executeSafeHttpRequest(
+  options: HttpRequestExecutionOptions
+): Promise<HttpResponseData> {
+  const startTime = Date.now();
+  const method = (options.method || "GET").toUpperCase();
+
+  let currentUrl = validateUrlForSsrf(options.url).toString();
+  let redirectCount = 0;
+
+  const requestedTimeout = Number(options.timeoutMs) || 15000;
+  const safeTimeoutMs = Math.min(Math.max(1000, requestedTimeout), 30000);
+
+  const requestHeaders: Record<string, string> = {
+    "User-Agent": AGENT_USER_AGENT,
+    "Accept": "*/*",
+    ...(options.headers || {}),
+  };
+
+  while (true) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), safeTimeoutMs);
+
+    try {
+      const res = await fetch(currentUrl, {
+        method,
+        headers: requestHeaders,
+        body: method !== "GET" && method !== "HEAD" ? options.body : undefined,
+        redirect: "manual",
+        signal: controller.signal,
+      });
+
+      if ([301, 302, 303, 307, 308].includes(res.status)) {
+        redirectCount++;
+        if (redirectCount > MAX_REDIRECTS) {
+          throw new Error("Demasiados redireccionamientos (máximo 3).");
+        }
+
+        const location = res.headers.get("location");
+        if (!location) {
+          return await processResponse(res, currentUrl, startTime);
+        }
+
+        const nextUrlObj = new URL(location, currentUrl);
+        validateUrlForSsrf(nextUrlObj.toString());
+        currentUrl = nextUrlObj.toString();
+        continue;
+      }
+
+      return await processResponse(res, currentUrl, startTime);
+    } catch (err: any) {
+      if (err.name === "AbortError" || err.message?.includes("aborted")) {
+        throw new Error(`Tiempo de espera agotado tras ${safeTimeoutMs}ms.`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
+async function processResponse(
+  res: Response,
+  finalUrl: string,
+  startTime: number
+): Promise<HttpResponseData> {
+  const durationMs = Date.now() - startTime;
+
+  const rawHeaders: Record<string, string> = {};
+  res.headers.forEach((value, key) => {
+    rawHeaders[key] = value;
+  });
+  const headers = redactSensitiveHeaders(rawHeaders);
+
+  const contentLengthHeader = res.headers.get("content-length");
+  if (contentLengthHeader) {
+    const len = parseInt(contentLengthHeader, 10);
+    if (!isNaN(len) && len > MAX_RESPONSE_BYTES) {
+      throw new Error(`La respuesta excede el límite de 2MB (${len} bytes).`);
+    }
+  }
+
+  let bodyBuffer: Buffer;
+  if (res.body) {
+    const reader = res.body.getReader();
+    const chunks = [];
+    let receivedBytes = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          receivedBytes += value.length;
+          if (receivedBytes > MAX_RESPONSE_BYTES) {
+            await reader.cancel();
+            throw new Error(`La respuesta excede el límite de 2MB (${receivedBytes} bytes).`);
+          }
+          chunks.push(value);
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    bodyBuffer = Buffer.concat(chunks);
+  } else {
+    const arrayBuf = await res.arrayBuffer();
+    if (arrayBuf.byteLength > MAX_RESPONSE_BYTES) {
+      throw new Error(`La respuesta excede el límite de 2MB (${arrayBuf.byteLength} bytes).`);
+    }
+    bodyBuffer = Buffer.from(arrayBuf);
+  }
+
+  const rawText = bodyBuffer.toString("utf-8");
+  const bodyText = rawText.slice(0, MAX_BODY_TEXT_CHARS);
+
+  let bodyJson = null;
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.toLowerCase().includes("json") || rawText.trim().startsWith("{") || rawText.trim().startsWith("[")) {
+    try {
+      bodyJson = JSON.parse(rawText);
+    } catch {
+      bodyJson = null;
+    }
+  }
+
+  return {
+    status: res.status,
+    headers,
+    bodyText,
+    bodyJson,
+    finalUrl,
+    durationMs,
+  };
+}

@@ -7,8 +7,113 @@ import { ToolDefinition } from "./types";
 import { calculatorToolHandler } from "./builtins/calculator";
 import { databaseReadToolHandler } from "./builtins/database_read";
 import { databaseWriteToolHandler } from "./builtins/database_write";
+import { whatsappToolHandler } from "./builtins/whatsapp";
+import { httpGetToolHandler } from "./builtins/http_get";
+import { httpPostToolHandler } from "./builtins/http_post";
 
 export const CANONICAL_TOOLS: ToolDefinition[] = [
+  {
+    id: "http_get",
+    name: "Lector HTTP",
+    description: "Consulta datos en vivo y recursos web externos mediante peticiones HTTP GET con protección anti-SSRF.",
+    version: "1.0.0",
+    category: "integration",
+    riskLevel: "read",
+    requiresApproval: false,
+    status: "active",
+    enabled: true,
+    timeoutMs: 30000,
+    parameters: {
+      url: {
+        type: "string",
+        description: "URL destino (http o https)",
+        required: true,
+      },
+      headers: {
+        type: "object",
+        description: "Cabeceras HTTP personalizadas",
+        required: false,
+      },
+      query: {
+        type: "object",
+        description: "Parámetros de consulta (query params)",
+        required: false,
+      },
+      timeoutMs: {
+        type: "number",
+        description: "Tiempo de espera en milisegundos (máximo 30000)",
+        required: false,
+        minimum: 1000,
+        maximum: 30000,
+      },
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "number" },
+        headers: { type: "object" },
+        bodyText: { type: "string" },
+        bodyJson: { type: "object" },
+        finalUrl: { type: "string" },
+        durationMs: { type: "number" },
+      },
+    },
+    handler: httpGetToolHandler,
+  },
+  {
+    id: "http_post",
+    name: "Escritor HTTP",
+    description: "Ejecución de acciones y mutaciones externas vía HTTP (POST, PUT, PATCH, DELETE). Requiere confirmación humana.",
+    version: "1.0.0",
+    category: "integration",
+    riskLevel: "write",
+    requiresApproval: true,
+    status: "active",
+    enabled: true,
+    timeoutMs: 30000,
+    parameters: {
+      url: {
+        type: "string",
+        description: "URL destino (http o https)",
+        required: true,
+      },
+      method: {
+        type: "string",
+        description: "Método HTTP a ejecutar (POST, PUT, PATCH, DELETE)",
+        required: false,
+        enum: ["POST", "PUT", "PATCH", "DELETE"],
+      },
+      headers: {
+        type: "object",
+        description: "Cabeceras HTTP personalizadas",
+        required: false,
+      },
+      body: {
+        type: "string",
+        description: "Cuerpo de la petición (texto o JSON serializado)",
+        required: false,
+      },
+      timeoutMs: {
+        type: "number",
+        description: "Tiempo de espera en milisegundos (máximo 30000)",
+        required: false,
+        minimum: 1000,
+        maximum: 30000,
+      },
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "number" },
+        headers: { type: "object" },
+        bodyText: { type: "string" },
+        bodyJson: { type: "object" },
+        finalUrl: { type: "string" },
+        durationMs: { type: "number" },
+      },
+    },
+    handler: httpPostToolHandler,
+  },
   {
     id: "calculator",
     name: "Calculadora de Precisión",
@@ -169,13 +274,26 @@ export const CANONICAL_TOOLS: ToolDefinition[] = [
     version: "1.0.0",
     category: "communication",
     riskLevel: "external",
-    requiresApproval: true,
-    status: "disabled",
-    enabled: false,
+    requiresApproval: false,
+    status: "active",
+    enabled: true,
+    timeoutMs: 8000,
     parameters: {
-      phone: { type: "string", description: "Número de teléfono con código de país", required: true },
+      phone: { type: "string", description: "Número de teléfono con código de país (ej. +1809XXXXXXX)", required: true },
       message: { type: "string", description: "Mensaje a enviar", required: true },
     },
+    outputSchema: {
+      type: "object",
+      properties: {
+        phone: { type: "string" },
+        message: { type: "string" },
+        status: { type: "string" },
+        provider: { type: "string" },
+        messageId: { type: "string" },
+        deliveredAt: { type: "string" },
+      },
+    },
+    handler: whatsappToolHandler,
   },
   {
     id: "sms",
