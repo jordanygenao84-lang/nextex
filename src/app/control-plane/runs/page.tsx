@@ -38,6 +38,7 @@ export default function RunsControlPage() {
   const [runs, setRuns] = useState<RunItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("");
 
   const [modalState, setModalState] = useState<{
@@ -83,6 +84,9 @@ export default function RunsControlPage() {
   }, [statusFilter]);
 
   const openActionModal = (run: RunItem, action: "cancel" | "retry") => {
+    setIsExecutingAction(false);
+    setActionError(null);
+
     let title = "";
     let description = "";
     let impact = "";
@@ -108,8 +112,11 @@ export default function RunsControlPage() {
   };
 
   const handleConfirmAction = async () => {
+    if (!modalState.runId) return;
+
     try {
       setIsExecutingAction(true);
+      setActionError(null);
       setError(null);
 
       const res = await fetch("/api/control-plane/runs", {
@@ -121,15 +128,26 @@ export default function RunsControlPage() {
         }),
       });
 
-      const resJson = await res.json();
+      const resJson = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(resJson.error?.message || `Error en la acción (${res.status})`);
       }
 
+      if (resJson.result && resJson.result.success === false) {
+        throw new Error(
+          resJson.result?.error_message ||
+          resJson.result?.message ||
+          "La operación de cancelación fue rechazada por el despachador."
+        );
+      }
+
       setModalState((prev) => ({ ...prev, isOpen: false }));
+      setActionError(null);
       await fetchRuns();
     } catch (err: any) {
-      setError(err.message || "Error al ejecutar la acción");
+      const errMsg = err?.message || "Error al ejecutar la acción";
+      setActionError(errMsg);
+      setError(errMsg);
     } finally {
       setIsExecutingAction(false);
     }
@@ -277,16 +295,21 @@ export default function RunsControlPage() {
 
       <ConfirmationModal
         isOpen={modalState.isOpen}
-        onClose={() => setModalState((prev) => ({ ...prev, isOpen: false }))}
+        onClose={() => {
+          setModalState((prev) => ({ ...prev, isOpen: false }));
+          setIsExecutingAction(false);
+          setActionError(null);
+        }}
         onConfirm={handleConfirmAction}
         title={modalState.title}
         description={modalState.description}
         resourceType="job_run"
         resourceId={modalState.runId}
-        workspaceId="Workspace Activo"
+        workspaceId={runs.find((r) => r.id === modalState.runId)?.workspace_id || "Workspace Activo"}
         impact={modalState.impact}
         actionLabel="Confirmar Operación"
         isLoading={isExecutingAction}
+        error={actionError}
         variant={modalState.action === "cancel" ? "danger" : "warning"}
       />
     </DashboardShell>

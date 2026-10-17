@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { AlertTriangle, X, Loader2 } from "lucide-react";
+import { AlertTriangle, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
 interface ConfirmationModalProps {
@@ -17,6 +17,7 @@ interface ConfirmationModalProps {
   actionLabel?: string;
   variant?: "danger" | "warning" | "info";
   isLoading?: boolean;
+  error?: string | null;
 }
 
 export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
@@ -32,6 +33,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   actionLabel = "Confirmar Acción",
   variant = "danger",
   isLoading = false,
+  error = null,
 }) => {
   if (!isOpen) return null;
 
@@ -52,6 +54,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
             <h3 className="font-semibold text-white text-base">{title}</h3>
           </div>
           <button
+            type="button"
             onClick={onClose}
             disabled={isLoading}
             className="text-texter-text-muted hover:text-white p-1 rounded-lg hover:bg-texter-surface-hover"
@@ -81,20 +84,27 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
               <span className="text-rose-400 font-medium">{impact}</span>
             </div>
           </div>
+
+          {error && (
+            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-texter-border bg-texter-surface-subtle/30">
-          <Button variant="ghost" onClick={onClose} disabled={isLoading} size="sm">
+          <Button type="button" variant="ghost" onClick={onClose} disabled={isLoading} size="sm">
             Cancelar
           </Button>
           <Button
+            type="button"
             variant={variant === "danger" ? "danger" : "primary"}
             onClick={onConfirm}
             disabled={isLoading}
+            isLoading={isLoading}
             size="sm"
-            className="flex items-center gap-1.5"
           >
-            {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
             {actionLabel}
           </Button>
         </div>
