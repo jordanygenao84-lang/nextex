@@ -34,6 +34,38 @@ export class SecretVault {
   /**
    * Genera un secreto HMAC de 32 bytes CSPRNG y lo cifra con AES-256-GCM y AAD.
    */
+  /**
+   * Cifra un valor arbitrario en texto plano con AES-256-GCM y AAD.
+   */
+  public static encryptValue(plaintext: string, aad: string): EncryptedSecretPayload {
+    if (!plaintext || typeof plaintext !== "string") {
+      throw new Error("INVALID_PLAINTEXT: Se requiere una cadena de texto en plano para cifrar.");
+    }
+    if (!aad || typeof aad !== "string") {
+      throw new Error("INVALID_AAD: Se requiere una cadena de AAD para autenticación de datos asociados.");
+    }
+
+    const masterKey = this.getMasterKey();
+    const iv = randomBytes(12); // 96 bits recomendado para GCM
+
+    const cipher = createCipheriv("aes-256-gcm", masterKey, iv);
+    cipher.setAAD(Buffer.from(aad.trim(), "utf8"));
+
+    let encrypted = cipher.update(plaintext, "utf8", "hex");
+    encrypted += cipher.final("hex");
+    const authTag = cipher.getAuthTag().toString("hex");
+
+    const secretReference = `sec_ref_${createHash("sha256").update(plaintext).digest("hex").substring(0, 24)}`;
+
+    return {
+      encryptedSecret: encrypted,
+      iv: iv.toString("hex"),
+      authTag,
+      secretReference,
+      displaySecret: plaintext,
+    };
+  }
+
   public static generateAndEncryptSecret(endpointId: string): EncryptedSecretPayload {
     if (!endpointId || !/^[0-9a-fA-F-]{36}$/.test(endpointId.trim())) {
       throw new Error("INVALID_ENDPOINT_ID: Se requiere un UUID válido para vincular el AAD.");
