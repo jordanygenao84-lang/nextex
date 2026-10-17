@@ -34,7 +34,7 @@ export async function GET(
     }
 
     const { data: run, error: runErr } = await (supabase.from("job_runs") as any)
-      .select("*, jobs(id, name, automation_id)")
+      .select("*, jobs(id, name)")
       .eq("id", params.id)
       .maybeSingle();
 

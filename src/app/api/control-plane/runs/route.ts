@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
     const limit = Number(searchParams.get("limit") || 50);
 
     let query = (supabase.from("job_runs") as any)
-      .select("*, jobs(id, name, automation_id)")
+      .select("*, jobs(id, name)")
       .eq("workspace_id", member.workspace_id);
 
     if (status) query = query.eq("status", status);
