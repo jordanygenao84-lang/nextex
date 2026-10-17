@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/context/AuthContext";
 import {
   Users,
+  UserPlus,
+  MailCheck,
   Building2,
   Globe,
   ExternalLink,
@@ -146,6 +148,26 @@ interface ClientWidget {
   updated_at: string;
 }
 
+
+interface WorkspaceMemberItem {
+  user_id: string;
+  email: string;
+  role: "owner" | "admin" | "member";
+  created_at: string;
+}
+
+interface WorkspaceInviteItem {
+  id: string;
+  workspace_id: string;
+  email: string;
+  role: "owner" | "admin" | "member";
+  invited_by: string;
+  token: string;
+  expires_at: string;
+  created_at: string;
+  invite_link: string;
+}
+
 interface ClientDetailData {
   client: Client;
   workspace?: { id: string; name: string; slug?: string; owner_id?: string };
@@ -185,7 +207,26 @@ export default function ClientsPage() {
 
 
   // Estados Pestaña IA (IA-3)
-  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "ai" | "integrations" | "connections" | "widget">("general");
+  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "ai" | "integrations" | "connections" | "widget" | "users">("general");
+
+  // Estados Pestaña Usuarios (ROLES-3)
+  const [members, setMembers] = useState<WorkspaceMemberItem[]>([]);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [membersError, setMembersError] = useState<string | null>(null);
+
+  const [invites, setInvites] = useState<WorkspaceInviteItem[]>([]);
+  const [isLoadingInvites, setIsLoadingInvites] = useState(false);
+  const [invitesError, setInvitesError] = useState<string | null>(null);
+
+  // Modal Invitar Usuario
+  const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"owner" | "admin" | "member">("member");
+  const [isSubmittingInvite, setIsSubmittingInvite] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [createdInviteResult, setCreatedInviteResult] = useState<WorkspaceInviteItem | null>(null);
+  const [hasCopiedInviteLink, setHasCopiedInviteLink] = useState(false);
+  const [copiedInviteToken, setCopiedInviteToken] = useState<string | null>(null);
 
   // Estados Pestaña Widget (WIDGET-3)
   const [widgets, setWidgets] = useState<ClientWidget[]>([]);
@@ -932,6 +973,81 @@ export default function ClientsPage() {
     }
   };
 
+
+  const loadMembers = useCallback(async (clientId: string) => {
+    setIsLoadingMembers(true);
+    setMembersError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/members`);
+      if (res.ok) {
+        const data = await res.json();
+        setMembers(Array.isArray(data) ? data : []);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setMembersError(data?.error?.message || "No se pudieron cargar los miembros del workspace.");
+      }
+    } catch (err: any) {
+      setMembersError(err?.message || "Error al consultar miembros.");
+    } finally {
+      setIsLoadingMembers(false);
+    }
+  }, []);
+
+  const loadInvites = useCallback(async (clientId: string) => {
+    setIsLoadingInvites(true);
+    setInvitesError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/invites`);
+      if (res.ok) {
+        const data = await res.json();
+        setInvites(Array.isArray(data) ? data : []);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setInvitesError(data?.error?.message || "No se pudieron cargar las invitaciones.");
+      }
+    } catch (err: any) {
+      setInvitesError(err?.message || "Error al consultar invitaciones.");
+    } finally {
+      setIsLoadingInvites(false);
+    }
+  }, []);
+
+  const handleCreateInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClient || !inviteEmail.trim()) return;
+
+    setIsSubmittingInvite(true);
+    setInviteError(null);
+
+    try {
+      const res = await fetch(`/api/clients/${selectedClient.id}/invites`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: inviteEmail.trim(),
+          role: inviteRole,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setInviteError(data?.error?.message || "Error al generar invitación.");
+        return;
+      }
+
+      setCreatedInviteResult(data);
+      setInviteEmail("");
+      setInviteRole("member");
+      setHasCopiedInviteLink(false);
+      await loadInvites(selectedClient.id);
+    } catch (err: any) {
+      setInviteError(err?.message || "Error inesperado al generar invitación.");
+    } finally {
+      setIsSubmittingInvite(false);
+    }
+  };
+
   const handleOpenDetail = (client: Client) => {
     setSelectedClient(client);
     loadClientDetail(client.id);
@@ -941,6 +1057,8 @@ export default function ClientsPage() {
     loadSiteKeys(client.id);
     loadBindings(client.id);
     loadWidgets(client.id);
+    loadMembers(client.id);
+    loadInvites(client.id);
     setActiveDetailTab("general");
   };
 
@@ -1552,6 +1670,30 @@ export default function ClientsPage() {
                 {widgets.filter((w) => w.is_active).length > 0 && (
                   <Badge variant="cyan" size="sm" className="ml-1 text-[10px] px-1.5 py-0 font-mono">
                     {widgets.filter((w) => w.is_active).length}
+                  </Badge>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveDetailTab("users");
+                  if (selectedClient) {
+                    loadMembers(selectedClient.id);
+                    loadInvites(selectedClient.id);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  activeDetailTab === "users"
+                    ? "bg-amber-600 text-white shadow-sm font-bold"
+                    : "text-texter-text-muted hover:text-white hover:bg-texter-surface-hover"
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Usuarios</span>
+                {members.length > 0 && (
+                  <Badge variant="warning" size="sm" className="ml-1 text-[10px] px-1.5 py-0 font-mono">
+                    {members.length}
                   </Badge>
                 )}
               </button>
@@ -2189,6 +2331,188 @@ export default function ClientsPage() {
                       No hay widgets de chat configurados para este cliente. Haz clic en "Crear widget" para generar el código de integración.
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* PESTAÑA 6: USUARIOS Y ROLES (ROLES-3) */}
+            {activeDetailTab === "users" && (
+              <div className="space-y-8">
+                {/* 1. SECCIÓN: MIEMBROS ACTUALES */}
+                <div className="space-y-3">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-texter-border pb-2.5">
+                    <div>
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Users className="w-4 h-4 text-amber-400" />
+                        Miembros Actuales del Workspace
+                      </h4>
+                      <p className="text-xs text-texter-text-muted">
+                        Usuarios con credenciales y acceso directo al espacio de trabajo del cliente
+                      </p>
+                    </div>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => {
+                        setIsInviteOpen(true);
+                        setCreatedInviteResult(null);
+                        setInviteEmail("");
+                        setInviteRole("member");
+                        setInviteError(null);
+                      }}
+                      className="flex items-center gap-1.5 text-xs"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      Invitar usuario
+                    </Button>
+                  </div>
+
+                  {membersError && (
+                    <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                      <span>{membersError}</span>
+                    </div>
+                  )}
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="bg-texter-surface-subtle text-texter-text-muted border-b border-texter-border uppercase tracking-wider">
+                        <tr>
+                          <th className="p-2.5">Usuario (Email)</th>
+                          <th className="p-2.5">Rol</th>
+                          <th className="p-2.5">ID de Usuario</th>
+                          <th className="p-2.5 text-right">Incorporación</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-texter-border/50">
+                        {members.map((m) => (
+                          <tr key={m.user_id} className="hover:bg-texter-surface-hover/50 transition-colors">
+                            <td className="p-2.5 font-bold text-white font-sans flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                              <span>{m.email}</span>
+                            </td>
+                            <td className="p-2.5">
+                              <Badge
+                                variant={
+                                  m.role === "owner"
+                                    ? "warning"
+                                    : m.role === "admin"
+                                    ? "cyan"
+                                    : "default"
+                                }
+                                size="sm"
+                                className="uppercase text-[10px]"
+                              >
+                                {m.role === "owner" ? "Dueño" : m.role === "admin" ? "Admin" : "Miembro"}
+                              </Badge>
+                            </td>
+                            <td className="p-2.5 text-texter-text-dim text-[11px] font-mono">
+                              {m.user_id}
+                            </td>
+                            <td className="p-2.5 text-right text-texter-text-dim text-[11px]">
+                              {new Date(m.created_at).toLocaleDateString()}
+                            </td>
+                          </tr>
+                        ))}
+                        {members.length === 0 && !isLoadingMembers && (
+                          <tr>
+                            <td colSpan={4} className="p-6 text-center text-texter-text-dim font-sans">
+                              No hay miembros registrados para este workspace.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* 2. SECCIÓN: INVITACIONES PENDIENTES */}
+                <div className="space-y-3">
+                  <div className="border-b border-texter-border pb-2.5">
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <MailCheck className="w-4 h-4 text-texter-cyan" />
+                      Invitaciones Pendientes
+                    </h4>
+                    <p className="text-xs text-texter-text-muted">
+                      Enlaces de acceso generados para nuevos integrantes pendientes de activación
+                    </p>
+                  </div>
+
+                  {invitesError && (
+                    <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                      <span>{invitesError}</span>
+                    </div>
+                  )}
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="bg-texter-surface-subtle text-texter-text-muted border-b border-texter-border uppercase tracking-wider">
+                        <tr>
+                          <th className="p-2.5">Email Invitado</th>
+                          <th className="p-2.5">Rol Asignado</th>
+                          <th className="p-2.5">Expira</th>
+                          <th className="p-2.5 text-right">Enlace de Invitación</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-texter-border/50">
+                        {invites.map((inv) => (
+                          <tr key={inv.id} className="hover:bg-texter-surface-hover/50 transition-colors">
+                            <td className="p-2.5 font-bold text-white font-sans">{inv.email}</td>
+                            <td className="p-2.5">
+                              <Badge
+                                variant={
+                                  inv.role === "owner"
+                                    ? "warning"
+                                    : inv.role === "admin"
+                                    ? "cyan"
+                                    : "default"
+                                }
+                                size="sm"
+                                className="uppercase text-[10px]"
+                              >
+                                {inv.role === "owner" ? "Dueño" : inv.role === "admin" ? "Admin" : "Miembro"}
+                              </Badge>
+                            </td>
+                            <td className="p-2.5 text-texter-text-dim text-[11px]">
+                              {new Date(inv.expires_at).toLocaleDateString()}
+                            </td>
+                            <td className="p-2.5 text-right">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(inv.invite_link);
+                                  setCopiedInviteToken(inv.token);
+                                  setTimeout(() => setCopiedInviteToken(null), 2500);
+                                }}
+                                className="text-[11px] h-7 px-2.5 flex items-center gap-1.5 ml-auto"
+                              >
+                                {copiedInviteToken === inv.token ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-emerald-400" />
+                                    <span className="text-emerald-400 font-bold">¡Copiado!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3 h-3 text-texter-cyan" />
+                                    <span>Copiar Link</span>
+                                  </>
+                                )}
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                        {invites.length === 0 && !isLoadingInvites && (
+                          <tr>
+                            <td colSpan={4} className="p-6 text-center text-texter-text-dim font-sans">
+                              No hay invitaciones pendientes. Haz clic en "Invitar usuario" para sumar nuevos colaboradores.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}
@@ -3161,6 +3485,136 @@ export default function ClientsPage() {
                 Confirmar Desactivación
               </Button>
             </div>
+          </Card>
+        </div>
+      )}
+
+
+      {/* MODAL: INVITAR USUARIO */}
+      {isInviteOpen && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-texter-border">
+            <div className="flex items-center justify-between border-b border-texter-border pb-3">
+              <div className="flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-amber-400" />
+                <h3 className="text-base font-bold text-white">
+                  {createdInviteResult ? "Enlace de Invitación Creado" : "Invitar Usuario al Workspace"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsInviteOpen(false);
+                  setCreatedInviteResult(null);
+                }}
+                className="text-texter-text-muted hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {createdInviteResult ? (
+              <div className="space-y-4">
+                <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="block font-bold">Invitación generada para {createdInviteResult.email}</strong>
+                    <span>Pásale este link al cliente para que active su acceso:</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-texter-text-muted uppercase">Link de Invitación:</label>
+                  <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border font-mono text-xs text-white break-all select-all flex items-center justify-between gap-2">
+                    <span>{createdInviteResult.invite_link}</span>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-amber-400/90 font-mono">
+                  * El enlace es válido durante 7 días y solo puede ser utilizado una vez.
+                </p>
+
+                <div className="pt-2 flex justify-between items-center border-t border-texter-border">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdInviteResult.invite_link);
+                      setHasCopiedInviteLink(true);
+                      setTimeout(() => setHasCopiedInviteLink(false), 3000);
+                    }}
+                    className="flex items-center gap-1.5 text-xs"
+                  >
+                    {hasCopiedInviteLink ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-400 font-bold">¡Copiado!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5 text-texter-cyan" />
+                        <span>Copiar Link</span>
+                      </>
+                    )}
+                  </Button>
+
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      setIsInviteOpen(false);
+                      setCreatedInviteResult(null);
+                    }}
+                  >
+                    Listo, cerrar
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleCreateInvite} className="space-y-3.5">
+                {inviteError && (
+                  <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                    <span>{inviteError}</span>
+                  </div>
+                )}
+
+                <Input
+                  label="Correo Electrónico *"
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="ej: cliente@negocio.com"
+                  required
+                />
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-texter-text-secondary">Rol Asignado</label>
+                  <select
+                    value={inviteRole}
+                    onChange={(e) => setInviteRole(e.target.value as any)}
+                    className="w-full p-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white outline-none font-sans"
+                  >
+                    <option value="member">Miembro / Empleado (acceso estándar a tareas)</option>
+                    <option value="admin">Administrador (gestión de agentes y configuración)</option>
+                    <option value="owner">Dueño (control total del workspace)</option>
+                  </select>
+                </div>
+
+                <p className="text-[11px] text-texter-text-muted leading-relaxed">
+                  Se creará un token seguro de un solo uso con vigencia de 7 días para que el cliente vincule su cuenta.
+                </p>
+
+                <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+                  <Button variant="ghost" size="sm" type="button" onClick={() => setIsInviteOpen(false)}>
+                    Cancelar
+                  </Button>
+                  <Button variant="primary" size="sm" type="submit" isLoading={isSubmittingInvite}>
+                    Generar Invitación
+                  </Button>
+                </div>
+              </form>
+            )}
           </Card>
         </div>
       )}
