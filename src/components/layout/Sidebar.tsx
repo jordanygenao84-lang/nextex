@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
+  Gauge,
   MessageSquareCode,
   Workflow,
   Cpu,
@@ -80,6 +81,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       name: "Herramientas e IA",
       href: "/integrations",
       icon: Layers,
+    },
+    {
+      name: "Flota de Carga",
+      href: "/fleet",
+      icon: Gauge,
+      badge: "VUs",
     },
   ];
 
