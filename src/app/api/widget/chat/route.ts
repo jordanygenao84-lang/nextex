@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { createServiceClient } from "@/lib/supabase/server";
 import { defaultAIGateway } from "@/lib/omniengine/gateway/gateway";
+import { getCachedResponse, setCachedResponse } from "@/lib/efficiency/cache";
+import { logTokenUsage } from "@/lib/efficiency/usage";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +42,7 @@ function checkRateLimit(key: string): boolean {
  * Endpoint público para que los visitantes conversen con el agente del cliente.
  * SEGURIDAD CRÍTICA: Resuelve el workspace_id del cliente dueño del embed_key.
  * CONV-2: Registra la conversación y mensajes, y respeta el takeover humano (status='human').
+ * EFIC-2: Consulta response_cache (cero tokens en cache hits) y registra consumo en token_usage.
  */
 export async function POST(req: NextRequest) {
   let fallbackSessionId = `sess_${randomUUID()}`;
@@ -189,7 +192,36 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 7. Conversación controlada por bot: Ejecutar agente de IA
+    // 7. EFIC-2: Verificar caché de respuestas ANTES de llamar al agente
+    const cachedHit = await getCachedResponse(workspaceId, cleanMessage);
+    if (cachedHit) {
+      // Guardar respuesta del bot en la conversación para mantener el historial intacto
+      if (conversation?.id) {
+        const cacheReplyTime = new Date().toISOString();
+        await (serviceClient.from("conversation_messages") as any).insert({
+          conversation_id: conversation.id,
+          role: "bot",
+          content: cachedHit.response,
+          created_at: cacheReplyTime,
+        });
+
+        await (serviceClient.from("conversations") as any)
+          .update({ last_message_at: cacheReplyTime, updated_at: cacheReplyTime })
+          .eq("id", conversation.id);
+      }
+
+      // Responder directamente sin invocar al agente (cero consumo de tokens)
+      return NextResponse.json(
+        {
+          reply: cachedHit.response,
+          cached: true,
+          session_id: fallbackSessionId,
+        },
+        { status: 200, headers: corsHeaders }
+      );
+    }
+
+    // 8. Conversación controlada por bot: Ejecutar agente de IA
     const { data: wsRecord } = await (serviceClient.from("workspaces") as any)
       .select("id, owner_id")
       .eq("id", workspaceId)
@@ -202,6 +234,8 @@ Tu objetivo es responder de manera atenta, clara, profesional y concisa a los vi
 Fuentes e integraciones autorizadas para este canal: ${allowedSources.join(", ")}.
 Responde en el mismo idioma del visitante (por defecto español). Nunca inventes información confidencial y mantén un tono cortés.`;
 
+    const modelName = "gemini-1.5-flash";
+
     try {
       const aiResponse = await defaultAIGateway.execute(
         {
@@ -209,7 +243,7 @@ Responde en el mismo idioma del visitante (por defecto español). Nunca inventes
           workspaceId,
           userId: executionUserId,
           conversationId: fallbackSessionId,
-          model: "gemini-1.5-flash",
+          model: modelName,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: cleanMessage },
@@ -235,6 +269,21 @@ Responde en el mismo idioma del visitante (por defecto español). Nunca inventes
           .update({ last_message_at: botReplyTime, updated_at: botReplyTime })
           .eq("id", conversation.id);
       }
+
+      // EFIC-2: Guardar respuesta en caché y registrar consumo de tokens
+      await setCachedResponse(workspaceId, cleanMessage, aiResponse.content, modelName);
+
+      const inputTokens = aiResponse.usage?.inputTokens || Math.ceil(cleanMessage.length / 4);
+      const outputTokens = aiResponse.usage?.outputTokens || Math.ceil(aiResponse.content.length / 4);
+
+      await logTokenUsage({
+        clientId,
+        workspaceId,
+        conversationId: conversation?.id,
+        model: modelName,
+        inputTokens,
+        outputTokens,
+      });
 
       return NextResponse.json(
         {
