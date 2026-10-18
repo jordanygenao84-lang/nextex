@@ -4,13 +4,11 @@ import {
   SECTIONS,
   ACTIONS,
   ROLES,
+  PRESETS,
   Role,
-} from "../route";
+} from "@/lib/permissions/client-matrix";
 
 export const dynamic = "force-dynamic";
-
-export const PRESETS = ["dueno", "empleado", "lectura"] as const;
-export type Preset = (typeof PRESETS)[number];
 
 /**
  * POST /api/clients/[id]/permissions/preset
