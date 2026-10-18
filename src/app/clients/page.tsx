@@ -42,6 +42,9 @@ import {
   RotateCcw,
   Hash,
   Cpu,
+  BarChart3,
+  Zap,
+  TrendingUp,
   Sparkles,
   Lock,
 } from "lucide-react";
@@ -183,6 +186,21 @@ type ClientPermissionsMatrix = {
   };
 };
 
+
+interface ClientConsumptionData {
+  month: string;
+  total_tokens: number;
+  by_model: Array<{ model: string; tokens: number }>;
+  by_day: Array<{ day: string; tokens: number }>;
+  cache_hits: number;
+  cache_hit_rate: number;
+  budget: {
+    cap: number | null;
+    used: number;
+    exceeded: boolean;
+  };
+}
+
 interface ClientDetailData {
   client: Client;
   workspace?: { id: string; name: string; slug?: string; owner_id?: string };
@@ -222,7 +240,12 @@ export default function ClientsPage() {
 
 
   // Estados Pestaña IA (IA-3)
-  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "ai" | "integrations" | "connections" | "widget" | "users" | "permissions">("general");
+  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "ai" | "integrations" | "connections" | "widget" | "users" | "permissions" | "consumption">("general");
+
+  // Estados Pestaña Consumo (EFIC-3)
+  const [consumptionData, setConsumptionData] = useState<ClientConsumptionData | null>(null);
+  const [isLoadingConsumption, setIsLoadingConsumption] = useState(false);
+  const [consumptionError, setConsumptionError] = useState<string | null>(null);
 
   // Estados Pestaña Permisos (PERM-3)
   const [permissionsMatrix, setPermissionsMatrix] = useState<ClientPermissionsMatrix | null>(null);
@@ -1189,6 +1212,26 @@ export default function ClientsPage() {
     }
   };
 
+
+  const loadConsumption = useCallback(async (clientId: string) => {
+    setIsLoadingConsumption(true);
+    setConsumptionError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/consumption`);
+      if (res.ok) {
+        const data = await res.json();
+        setConsumptionData(data);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setConsumptionError(errData?.error?.message || "No se pudieron cargar las métricas de consumo.");
+      }
+    } catch (err: any) {
+      setConsumptionError(err?.message || "Error al consultar consumo.");
+    } finally {
+      setIsLoadingConsumption(false);
+    }
+  }, []);
+
   const handleOpenDetail = (client: Client) => {
     setSelectedClient(client);
     loadClientDetail(client.id);
@@ -1201,6 +1244,7 @@ export default function ClientsPage() {
     loadMembers(client.id);
     loadInvites(client.id);
     loadPermissions(client.id);
+    loadConsumption(client.id);
     setActiveDetailTab("general");
   };
 
@@ -1856,6 +1900,27 @@ export default function ClientsPage() {
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span>Permisos</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveDetailTab("consumption");
+                  if (selectedClient) {
+                    loadConsumption(selectedClient.id);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  activeDetailTab === "consumption"
+                    ? "bg-cyan-600 text-white shadow-sm font-bold"
+                    : "text-texter-text-muted hover:text-white hover:bg-texter-surface-hover"
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>Consumo</span>
+                {consumptionData?.budget?.exceeded && (
+                  <span className="w-2 h-2 rounded-full bg-texter-rose animate-pulse" title="Presupuesto excedido" />
+                )}
               </button>
             </div>
 
@@ -2837,6 +2902,260 @@ export default function ClientsPage() {
                 <p className="text-[11px] text-texter-text-dim text-right font-mono">
                   * Los cambios de permisos se guardan y aplican de manera inmediata.
                 </p>
+              </div>
+            )}
+
+            {/* PESTAÑA 8: CONSUMO Y EFICIENCIA (EFIC-3) */}
+            {activeDetailTab === "consumption" && (
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-texter-border pb-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-texter-cyan" />
+                      Métricas de Consumo y Eficiencia de Tokens
+                    </h4>
+                    <p className="text-xs text-texter-text-muted">
+                      Monitoreo mensual de tokens, aciertos en response_cache y control de topes
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => selectedClient && loadConsumption(selectedClient.id)}
+                    disabled={isLoadingConsumption}
+                    className="text-xs text-texter-cyan hover:text-white flex items-center gap-1.5 h-7"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingConsumption ? "animate-spin" : ""}`} />
+                    <span>Actualizar</span>
+                  </Button>
+                </div>
+
+                {consumptionError && (
+                  <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                    <span>{consumptionError}</span>
+                  </div>
+                )}
+
+                {/* 1. TARJETAS SUPERIORES */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* Total Tokens */}
+                  <div className="p-4 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-2">
+                    <div className="flex items-center justify-between text-texter-text-muted text-xs font-mono">
+                      <span>Total Mes ({consumptionData?.month || "Actual"})</span>
+                      <Zap className="w-4 h-4 text-texter-cyan" />
+                    </div>
+                    <div className="text-2xl font-bold font-mono text-white">
+                      {(consumptionData?.total_tokens ?? 0).toLocaleString()}
+                    </div>
+                    <p className="text-[11px] text-texter-text-dim font-mono">
+                      tokens consumidos en inferencias
+                    </p>
+                  </div>
+
+                  {/* Cache Hit Rate */}
+                  <div className="p-4 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-2">
+                    <div className="flex items-center justify-between text-texter-text-muted text-xs font-mono">
+                      <span>Ahorro en Caché</span>
+                      <TrendingUp className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <div className="text-2xl font-bold font-mono text-emerald-400">
+                      {(((consumptionData?.cache_hit_rate ?? 0) * 100)).toFixed(1)}%
+                    </div>
+                    <div className="w-full bg-texter-surface rounded-full h-1.5 overflow-hidden border border-texter-border">
+                      <div
+                        className="bg-emerald-400 h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${Math.min(100, ((consumptionData?.cache_hit_rate ?? 0) * 100))}%`,
+                        }}
+                      />
+                    </div>
+                    <p className="text-[11px] text-texter-text-dim font-mono">
+                      {(consumptionData?.cache_hits ?? 0)} hits (0 tokens facturados)
+                    </p>
+                  </div>
+
+                  {/* Presupuesto */}
+                  <div
+                    className={`p-4 rounded-xl bg-texter-surface-subtle border transition-all space-y-2 ${
+                      consumptionData?.budget?.exceeded
+                        ? "border-texter-rose/60 bg-texter-rose/10 shadow-sm shadow-rose-950/20"
+                        : "border-texter-border"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-texter-text-muted text-xs font-mono">
+                      <span>Presupuesto Mensual</span>
+                      {consumptionData?.budget?.exceeded && (
+                        <Badge variant="danger" size="sm" dot>Excedido</Badge>
+                      )}
+                    </div>
+                    <div className="text-2xl font-bold font-mono text-white">
+                      {consumptionData?.budget?.cap != null ? (
+                        <span>
+                          {(consumptionData.budget.used ?? 0).toLocaleString()} / {(consumptionData.budget.cap).toLocaleString()}
+                        </span>
+                      ) : (
+                        <span className="text-texter-text-secondary text-lg">Sin límite</span>
+                      )}
+                    </div>
+                    {consumptionData?.budget?.cap != null && (
+                      <div className="w-full bg-texter-surface rounded-full h-1.5 overflow-hidden border border-texter-border">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            consumptionData.budget.exceeded ? "bg-texter-rose" : "bg-texter-cyan"
+                          }`}
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              ((consumptionData.budget.used || 0) / consumptionData.budget.cap) * 100
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                    )}
+                    <p className="text-[11px] text-texter-text-dim font-mono">
+                      {consumptionData?.budget?.exceeded
+                        ? "Tope mensual alcanzado o superado"
+                        : consumptionData?.budget?.cap != null
+                        ? "Tope configurado en IA"
+                        : "Consumo ilimitado permitido"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 2. NOTA DE FACTURACIÓN */}
+                <div
+                  className={`p-3.5 rounded-xl border text-xs flex items-center justify-between gap-3 ${
+                    aiConfig?.mode === "byok"
+                      ? "bg-texter-indigo/10 border-indigo-500/30 text-indigo-300"
+                      : "bg-texter-cyan/10 border-cyan-500/30 text-cyan-300"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-4 h-4 shrink-0" />
+                    <span>
+                      {aiConfig?.mode === "byok" ? (
+                        <>
+                          <strong>Modo BYOK (Claves Propias):</strong> El cliente aporta sus propias credenciales. El consumo de tokens es facturado directamente por los proveedores externos (OpenAI, Google, Anthropic).
+                        </>
+                      ) : (
+                        <>
+                          <strong>Modo Premium (Claves NEXTEХ):</strong> Este consumo se realiza a través de la infraestructura central de NEXTEХ y es facturable mensualmente.
+                        </>
+                      )}
+                    </span>
+                  </div>
+                  <Badge variant={aiConfig?.mode === "byok" ? "indigo" : "cyan"} size="sm">
+                    {aiConfig?.mode === "byok" ? "BYOK Activo" : "Facturable"}
+                  </Badge>
+                </div>
+
+                {/* 3. GRÁFICO POR DÍA */}
+                <div className="p-4 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-3">
+                  <div className="flex items-center justify-between border-b border-texter-border pb-2.5">
+                    <h5 className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-texter-cyan" />
+                      Consumo Diario de Tokens (Últimos Días)
+                    </h5>
+                    <span className="text-[11px] text-texter-text-dim font-mono">
+                      {(consumptionData?.by_day?.length ?? 0)} días con actividad
+                    </span>
+                  </div>
+
+                  {consumptionData?.by_day && consumptionData.by_day.length > 0 ? (
+                    (() => {
+                      const maxTokens = Math.max(...consumptionData.by_day.map((d) => d.tokens), 1);
+
+                      return (
+                        <div className="pt-4 pb-2">
+                          <div className="flex items-end gap-2 h-36 w-full overflow-x-auto px-2">
+                            {consumptionData.by_day.map((dayItem) => {
+                              const heightPct = Math.max(8, Math.round((dayItem.tokens / maxTokens) * 100));
+                              const dayLabel = dayItem.day.slice(8); // DD
+
+                              return (
+                                <div
+                                  key={dayItem.day}
+                                  className="flex-1 min-w-[28px] max-w-[48px] flex flex-col items-center gap-1 group relative h-full justify-end"
+                                >
+                                  {/* Tooltip */}
+                                  <div className="absolute -top-8 hidden group-hover:flex flex-col items-center z-20 pointer-events-none">
+                                    <div className="bg-texter-surface border border-texter-border px-2 py-1 rounded text-[10px] font-mono text-white whitespace-nowrap shadow-xl">
+                                      {dayItem.day}: {dayItem.tokens.toLocaleString()} tokens
+                                    </div>
+                                  </div>
+
+                                  <div
+                                    className="w-full bg-texter-cyan/70 hover:bg-texter-cyan rounded-t transition-all duration-300"
+                                    style={{ height: `${heightPct}%` }}
+                                  />
+                                  <span className="text-[10px] font-mono text-texter-text-dim mt-1">
+                                    {dayLabel}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    <div className="p-8 text-center text-texter-text-dim text-xs font-mono">
+                      No hay actividad registrada en este período (0 tokens consumidos).
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. DESGLOSE POR MODELO */}
+                <div className="space-y-3">
+                  <div className="border-b border-texter-border pb-2.5">
+                    <h5 className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                      <Cpu className="w-4 h-4 text-purple-400" />
+                      Desglose de Consumo por Modelo de IA
+                    </h5>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-texter-border bg-texter-surface-subtle/30">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="bg-texter-surface-subtle text-texter-text-muted border-b border-texter-border uppercase tracking-wider text-[11px]">
+                        <tr>
+                          <th className="p-3">Modelo</th>
+                          <th className="p-3">Tokens Consumidos</th>
+                          <th className="p-3 text-right">Porcentaje</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-texter-border/50">
+                        {consumptionData?.by_model && consumptionData.by_model.length > 0 ? (
+                          consumptionData.by_model.map((m) => {
+                            const total = consumptionData.total_tokens || 1;
+                            const pct = ((m.tokens / total) * 100).toFixed(1);
+
+                            return (
+                              <tr key={m.model} className="hover:bg-texter-surface-hover/40 transition-colors">
+                                <td className="p-3 font-bold text-white flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-texter-cyan" />
+                                  <span>{m.model}</span>
+                                </td>
+                                <td className="p-3 text-texter-cyan font-bold">
+                                  {m.tokens.toLocaleString()}
+                                </td>
+                                <td className="p-3 text-right text-texter-text-dim">
+                                  {pct}%
+                                </td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={3} className="p-6 text-center text-texter-text-dim font-sans">
+                              No hay consumo por modelo registrado en este mes (0 tokens).
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             )}
           </Card>
