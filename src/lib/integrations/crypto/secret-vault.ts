@@ -32,9 +32,6 @@ export class SecretVault {
   }
 
   /**
-   * Genera un secreto HMAC de 32 bytes CSPRNG y lo cifra con AES-256-GCM y AAD.
-   */
-  /**
    * Cifra un valor arbitrario en texto plano con AES-256-GCM y AAD.
    */
   public static encryptValue(plaintext: string, aad: string): EncryptedSecretPayload {
@@ -64,6 +61,42 @@ export class SecretVault {
       secretReference,
       displaySecret: plaintext,
     };
+  }
+
+  /**
+   * Descifra un valor arbitrario en texto plano con AES-256-GCM y AAD.
+   */
+  public static decryptValue(
+    encryptedSecret: string,
+    ivHex: string,
+    authTagHex: string,
+    aad: string
+  ): string {
+    if (!encryptedSecret || encryptedSecret.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(encryptedSecret.trim())) {
+      throw new Error("INVALID_CIPHERTEXT: El texto cifrado debe ser una cadena hexadecimal no vacía de longitud par.");
+    }
+    if (!ivHex || !/^[0-9a-fA-F]{24}$/.test(ivHex.trim())) {
+      throw new Error("INVALID_IV: El vector de inicialización debe ser exactamente 24 caracteres hex (12 bytes).");
+    }
+    if (!authTagHex || !/^[0-9a-fA-F]{32}$/.test(authTagHex.trim())) {
+      throw new Error("INVALID_AUTH_TAG: El auth tag de autenticación debe ser exactamente 32 caracteres hex (16 bytes).");
+    }
+    if (!aad || typeof aad !== "string") {
+      throw new Error("INVALID_AAD: Se requiere una cadena de AAD para autenticación de datos asociados.");
+    }
+
+    const masterKey = this.getMasterKey();
+    const iv = Buffer.from(ivHex.trim(), "hex");
+    const authTag = Buffer.from(authTagHex.trim(), "hex");
+
+    const decipher = createDecipheriv("aes-256-gcm", masterKey, iv);
+    decipher.setAAD(Buffer.from(aad.trim(), "utf8"));
+    decipher.setAuthTag(authTag);
+
+    let decrypted = decipher.update(encryptedSecret.trim(), "hex", "utf8");
+    decrypted += decipher.final("utf8");
+
+    return decrypted;
   }
 
   public static generateAndEncryptSecret(endpointId: string): EncryptedSecretPayload {
@@ -96,17 +129,19 @@ export class SecretVault {
   }
 
   /**
-   * Descifra el secreto en memoria para verificación temporal en el gateway.
+   * Descifra el secreto en memoria para verificación temporal en el gateway o integraciones.
    */
   public static decryptSecret(
-    endpointId: string,
+    endpointIdOrAad: string,
     encryptedSecret: string,
     ivHex: string,
     authTagHex: string
   ): string {
-    if (!endpointId || !/^[0-9a-fA-F-]{36}$/.test(endpointId.trim())) {
-      throw new Error("INVALID_ENDPOINT_ID: UUID inválido para AAD de descifrado.");
-    }
+    const isEndpointUuid = /^[0-9a-fA-F-]{36}$/.test(endpointIdOrAad.trim());
+    const aad = isEndpointUuid
+      ? `nextex:integration-endpoint:${endpointIdOrAad.trim()}`
+      : endpointIdOrAad.trim();
+
     if (!ivHex || !/^[0-9a-fA-F]{24}$/.test(ivHex.trim())) {
       throw new Error("INVALID_IV: El vector de inicialización debe ser exactamente 24 caracteres hex (12 bytes).");
     }
@@ -122,14 +157,13 @@ export class SecretVault {
     const authTag = Buffer.from(authTagHex.trim(), "hex");
 
     const decipher = createDecipheriv("aes-256-gcm", masterKey, iv);
-    const aad = `nextex:integration-endpoint:${endpointId.trim()}`;
     decipher.setAAD(Buffer.from(aad, "utf8"));
     decipher.setAuthTag(authTag);
 
     let decrypted = decipher.update(encryptedSecret.trim(), "hex", "utf8");
     decrypted += decipher.final("utf8");
 
-    if (!/^[0-9a-fA-F]{64}$/.test(decrypted)) {
+    if (isEndpointUuid && !/^[0-9a-fA-F]{64}$/.test(decrypted)) {
       throw new Error("CORRUPTED_SECRET: El secreto descifrado no tiene el formato canónico esperado de 64 caracteres hex.");
     }
 
