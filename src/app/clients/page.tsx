@@ -168,6 +168,21 @@ interface WorkspaceInviteItem {
   invite_link: string;
 }
 
+
+type PermRole = "owner" | "admin" | "member";
+type PermSection = "conversaciones" | "automatizaciones" | "consumo" | "config_ia" | "usuarios";
+type PermAction = "ver" | "responder" | "pausar" | "editar" | "invitar";
+
+type ClientPermissionsMatrix = {
+  roles: {
+    [R in PermRole]: {
+      [S in PermSection]: {
+        [A in PermAction]: boolean;
+      };
+    };
+  };
+};
+
 interface ClientDetailData {
   client: Client;
   workspace?: { id: string; name: string; slug?: string; owner_id?: string };
@@ -207,7 +222,15 @@ export default function ClientsPage() {
 
 
   // Estados Pestaña IA (IA-3)
-  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "ai" | "integrations" | "connections" | "widget" | "users">("general");
+  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "ai" | "integrations" | "connections" | "widget" | "users" | "permissions">("general");
+
+  // Estados Pestaña Permisos (PERM-3)
+  const [permissionsMatrix, setPermissionsMatrix] = useState<ClientPermissionsMatrix | null>(null);
+  const [isLoadingPermissions, setIsLoadingPermissions] = useState(false);
+  const [permissionsError, setPermissionsError] = useState<string | null>(null);
+  const [selectedPermRole, setSelectedPermRole] = useState<PermRole>("owner");
+  const [confirmingPreset, setConfirmingPreset] = useState<"dueno" | "empleado" | "lectura" | null>(null);
+  const [isApplyingPreset, setIsApplyingPreset] = useState(false);
 
   // Estados Pestaña Usuarios (ROLES-3)
   const [members, setMembers] = useState<WorkspaceMemberItem[]>([]);
@@ -1048,6 +1071,124 @@ export default function ClientsPage() {
     }
   };
 
+
+  const loadPermissions = useCallback(async (clientId: string) => {
+    setIsLoadingPermissions(true);
+    setPermissionsError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/permissions`);
+      if (res.ok) {
+        const data = await res.json();
+        setPermissionsMatrix(data);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setPermissionsError(errData?.error?.message || "No se pudo cargar la matriz de permisos.");
+      }
+    } catch (err: any) {
+      setPermissionsError(err?.message || "Error al consultar permisos.");
+    } finally {
+      setIsLoadingPermissions(false);
+    }
+  }, []);
+
+  const handleTogglePermission = async (section: PermSection, action: PermAction, currentVal: boolean) => {
+    if (!selectedClient || !permissionsMatrix) return;
+    const newVal = !currentVal;
+
+    // Actualización optimista local
+    setPermissionsMatrix((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        roles: {
+          ...prev.roles,
+          [selectedPermRole]: {
+            ...prev.roles[selectedPermRole],
+            [section]: {
+              ...prev.roles[selectedPermRole][section],
+              [action]: newVal,
+            },
+          },
+        },
+      };
+    });
+
+    try {
+      const res = await fetch(`/api/clients/${selectedClient.id}/permissions`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          role: selectedPermRole,
+          section,
+          action,
+          allowed: newVal,
+        }),
+      });
+
+      if (!res.ok) {
+        // Revertir ante error
+        setPermissionsMatrix((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            roles: {
+              ...prev.roles,
+              [selectedPermRole]: {
+                ...prev.roles[selectedPermRole],
+                [section]: {
+                  ...prev.roles[selectedPermRole][section],
+                  [action]: currentVal,
+                },
+              },
+            },
+          };
+        });
+        setFeedback({ type: "error", message: "Error al actualizar el permiso en el servidor." });
+      }
+    } catch (err: any) {
+      setFeedback({ type: "error", message: err?.message || "Error de red al guardar permiso." });
+    }
+  };
+
+  const handleConfirmApplyPreset = async () => {
+    if (!selectedClient || !confirmingPreset) return;
+
+    setIsApplyingPreset(true);
+    try {
+      const res = await fetch(`/api/clients/${selectedClient.id}/permissions/preset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          preset: confirmingPreset,
+          role: selectedPermRole,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok) {
+        await loadPermissions(selectedClient.id);
+        setFeedback({
+          type: "success",
+          message: `Preset "${confirmingPreset}" aplicado exitosamente al rol ${selectedPermRole.toUpperCase()}.`,
+        });
+        setConfirmingPreset(null);
+      } else {
+        setFeedback({
+          type: "error",
+          message: data?.error?.message || "Error al aplicar el preset.",
+        });
+      }
+    } catch (err: any) {
+      setFeedback({
+        type: "error",
+        message: err?.message || "Error inesperado al aplicar preset.",
+      });
+    } finally {
+      setIsApplyingPreset(false);
+    }
+  };
+
   const handleOpenDetail = (client: Client) => {
     setSelectedClient(client);
     loadClientDetail(client.id);
@@ -1059,6 +1200,7 @@ export default function ClientsPage() {
     loadWidgets(client.id);
     loadMembers(client.id);
     loadInvites(client.id);
+    loadPermissions(client.id);
     setActiveDetailTab("general");
   };
 
@@ -1696,6 +1838,24 @@ export default function ClientsPage() {
                     {members.length}
                   </Badge>
                 )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveDetailTab("permissions");
+                  if (selectedClient) {
+                    loadPermissions(selectedClient.id);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  activeDetailTab === "permissions"
+                    ? "bg-rose-600 text-white shadow-sm font-bold"
+                    : "text-texter-text-muted hover:text-white hover:bg-texter-surface-hover"
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Permisos</span>
               </button>
             </div>
 
@@ -2514,6 +2674,169 @@ export default function ClientsPage() {
                     </table>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* PESTAÑA 7: PERMISOS Y ROLES GRANULARES (PERM-3) */}
+            {activeDetailTab === "permissions" && (
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-texter-border pb-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-rose-400" />
+                      Matriz de Permisos Granulares por Cliente
+                    </h4>
+                    <p className="text-xs text-texter-text-muted">
+                      Configura el control de acceso a nivel de módulo y acción para cada rol de este workspace
+                    </p>
+                  </div>
+
+                  {/* Acceso Rápido a Presets */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[11px] font-mono text-texter-text-dim mr-1">Presets:</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setConfirmingPreset("dueno")}
+                      className="text-[11px] h-7 px-2"
+                      title="Asignar todos los permisos"
+                    >
+                      Dueño (Todo)
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setConfirmingPreset("empleado")}
+                      className="text-[11px] h-7 px-2"
+                      title="Solo ver y responder conversaciones"
+                    >
+                      Empleado (Conversaciones)
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setConfirmingPreset("lectura")}
+                      className="text-[11px] h-7 px-2"
+                      title="Solo ver en todos los módulos"
+                    >
+                      Solo Lectura
+                    </Button>
+                  </div>
+                </div>
+
+                {permissionsError && (
+                  <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                    <span>{permissionsError}</span>
+                  </div>
+                )}
+
+                {/* 1. SELECTOR DE ROL */}
+                <div className="flex items-center gap-2 p-1.5 bg-texter-surface-subtle border border-texter-border rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPermRole("owner")}
+                    className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
+                      selectedPermRole === "owner"
+                        ? "bg-texter-indigo text-white shadow-sm font-bold"
+                        : "text-texter-text-muted hover:text-white"
+                    }`}
+                  >
+                    <span>Dueño (Owner)</span>
+                    <Badge variant={selectedPermRole === "owner" ? "cyan" : "default"} size="sm" className="text-[10px] px-1 py-0 font-mono">
+                      Total
+                    </Badge>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPermRole("admin")}
+                    className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
+                      selectedPermRole === "admin"
+                        ? "bg-texter-indigo text-white shadow-sm font-bold"
+                        : "text-texter-text-muted hover:text-white"
+                    }`}
+                  >
+                    <span>Administrador (Admin)</span>
+                    <Badge variant={selectedPermRole === "admin" ? "cyan" : "default"} size="sm" className="text-[10px] px-1 py-0 font-mono">
+                      Gestión
+                    </Badge>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPermRole("member")}
+                    className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
+                      selectedPermRole === "member"
+                        ? "bg-texter-indigo text-white shadow-sm font-bold"
+                        : "text-texter-text-muted hover:text-white"
+                    }`}
+                  >
+                    <span>Empleado (Member)</span>
+                    <Badge variant={selectedPermRole === "member" ? "cyan" : "default"} size="sm" className="text-[10px] px-1 py-0 font-mono">
+                      Operativo
+                    </Badge>
+                  </button>
+                </div>
+
+                {/* 2. TABLA MATRIZ DE PERMISOS */}
+                <div className="overflow-x-auto rounded-xl border border-texter-border bg-texter-surface-subtle/30">
+                  <table className="w-full text-left text-xs font-sans">
+                    <thead className="bg-texter-surface-subtle text-texter-text-muted border-b border-texter-border uppercase tracking-wider font-mono text-[11px]">
+                      <tr>
+                        <th className="p-3.5">Módulo / Sección</th>
+                        <th className="p-3.5 text-center">Ver</th>
+                        <th className="p-3.5 text-center">Responder</th>
+                        <th className="p-3.5 text-center">Pausar</th>
+                        <th className="p-3.5 text-center">Editar</th>
+                        <th className="p-3.5 text-center">Invitar</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-texter-border/50">
+                      {[
+                        { key: "conversaciones", label: "Conversaciones (Bandeja & Takeover)" },
+                        { key: "automatizaciones", label: "Automatizaciones & Flujos" },
+                        { key: "consumo", label: "Consumo & Facturación de Tokens" },
+                        { key: "config_ia", label: "Configuración de IA & Modelos" },
+                        { key: "usuarios", label: "Usuarios & Roles del Workspace" },
+                      ].map((sectionItem) => {
+                        const secKey = sectionItem.key as PermSection;
+                        const roleObj = permissionsMatrix?.roles?.[selectedPermRole];
+                        const secObj = roleObj?.[secKey];
+
+                        return (
+                          <tr key={secKey} className="hover:bg-texter-surface-hover/40 transition-colors">
+                            <td className="p-3.5 font-semibold text-white">
+                              {sectionItem.label}
+                            </td>
+
+                            {(["ver", "responder", "pausar", "editar", "invitar"] as PermAction[]).map((actionKey) => {
+                              const isChecked = Boolean(secObj?.[actionKey]);
+
+                              return (
+                                <td key={actionKey} className="p-3.5 text-center">
+                                  <label className="inline-flex items-center justify-center cursor-pointer p-1 rounded-md hover:bg-texter-surface transition-all">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => handleTogglePermission(secKey, actionKey, isChecked)}
+                                      disabled={isLoadingPermissions}
+                                      className="w-4 h-4 rounded border-texter-border text-rose-500 focus:ring-rose-500/30 bg-texter-surface-subtle cursor-pointer transition-colors"
+                                    />
+                                  </label>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <p className="text-[11px] text-texter-text-dim text-right font-mono">
+                  * Los cambios de permisos se guardan y aplican de manera inmediata.
+                </p>
               </div>
             )}
           </Card>
@@ -3615,6 +3938,30 @@ export default function ClientsPage() {
                 </div>
               </form>
             )}
+          </Card>
+        </div>
+      )}
+
+
+      {/* MODAL: CONFIRMAR APLICAR PRESET DE PERMISOS */}
+      {confirmingPreset && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-rose-500/40">
+            <div className="flex items-center gap-2.5 text-rose-400 font-bold text-base">
+              <ShieldCheck className="w-5 h-5" />
+              Aplicar Preset de Permisos
+            </div>
+            <p className="text-xs text-texter-text-muted leading-relaxed">
+              ¿Deseas aplicar la plantilla <strong className="text-white">&quot;{confirmingPreset.toUpperCase()}&quot;</strong> al rol <strong className="text-white">{selectedPermRole.toUpperCase()}</strong> en <strong className="text-white">{selectedClient.display_name}</strong>? Se sobrescribirá la configuración actual de este rol.
+            </p>
+            <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+              <Button variant="ghost" size="sm" onClick={() => setConfirmingPreset(null)}>
+                Cancelar
+              </Button>
+              <Button variant="danger" size="sm" onClick={handleConfirmApplyPreset} isLoading={isApplyingPreset}>
+                Confirmar y Aplicar
+              </Button>
+            </div>
           </Card>
         </div>
       )}
