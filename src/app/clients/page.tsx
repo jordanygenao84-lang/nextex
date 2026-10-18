@@ -44,6 +44,9 @@ import {
   Cpu,
   BarChart3,
   Zap,
+  Receipt,
+  DollarSign,
+  CheckCircle,
   TrendingUp,
   Sparkles,
   Lock,
@@ -201,6 +204,37 @@ interface ClientConsumptionData {
   };
 }
 
+
+interface ModelBillingItem {
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost: number;
+  unpriced?: boolean;
+}
+
+interface ClientBillingEstimate {
+  period: string;
+  billable: boolean;
+  reason?: string;
+  tokens_total: number;
+  amount_estimate: number;
+  currency: string;
+  by_model: ModelBillingItem[];
+}
+
+interface ClientInvoiceItem {
+  id: string;
+  client_id: string;
+  period: string;
+  tokens_total: number;
+  amount: number;
+  currency: string;
+  status: "pending" | "paid" | "cancelled";
+  created_at: string;
+  updated_at: string;
+}
+
 interface ClientDetailData {
   client: Client;
   workspace?: { id: string; name: string; slug?: string; owner_id?: string };
@@ -240,7 +274,18 @@ export default function ClientsPage() {
 
 
   // Estados Pestaña IA (IA-3)
-  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "ai" | "integrations" | "connections" | "widget" | "users" | "permissions" | "consumption">("general");
+  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "ai" | "integrations" | "connections" | "widget" | "users" | "permissions" | "consumption" | "billing">("general");
+
+  // Estados Pestaña Facturación (BILL-3)
+  const [billingEstimate, setBillingEstimate] = useState<ClientBillingEstimate | null>(null);
+  const [isLoadingBilling, setIsLoadingBilling] = useState(false);
+  const [billingError, setBillingError] = useState<string | null>(null);
+
+  const [invoices, setInvoices] = useState<ClientInvoiceItem[]>([]);
+  const [isLoadingInvoices, setIsLoadingInvoices] = useState(false);
+  const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
+  const [confirmInvoiceAction, setConfirmInvoiceAction] = useState<{ invoice: ClientInvoiceItem; nextStatus: "paid" | "cancelled" } | null>(null);
+  const [isUpdatingInvoice, setIsUpdatingInvoice] = useState(false);
 
   // Estados Pestaña Consumo (EFIC-3)
   const [consumptionData, setConsumptionData] = useState<ClientConsumptionData | null>(null);
@@ -1232,6 +1277,100 @@ export default function ClientsPage() {
     }
   }, []);
 
+
+  const loadBillingEstimate = useCallback(async (clientId: string) => {
+    setIsLoadingBilling(true);
+    setBillingError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/billing`);
+      if (res.ok) {
+        const data = await res.json();
+        setBillingEstimate(data);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setBillingError(errData?.error?.message || "No se pudo cargar la estimación de facturación.");
+      }
+    } catch (err: any) {
+      setBillingError(err?.message || "Error al consultar facturación.");
+    } finally {
+      setIsLoadingBilling(false);
+    }
+  }, []);
+
+  const loadInvoices = useCallback(async (clientId: string) => {
+    setIsLoadingInvoices(true);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/billing/invoices`);
+      if (res.ok) {
+        const data = await res.json();
+        setInvoices(Array.isArray(data) ? data : []);
+      }
+    } catch (err: any) {
+      console.error("Error al cargar facturas:", err);
+    } finally {
+      setIsLoadingInvoices(false);
+    }
+  }, []);
+
+  const handleGenerateInvoice = async () => {
+    if (!selectedClient) return;
+
+    setIsGeneratingInvoice(true);
+    try {
+      const res = await fetch(`/api/clients/${selectedClient.id}/billing/invoices`, {
+        method: "POST",
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 409) {
+        setFeedback({ type: "error", message: data?.error?.message || "Ya existe una factura para este período." });
+        return;
+      }
+
+      if (!res.ok) {
+        setFeedback({ type: "error", message: data?.error?.message || "Error al generar factura del mes." });
+        return;
+      }
+
+      await loadInvoices(selectedClient.id);
+      setFeedback({ type: "success", message: `Factura para el período ${data.period} generada correctamente.` });
+    } catch (err: any) {
+      setFeedback({ type: "error", message: err?.message || "Error inesperado al generar factura." });
+    } finally {
+      setIsGeneratingInvoice(false);
+    }
+  };
+
+  const handleUpdateInvoiceStatus = async () => {
+    if (!selectedClient || !confirmInvoiceAction) return;
+
+    setIsUpdatingInvoice(true);
+    try {
+      const res = await fetch(`/api/clients/${selectedClient.id}/billing/invoices/${confirmInvoiceAction.invoice.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: confirmInvoiceAction.nextStatus }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setFeedback({ type: "error", message: data?.error?.message || "Error al actualizar estado de la factura." });
+        return;
+      }
+
+      await loadInvoices(selectedClient.id);
+      const actionLabel = confirmInvoiceAction.nextStatus === "paid" ? "marcada como pagada" : "cancelada";
+      setFeedback({ type: "success", message: `Factura ${confirmInvoiceAction.invoice.period} ${actionLabel} exitosamente.` });
+      setConfirmInvoiceAction(null);
+    } catch (err: any) {
+      setFeedback({ type: "error", message: err?.message || "Error inesperado al actualizar factura." });
+    } finally {
+      setIsUpdatingInvoice(false);
+    }
+  };
+
   const handleOpenDetail = (client: Client) => {
     setSelectedClient(client);
     loadClientDetail(client.id);
@@ -1245,6 +1384,8 @@ export default function ClientsPage() {
     loadInvites(client.id);
     loadPermissions(client.id);
     loadConsumption(client.id);
+    loadBillingEstimate(client.id);
+    loadInvoices(client.id);
     setActiveDetailTab("general");
   };
 
@@ -1920,6 +2061,28 @@ export default function ClientsPage() {
                 <span>Consumo</span>
                 {consumptionData?.budget?.exceeded && (
                   <span className="w-2 h-2 rounded-full bg-texter-rose animate-pulse" title="Presupuesto excedido" />
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveDetailTab("billing");
+                  if (selectedClient) {
+                    loadBillingEstimate(selectedClient.id);
+                    loadInvoices(selectedClient.id);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  activeDetailTab === "billing"
+                    ? "bg-emerald-600 text-white shadow-sm font-bold"
+                    : "text-texter-text-muted hover:text-white hover:bg-texter-surface-hover"
+                }`}
+              >
+                <Receipt className="w-3.5 h-3.5" />
+                <span>Facturación</span>
+                {invoices.some((i) => i.status === "pending") && (
+                  <span className="w-2 h-2 rounded-full bg-amber-400" title="Factura pendiente" />
                 )}
               </button>
             </div>
@@ -3158,6 +3321,266 @@ export default function ClientsPage() {
                 </div>
               </div>
             )}
+
+            {/* PESTAÑA 9: FACTURACIÓN Y LIQUIDACIONES (BILL-3) */}
+            {activeDetailTab === "billing" && (
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-texter-border pb-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Receipt className="w-4 h-4 text-emerald-400" />
+                      Facturación y Liquidación de Consumo
+                    </h4>
+                    <p className="text-xs text-texter-text-muted">
+                      Estimación de cobros en base a tarifas activas de modelos y emisión de facturas mensuales
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      if (selectedClient) {
+                        loadBillingEstimate(selectedClient.id);
+                        loadInvoices(selectedClient.id);
+                      }
+                    }}
+                    disabled={isLoadingBilling || isLoadingInvoices}
+                    className="text-xs text-texter-cyan hover:text-white flex items-center gap-1.5 h-7"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingBilling ? "animate-spin" : ""}`} />
+                    <span>Actualizar</span>
+                  </Button>
+                </div>
+
+                {billingError && (
+                  <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                    <span>{billingError}</span>
+                  </div>
+                )}
+
+                {/* 1. TARJETAS DE ESTIMADO DEL MES */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* Total Tokens Mes */}
+                  <div className="p-4 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-2">
+                    <div className="flex items-center justify-between text-texter-text-muted text-xs font-mono">
+                      <span>Tokens del Período ({billingEstimate?.period || "Mes actual"})</span>
+                      <Zap className="w-4 h-4 text-texter-cyan" />
+                    </div>
+                    <div className="text-2xl font-bold font-mono text-white">
+                      {(billingEstimate?.tokens_total ?? 0).toLocaleString()}
+                    </div>
+                    <p className="text-[11px] text-texter-text-dim font-mono">
+                      tokens computados
+                    </p>
+                  </div>
+
+                  {/* Monto Estimado USD */}
+                  <div className="p-4 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-2">
+                    <div className="flex items-center justify-between text-texter-text-muted text-xs font-mono">
+                      <span>Monto Estimado</span>
+                      <DollarSign className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <div className="text-2xl font-bold font-mono text-emerald-400">
+                      ${((billingEstimate?.amount_estimate ?? 0)).toFixed(2)} <span className="text-xs text-texter-text-muted">USD</span>
+                    </div>
+                    <p className="text-[11px] text-texter-text-dim font-mono">
+                      {billingEstimate?.billable ? "según tarifas de modelos activas" : "0.00 USD (No facturable)"}
+                    </p>
+                  </div>
+
+                  {/* Modo de Facturación */}
+                  <div className="p-4 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-2">
+                    <div className="flex items-center justify-between text-texter-text-muted text-xs font-mono">
+                      <span>Modo de Cuenta</span>
+                      <Receipt className="w-4 h-4 text-texter-cyan" />
+                    </div>
+                    <div className="pt-0.5">
+                      {billingEstimate?.billable ? (
+                        <Badge variant="cyan" size="sm" dot>Facturable</Badge>
+                      ) : (
+                        <Badge variant="indigo" size="sm" dot>BYOK — no facturable</Badge>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-texter-text-dim leading-relaxed">
+                      {billingEstimate?.billable
+                        ? "Usa infraestructura central NEXTEХ."
+                        : "El cliente usa sus propias claves de IA."}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 2. TABLA POR MODELO */}
+                <div className="space-y-3">
+                  <div className="border-b border-texter-border pb-2.5">
+                    <h5 className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                      <Cpu className="w-4 h-4 text-purple-400" />
+                      Estimado de Costo por Modelo
+                    </h5>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-texter-border bg-texter-surface-subtle/30">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="bg-texter-surface-subtle text-texter-text-muted border-b border-texter-border uppercase tracking-wider text-[11px]">
+                        <tr>
+                          <th className="p-3">Modelo</th>
+                          <th className="p-3">Tokens Entrada (In)</th>
+                          <th className="p-3">Tokens Salida (Out)</th>
+                          <th className="p-3">Total Tokens</th>
+                          <th className="p-3 text-right">Costo Estimado</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-texter-border/50">
+                        {billingEstimate?.by_model && billingEstimate.by_model.length > 0 ? (
+                          billingEstimate.by_model.map((m) => (
+                            <tr key={m.model} className="hover:bg-texter-surface-hover/40 transition-colors">
+                              <td className="p-3 font-bold text-white flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-texter-cyan" />
+                                <span>{m.model}</span>
+                              </td>
+                              <td className="p-3 text-texter-text-secondary">
+                                {m.input_tokens.toLocaleString()}
+                              </td>
+                              <td className="p-3 text-texter-text-secondary">
+                                {m.output_tokens.toLocaleString()}
+                              </td>
+                              <td className="p-3 text-texter-cyan font-bold">
+                                {(m.input_tokens + m.output_tokens).toLocaleString()}
+                              </td>
+                              <td className="p-3 text-right text-emerald-400 font-bold">
+                                ${m.cost.toFixed(4)} USD
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={5} className="p-6 text-center text-texter-text-dim font-sans">
+                              Sin consumo registrado en el período actual ($0.00 USD).
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* 3. LISTADO DE FACTURAS */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-texter-border pb-2.5">
+                    <div>
+                      <h5 className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                        <Receipt className="w-4 h-4 text-emerald-400" />
+                        Facturas Emitidas
+                      </h5>
+                      <p className="text-xs text-texter-text-muted">
+                        Historial de facturas mensuales y control de cobranza
+                      </p>
+                    </div>
+
+                    {/* Botón: Generar factura del mes */}
+                    {(() => {
+                      const currentPeriod = billingEstimate?.period;
+                      const hasCurrentInvoice = currentPeriod
+                        ? invoices.some((inv) => inv.period === currentPeriod)
+                        : false;
+
+                      return (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={handleGenerateInvoice}
+                          disabled={isGeneratingInvoice || hasCurrentInvoice}
+                          isLoading={isGeneratingInvoice}
+                          className="text-xs flex items-center gap-1.5"
+                          title={hasCurrentInvoice ? "La factura de este período ya fue emitida" : "Emitir factura del período"}
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>{hasCurrentInvoice ? "Factura del mes emitida" : "Generar factura del mes"}</span>
+                        </Button>
+                      );
+                    })()}
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-texter-border bg-texter-surface-subtle/30">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="bg-texter-surface-subtle text-texter-text-muted border-b border-texter-border uppercase tracking-wider text-[11px]">
+                        <tr>
+                          <th className="p-3">Período</th>
+                          <th className="p-3">Tokens Totales</th>
+                          <th className="p-3">Monto</th>
+                          <th className="p-3">Estado</th>
+                          <th className="p-3">Fecha Emisión</th>
+                          <th className="p-3 text-right">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-texter-border/50">
+                        {invoices.map((inv) => (
+                          <tr key={inv.id} className="hover:bg-texter-surface-hover/40 transition-colors">
+                            <td className="p-3 font-bold text-white">
+                              {inv.period}
+                            </td>
+                            <td className="p-3 text-texter-cyan">
+                              {inv.tokens_total.toLocaleString()}
+                            </td>
+                            <td className="p-3 text-emerald-400 font-bold">
+                              ${Number(inv.amount).toFixed(2)} {inv.currency || "USD"}
+                            </td>
+                            <td className="p-3">
+                              {inv.status === "paid" && (
+                                <Badge variant="success" size="sm" dot>Pagada</Badge>
+                              )}
+                              {inv.status === "pending" && (
+                                <Badge variant="warning" size="sm" dot>Pendiente</Badge>
+                              )}
+                              {inv.status === "cancelled" && (
+                                <Badge variant="default" size="sm" dot>Cancelada</Badge>
+                              )}
+                            </td>
+                            <td className="p-3 text-texter-text-dim text-[11px]">
+                              {new Date(inv.created_at).toLocaleDateString()}
+                            </td>
+                            <td className="p-3 text-right">
+                              {inv.status === "pending" && (
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setConfirmInvoiceAction({ invoice: inv, nextStatus: "paid" })}
+                                    className="text-[11px] h-7 px-2 text-emerald-400 border-emerald-500/40 hover:bg-emerald-500/10"
+                                    title="Marcar como pagada"
+                                  >
+                                    <Check className="w-3 h-3 mr-1" />
+                                    <span>Marcar pagada</span>
+                                  </Button>
+
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setConfirmInvoiceAction({ invoice: inv, nextStatus: "cancelled" })}
+                                    className="text-[11px] h-7 px-2 text-texter-text-dim hover:text-rose-400"
+                                    title="Cancelar factura"
+                                  >
+                                    <X className="w-3 h-3 mr-1" />
+                                    <span>Cancelar</span>
+                                  </Button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                        {invoices.length === 0 && !isLoadingInvoices && (
+                          <tr>
+                            <td colSpan={6} className="p-6 text-center text-texter-text-dim font-sans">
+                              No hay facturas emitidas para este cliente todavía.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
           </Card>
         )}
       </div>
@@ -4279,6 +4702,62 @@ export default function ClientsPage() {
               </Button>
               <Button variant="danger" size="sm" onClick={handleConfirmApplyPreset} isLoading={isApplyingPreset}>
                 Confirmar y Aplicar
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+
+      {/* MODAL: CONFIRMAR ACCIÓN DE FACTURA (PAGADA / CANCELADA) */}
+      {confirmInvoiceAction && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card
+            variant="elevated"
+            className={`max-w-md w-full space-y-4 bg-texter-surface ${
+              confirmInvoiceAction.nextStatus === "paid" ? "border-emerald-500/40" : "border-texter-rose/40"
+            }`}
+          >
+            <div
+              className={`flex items-center gap-2.5 font-bold text-base ${
+                confirmInvoiceAction.nextStatus === "paid" ? "text-emerald-400" : "text-texter-rose"
+              }`}
+            >
+              {confirmInvoiceAction.nextStatus === "paid" ? (
+                <>
+                  <CheckCircle className="w-5 h-5" />
+                  Marcar Factura como Pagada
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="w-5 h-5" />
+                  Cancelar Factura
+                </>
+              )}
+            </div>
+
+            <p className="text-xs text-texter-text-muted leading-relaxed">
+              ¿Confirmas que deseas{" "}
+              {confirmInvoiceAction.nextStatus === "paid" ? (
+                <strong className="text-white">marcar como pagada</strong>
+              ) : (
+                <strong className="text-white">cancelar</strong>
+              )}{" "}
+              la factura del período <strong className="text-white">{confirmInvoiceAction.invoice.period}</strong> por un monto de{" "}
+              <strong className="text-emerald-400">${Number(confirmInvoiceAction.invoice.amount).toFixed(2)} USD</strong>?
+            </p>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+              <Button variant="ghost" size="sm" onClick={() => setConfirmInvoiceAction(null)}>
+                Volver
+              </Button>
+              <Button
+                variant={confirmInvoiceAction.nextStatus === "paid" ? "primary" : "danger"}
+                size="sm"
+                onClick={handleUpdateInvoiceStatus}
+                isLoading={isUpdatingInvoice}
+              >
+                {confirmInvoiceAction.nextStatus === "paid" ? "Confirmar Pago" : "Confirmar Cancelación"}
               </Button>
             </div>
           </Card>
