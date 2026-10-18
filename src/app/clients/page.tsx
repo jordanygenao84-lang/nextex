@@ -339,6 +339,16 @@ export default function ClientsPage() {
   const [isDeletingWidget, setIsDeletingWidget] = useState(false);
   const [copiedSnippetId, setCopiedSnippetId] = useState<string | null>(null);
 
+  // Modal Editar Widget (WIDGET-4)
+  const [editingWidget, setEditingWidget] = useState<ClientWidget | null>(null);
+  const [editWidgetName, setEditWidgetName] = useState("");
+  const [editWidgetGreeting, setEditWidgetGreeting] = useState("");
+  const [editWidgetPrimaryColor, setEditWidgetPrimaryColor] = useState("#4f46e5");
+  const [editWidgetPosition, setEditWidgetPosition] = useState<"bottom-right" | "bottom-left">("bottom-right");
+  const [editWidgetAllowedSources, setEditWidgetAllowedSources] = useState<string[]>(["web"]);
+  const [isUpdatingWidget, setIsUpdatingWidget] = useState(false);
+  const [editWidgetError, setEditWidgetError] = useState<string | null>(null);
+
   // Estados Pestaña Conexiones (CONEX-3)
   const [siteKeys, setSiteKeys] = useState<ClientSiteKey[]>([]);
   const [isLoadingSiteKeys, setIsLoadingSiteKeys] = useState(false);
@@ -1061,6 +1071,56 @@ export default function ClientsPage() {
       setFeedback({ type: "error", message: err?.message || "Error de red al desactivar widget." });
     } finally {
       setIsDeletingWidget(false);
+    }
+  };
+
+  const handleOpenEditWidget = (w: ClientWidget) => {
+    setEditingWidget(w);
+    setEditWidgetName(w.name || "");
+    setEditWidgetGreeting(w.greeting || "¡Hola! ¿En qué podemos ayudarte hoy?");
+    setEditWidgetPrimaryColor(w.theme?.primary_color || w.theme?.primaryColor || "#4f46e5");
+    setEditWidgetPosition((w.theme?.position as any) || "bottom-right");
+    setEditWidgetAllowedSources(Array.isArray(w.allowed_sources) ? w.allowed_sources : ["web"]);
+    setEditWidgetError(null);
+  };
+
+  const handleUpdateWidget = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClient || !editingWidget) return;
+
+    setIsUpdatingWidget(true);
+    setEditWidgetError(null);
+
+    try {
+      const res = await fetch(`/api/clients/${selectedClient.id}/widgets/${editingWidget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editWidgetName.trim() || undefined,
+          greeting: editWidgetGreeting.trim() || undefined,
+          theme: {
+            primary_color: editWidgetPrimaryColor,
+            primaryColor: editWidgetPrimaryColor,
+            position: editWidgetPosition,
+          },
+          allowed_sources: editWidgetAllowedSources,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setEditWidgetError(data?.error?.message || "Error al actualizar widget.");
+        return;
+      }
+
+      await loadWidgets(selectedClient.id);
+      setEditingWidget(null);
+      setFeedback({ type: "success", message: `Widget "${data.name}" actualizado exitosamente.` });
+    } catch (err: any) {
+      setEditWidgetError(err?.message || "Error inesperado al actualizar widget.");
+    } finally {
+      setIsUpdatingWidget(false);
     }
   };
 
@@ -2659,18 +2719,30 @@ export default function ClientsPage() {
                             </div>
                           </div>
 
-                          {w.is_active && (
+                          <div className="flex items-center gap-2">
                             <Button
-                              variant="danger"
+                              variant="outline"
                               size="sm"
-                              onClick={() => setDeletingWidget(w)}
+                              onClick={() => handleOpenEditWidget(w)}
                               className="text-[11px] h-7 px-2"
-                              title="Desactivar widget"
+                              title="Editar widget"
                             >
-                              <Trash2 className="w-3 h-3 mr-1" />
-                              <span>Eliminar</span>
+                              <Edit3 className="w-3 h-3 mr-1" />
+                              <span>Editar</span>
                             </Button>
-                          )}
+                            {w.is_active && (
+                              <Button
+                                variant="danger"
+                                size="sm"
+                                onClick={() => setDeletingWidget(w)}
+                                className="text-[11px] h-7 px-2"
+                                title="Desactivar widget"
+                              >
+                                <Trash2 className="w-3 h-3 mr-1" />
+                                <span>Eliminar</span>
+                              </Button>
+                            )}
+                          </div>
                         </div>
 
                         {/* Bloque: Instalar en tu web */}
@@ -4524,6 +4596,114 @@ export default function ClientsPage() {
                 </Button>
                 <Button variant="primary" size="sm" type="submit" isLoading={isCreatingWidget}>
                   Crear Widget
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL: EDITAR WIDGET (WIDGET-4) */}
+      {editingWidget && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-texter-border">
+            <div className="flex items-center justify-between border-b border-texter-border pb-3">
+              <div className="flex items-center gap-2">
+                <Bot className="w-5 h-5 text-blue-400" />
+                <h3 className="text-base font-bold text-white">Editar Widget de Chat</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingWidget(null)}
+                className="text-texter-text-muted hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {editWidgetError && (
+              <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-texter-rose shrink-0 mt-0.5" />
+                <span>{editWidgetError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateWidget} className="space-y-3.5">
+              <Input
+                label="Nombre del Widget"
+                value={editWidgetName}
+                onChange={(e) => setEditWidgetName(e.target.value)}
+                placeholder="ej: Asistente Web Principal"
+                required
+              />
+
+              <Input
+                label="Mensaje de Bienvenida (Greeting)"
+                value={editWidgetGreeting}
+                onChange={(e) => setEditWidgetGreeting(e.target.value)}
+                placeholder="¡Hola! ¿En qué podemos ayudarte hoy?"
+              />
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-texter-text-secondary">Color Principal</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={editWidgetPrimaryColor}
+                      onChange={(e) => setEditWidgetPrimaryColor(e.target.value)}
+                      className="w-9 h-9 rounded-lg border border-texter-border bg-texter-surface-subtle cursor-pointer p-0.5"
+                    />
+                    <input
+                      type="text"
+                      value={editWidgetPrimaryColor}
+                      onChange={(e) => setEditWidgetPrimaryColor(e.target.value)}
+                      className="flex-1 p-2 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-texter-text-secondary">Posición</label>
+                  <select
+                    value={editWidgetPosition}
+                    onChange={(e) => setEditWidgetPosition(e.target.value as any)}
+                    className="w-full p-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white outline-none font-mono"
+                  >
+                    <option value="bottom-right">Inferior Derecha</option>
+                    <option value="bottom-left">Inferior Izquierda</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 pt-1">
+                <label className="text-xs font-medium text-texter-text-secondary">Fuentes de Datos Autorizadas</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="editSrcWeb"
+                    checked={editWidgetAllowedSources.includes("web")}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setEditWidgetAllowedSources([...editWidgetAllowedSources, "web"]);
+                      } else {
+                        setEditWidgetAllowedSources(editWidgetAllowedSources.filter((s) => s !== "web"));
+                      }
+                    }}
+                    className="rounded border-texter-border text-texter-cyan focus:ring-texter-cyan/40 bg-texter-surface-subtle"
+                  />
+                  <label htmlFor="editSrcWeb" className="text-xs text-white cursor-pointer">
+                    Contenido Web del Negocio (Web Crawling & QA)
+                  </label>
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+                <Button variant="ghost" size="sm" type="button" onClick={() => setEditingWidget(null)}>
+                  Cancelar
+                </Button>
+                <Button variant="primary" size="sm" type="submit" isLoading={isUpdatingWidget}>
+                  Guardar Cambios
                 </Button>
               </div>
             </form>
