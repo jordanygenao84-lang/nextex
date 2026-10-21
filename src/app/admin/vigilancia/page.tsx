@@ -17,11 +17,16 @@ import {
   Loader2,
   Clock,
   Globe,
-  Wifi,
-  Server,
   CheckCircle2,
   AlertCircle,
   XCircle,
+  Copy,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  SendHorizontal,
+  Bell,
+  CheckCheck,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
@@ -49,6 +54,21 @@ interface IncidentItem {
   created_at: string;
 }
 
+interface SecurityFindingItem {
+  id: string;
+  client_id: string;
+  client_name: string;
+  source: string;
+  type: string;
+  severity: "critical" | "warning" | "info" | string;
+  title: string;
+  evidence: any;
+  fix_prompt: string | null;
+  status: "open" | "fix_sent" | "accepted" | "fixed" | string;
+  created_at: string;
+  resolved_at: string | null;
+}
+
 interface FindingsCount {
   critical: number;
   warning: number;
@@ -59,6 +79,7 @@ interface FindingsCount {
 export default function VigilanciaPage() {
   const [clients, setClients] = useState<ClientHealthItem[]>([]);
   const [incidents, setIncidents] = useState<IncidentItem[]>([]);
+  const [findings, setFindings] = useState<SecurityFindingItem[]>([]);
   const [findingsCount, setFindingsCount] = useState<FindingsCount>({
     critical: 0,
     warning: 0,
@@ -68,17 +89,32 @@ export default function VigilanciaPage() {
   const [isSuperAdmin, setIsSuperAdmin] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [checkingNow, setCheckingNow] = useState(false);
+  const [testingAlert, setTestingAlert] = useState(false);
+  const [testAlertMsg, setTestAlertMsg] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Estados interactivos para hallazgos
+  const [expandedEvidence, setExpandedEvidence] = useState<Record<string, boolean>>({});
+  const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+
   const fetchVigiaData = useCallback(async () => {
     try {
-      const [healthRes, incRes] = await Promise.all([
+      const [healthRes, incRes, findRes] = await Promise.all([
         fetch("/api/vigia/health"),
         fetch("/api/vigia/incidents"),
+        fetch("/api/vigia/findings"),
       ]);
 
-      if (healthRes.status === 401 || healthRes.status === 403 || incRes.status === 401 || incRes.status === 403) {
+      if (
+        healthRes.status === 401 ||
+        healthRes.status === 403 ||
+        incRes.status === 401 ||
+        incRes.status === 403 ||
+        findRes.status === 401 ||
+        findRes.status === 403
+      ) {
         setIsSuperAdmin(false);
         return false;
       }
@@ -89,13 +125,21 @@ export default function VigilanciaPage() {
 
       const healthData = await healthRes.json();
       const incData = await incRes.json();
+      const findData = findRes.ok ? await findRes.json() : { findings: [] };
 
       setClients(Array.isArray(healthData) ? healthData : []);
       setIncidents(incData.incidents || []);
+      setFindings(findData.findings || (Array.isArray(findData) ? findData : []));
       setFindingsCount(
         incData.findings_count || { critical: 0, warning: 0, info: 0, total: 0 }
       );
-      setLastUpdated(new Date().toLocaleTimeString("es-DO", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+      setLastUpdated(
+        new Date().toLocaleTimeString("es-DO", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      );
       setIsSuperAdmin(true);
       return true;
     } catch (err: any) {
@@ -134,6 +178,63 @@ export default function VigilanciaPage() {
       setErrorMsg(err?.message || "Error al ejecutar 'Revisar ahora'.");
     } finally {
       setCheckingNow(false);
+    }
+  };
+
+  const handleTestAlert = async () => {
+    setTestingAlert(true);
+    setTestAlertMsg(null);
+    try {
+      const res = await fetch("/api/vigia/test-alert", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (data.ok) {
+        setTestAlertMsg("✅ Alerta enviada a Telegram con éxito.");
+      } else {
+        setTestAlertMsg(`⚠️ ${data.message || data.reason || "Telegram no configurado"}`);
+      }
+    } catch {
+      setTestAlertMsg("❌ Error de red probando Telegram.");
+    } finally {
+      setTestingAlert(false);
+    }
+  };
+
+  const handleToggleEvidence = (id: string) => {
+    setExpandedEvidence((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  const handleCopyPrompt = async (id: string, promptText: string) => {
+    try {
+      await navigator.clipboard.writeText(promptText);
+      setCopiedPromptId(id);
+      setTimeout(() => setCopiedPromptId(null), 2500);
+    } catch {
+      alert("No se pudo copiar el prompt al portapapeles.");
+    }
+  };
+
+  const handleUpdateStatus = async (id: string, newStatus: string) => {
+    setUpdatingStatusId(id);
+    try {
+      const res = await fetch(`/api/vigia/findings/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson?.error?.message || "Transición no permitida.");
+      }
+
+      await fetchVigiaData();
+    } catch (err: any) {
+      alert(err?.message || "Error al actualizar el estado del hallazgo.");
+    } finally {
+      setUpdatingStatusId(null);
     }
   };
 
@@ -224,25 +325,47 @@ export default function VigilanciaPage() {
               {lastUpdated && (
                 <>
                   <span className="text-texter-border">•</span>
-                  <span>Última sincronización: <strong className="text-white font-mono">{lastUpdated}</strong></span>
+                  <span>
+                    Última sincronización: <strong className="text-white font-mono">{lastUpdated}</strong>
+                  </span>
                 </>
               )}
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <button
+              onClick={handleTestAlert}
+              disabled={testingAlert}
+              className="px-3.5 py-2 rounded-xl bg-texter-surface-subtle hover:bg-texter-surface-hover border border-texter-border text-texter-text-secondary hover:text-white text-xs font-semibold flex items-center gap-2 transition-all disabled:opacity-50"
+              title="Disparar alerta de prueba a Telegram"
+            >
+              <Bell className={cn("w-3.5 h-3.5 text-texter-cyan", testingAlert && "animate-bounce")} />
+              <span>{testingAlert ? "Probando..." : "Probar Telegram"}</span>
+            </button>
+
             <button
               onClick={handleCheckNow}
               disabled={checkingNow}
-              className={cn(
-                "px-3.5 py-2 rounded-xl bg-texter-indigo hover:bg-texter-indigo-hover text-white text-xs font-semibold flex items-center gap-2 transition-all shadow-texter-glow-indigo disabled:opacity-50 disabled:cursor-not-allowed"
-              )}
+              className="px-3.5 py-2 rounded-xl bg-texter-indigo hover:bg-texter-indigo-hover text-white text-xs font-semibold flex items-center gap-2 transition-all shadow-texter-glow-indigo disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <RefreshCw className={cn("w-3.5 h-3.5", checkingNow && "animate-spin")} />
               <span>{checkingNow ? "Verificando..." : "Revisar ahora"}</span>
             </button>
           </div>
         </div>
+
+        {testAlertMsg && (
+          <div className="p-3.5 rounded-xl bg-texter-indigo/10 border border-texter-indigo/30 text-xs text-indigo-300 flex items-center justify-between gap-2">
+            <span>{testAlertMsg}</span>
+            <button
+              onClick={() => setTestAlertMsg(null)}
+              className="text-[11px] underline hover:text-white"
+            >
+              Cerrar
+            </button>
+          </div>
+        )}
 
         {errorMsg && (
           <div className="p-3.5 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-center gap-2.5">
@@ -251,20 +374,20 @@ export default function VigilanciaPage() {
           </div>
         )}
 
-        {/* Sección: Hallazgos de Seguridad (Contadores por Severidad) */}
-        <div className="space-y-3">
+        {/* Sección: Hallazgos de Seguridad (Contadores + Lista Real Actionable - VIG-6) */}
+        <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-texter-text-muted font-mono flex items-center gap-2">
               <ShieldAlert className="w-3.5 h-3.5 text-texter-cyan" />
-              <span>Hallazgos de Seguridad Abiertos</span>
+              <span>Hallazgos de Seguridad</span>
             </h3>
             <span className="text-[11px] font-mono text-texter-text-dim">
-              Tabla: security_findings
+              Tabla: security_findings ({findings.length} totales)
             </span>
           </div>
 
+          {/* Contadores por Severidad */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-            {/* Total */}
             <div className="p-4 rounded-xl bg-texter-surface border border-texter-border space-y-1">
               <div className="flex items-center justify-between text-texter-text-muted">
                 <span className="text-xs font-medium">Total Abiertos</span>
@@ -276,11 +399,12 @@ export default function VigilanciaPage() {
               <p className="text-[10px] text-texter-text-muted">Hallazgos sin resolver</p>
             </div>
 
-            {/* Críticos */}
-            <div className={cn(
-              "p-4 rounded-xl bg-texter-surface border space-y-1",
-              findingsCount.critical > 0 ? "border-rose-500/50 bg-rose-500/5" : "border-texter-border"
-            )}>
+            <div
+              className={cn(
+                "p-4 rounded-xl bg-texter-surface border space-y-1",
+                findingsCount.critical > 0 ? "border-rose-500/50 bg-rose-500/5" : "border-texter-border"
+              )}
+            >
               <div className="flex items-center justify-between text-texter-text-muted">
                 <span className="text-xs font-medium text-rose-400">Críticos</span>
                 <XCircle className="w-4 h-4 text-texter-rose" />
@@ -291,11 +415,12 @@ export default function VigilanciaPage() {
               <p className="text-[10px] text-texter-text-muted">Acción inmediata requerida</p>
             </div>
 
-            {/* Advertencias */}
-            <div className={cn(
-              "p-4 rounded-xl bg-texter-surface border space-y-1",
-              findingsCount.warning > 0 ? "border-amber-500/50 bg-amber-500/5" : "border-texter-border"
-            )}>
+            <div
+              className={cn(
+                "p-4 rounded-xl bg-texter-surface border space-y-1",
+                findingsCount.warning > 0 ? "border-amber-500/50 bg-amber-500/5" : "border-texter-border"
+              )}
+            >
               <div className="flex items-center justify-between text-texter-text-muted">
                 <span className="text-xs font-medium text-amber-400">Advertencias</span>
                 <AlertTriangle className="w-4 h-4 text-texter-amber" />
@@ -306,7 +431,6 @@ export default function VigilanciaPage() {
               <p className="text-[10px] text-texter-text-muted">Riesgos potenciales</p>
             </div>
 
-            {/* Informativos */}
             <div className="p-4 rounded-xl bg-texter-surface border border-texter-border space-y-1">
               <div className="flex items-center justify-between text-texter-text-muted">
                 <span className="text-xs font-medium text-cyan-400">Informativos</span>
@@ -317,6 +441,175 @@ export default function VigilanciaPage() {
               </div>
               <p className="text-[10px] text-texter-text-muted">Observaciones y avisos</p>
             </div>
+          </div>
+
+          {/* Lista Real de Hallazgos Accionables (VIG-6) */}
+          <div className="rounded-2xl bg-texter-surface border border-texter-border overflow-hidden shadow-sm space-y-0 divide-y divide-texter-border/50">
+            {findings.length === 0 ? (
+              <div className="p-8 text-center text-xs text-texter-text-muted space-y-1">
+                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2 opacity-80" />
+                <p className="font-semibold text-white">No hay hallazgos de seguridad registrados</p>
+                <p className="text-texter-text-dim">El escáner y los sensores de detección no han identificado anomalías.</p>
+              </div>
+            ) : (
+              findings.map((f) => {
+                // Severidad
+                let sevBadge = "bg-cyan-500/10 text-cyan-400 border-cyan-500/30";
+                if (f.severity === "critical") {
+                  sevBadge = "bg-rose-500/10 text-rose-400 border-rose-500/30 font-bold";
+                } else if (f.severity === "warning") {
+                  sevBadge = "bg-amber-500/10 text-amber-400 border-amber-500/30 font-semibold";
+                }
+
+                // Estado
+                let statusBadge = "bg-rose-500/15 text-rose-300 border-rose-500/40";
+                let statusLabel = "Abierto";
+                if (f.status === "fix_sent") {
+                  statusBadge = "bg-blue-500/15 text-blue-300 border-blue-500/40";
+                  statusLabel = "Fix enviado";
+                } else if (f.status === "accepted") {
+                  statusBadge = "bg-purple-500/15 text-purple-300 border-purple-500/40";
+                  statusLabel = "Riesgo aceptado";
+                } else if (f.status === "fixed") {
+                  statusBadge = "bg-emerald-500/15 text-emerald-300 border-emerald-500/40";
+                  statusLabel = "Resuelto";
+                }
+
+                // Fuente
+                const isScan = f.source === "scan";
+                const isExpanded = Boolean(expandedEvidence[f.id]);
+                const isCopied = copiedPromptId === f.id;
+                const isUpdating = updatingStatusId === f.id;
+
+                return (
+                  <div key={f.id} className="p-4 sm:p-5 hover:bg-texter-surface-hover/30 transition-colors space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                      <div className="space-y-1.5 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={cn("px-2 py-0.5 rounded text-[10px] uppercase tracking-wider border", sevBadge)}>
+                            {f.severity}
+                          </span>
+                          <span className={cn("px-2 py-0.5 rounded text-[10px] border", statusBadge)}>
+                            {statusLabel}
+                          </span>
+                          <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 border border-slate-700 font-mono">
+                            {isScan ? "Escaneo" : "Detección"}
+                          </span>
+                          <strong className="text-white text-xs font-semibold">
+                            {f.client_name}
+                          </strong>
+                          <span className="text-[10px] font-mono text-texter-text-dim">
+                            • {formatDateTime(f.created_at)}
+                          </span>
+                        </div>
+
+                        <h4 className="text-sm font-bold text-white tracking-tight">
+                          {f.title}
+                        </h4>
+
+                        <div className="flex items-center gap-2 text-xs font-mono text-texter-cyan">
+                          <span>Tipo:</span>
+                          <code className="px-1.5 py-0.5 rounded bg-black/40 border border-texter-border/50 text-texter-cyan">
+                            {f.type}
+                          </code>
+                        </div>
+                      </div>
+
+                      {/* Botones de acción y estado */}
+                      <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                        {/* Ver evidencia */}
+                        <button
+                          onClick={() => handleToggleEvidence(f.id)}
+                          className="px-2.5 py-1.5 rounded-lg bg-texter-surface-subtle hover:bg-texter-surface-hover border border-texter-border text-[11px] text-texter-text-secondary hover:text-white flex items-center gap-1 transition-colors"
+                        >
+                          {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          <span>{isExpanded ? "Ocultar evidencia" : "Ver evidencia"}</span>
+                        </button>
+
+                        {/* Copiar prompt de fix (si existe) */}
+                        {f.fix_prompt && (
+                          <button
+                            onClick={() => handleCopyPrompt(f.id, f.fix_prompt!)}
+                            className={cn(
+                              "px-2.5 py-1.5 rounded-lg border text-[11px] font-medium flex items-center gap-1.5 transition-all",
+                              isCopied
+                                ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                                : "bg-texter-indigo/15 text-indigo-300 border-indigo-500/30 hover:bg-texter-indigo/25 hover:text-white"
+                            )}
+                            title="Copiar prompt de solución técnica al portapapeles"
+                          >
+                            {isCopied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                            <span>{isCopied ? "¡Copiado!" : "Copiar prompt de fix"}</span>
+                          </button>
+                        )}
+
+                        {/* Transición: Fix enviado (si está open) */}
+                        {f.status === "open" && (
+                          <button
+                            onClick={() => handleUpdateStatus(f.id, "fix_sent")}
+                            disabled={isUpdating}
+                            className="px-2.5 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[11px] font-medium flex items-center gap-1 transition-colors disabled:opacity-50"
+                          >
+                            <SendHorizontal className="w-3 h-3" />
+                            <span>Fix enviado</span>
+                          </button>
+                        )}
+
+                        {/* Transición: Aceptar riesgo (si open o fix_sent) */}
+                        {(f.status === "open" || f.status === "fix_sent") && (
+                          <button
+                            onClick={() => handleUpdateStatus(f.id, "accepted")}
+                            disabled={isUpdating}
+                            className="px-2.5 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[11px] font-medium transition-colors disabled:opacity-50"
+                          >
+                            Aceptar riesgo
+                          </button>
+                        )}
+
+                        {/* Transición manual: Resolver (si no está fixed) */}
+                        {f.status !== "fixed" && (
+                          <button
+                            onClick={() => handleUpdateStatus(f.id, "fixed")}
+                            disabled={isUpdating}
+                            className="px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[11px] font-medium flex items-center gap-1 transition-colors disabled:opacity-50"
+                          >
+                            <CheckCheck className="w-3 h-3" />
+                            <span>Resolver</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Desplegable de Evidencia JSON */}
+                    {isExpanded && (
+                      <div className="p-3.5 rounded-xl bg-black/60 border border-texter-border/50 text-[11px] font-mono space-y-2 animate-fade-in">
+                        <div className="flex items-center justify-between text-texter-text-muted">
+                          <span className="text-[10px] uppercase tracking-wider">Evidencia técnica (evidence):</span>
+                          {f.resolved_at && (
+                            <span className="text-emerald-400 text-[10px]">
+                              Resuelto: {formatDateTime(f.resolved_at)}
+                            </span>
+                          )}
+                        </div>
+                        <pre className="text-emerald-300 overflow-x-auto whitespace-pre-wrap max-h-64 scrollbar-thin">
+                          {JSON.stringify(f.evidence, null, 2)}
+                        </pre>
+                        {f.fix_prompt && (
+                          <div className="pt-2 border-t border-texter-border/40 space-y-1">
+                            <span className="text-[10px] uppercase tracking-wider text-texter-text-muted block">
+                              Prompt de corrección (fix_prompt):
+                            </span>
+                            <p className="text-xs text-texter-text-secondary leading-relaxed font-sans">
+                              {f.fix_prompt}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -501,8 +794,10 @@ export default function VigilanciaPage() {
                         kindBadge = "bg-rose-500/10 text-rose-400 border-rose-500/30";
                       } else if (inc.kind === "health_recovered") {
                         kindBadge = "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
-                      } else if (inc.kind.includes("security") || inc.kind.includes("alert")) {
+                      } else if (inc.kind.includes("security") || inc.kind.includes("attack") || inc.kind.includes("alert")) {
                         kindBadge = "bg-amber-500/10 text-amber-400 border-amber-500/30";
+                      } else if (inc.kind === "scan_completed") {
+                        kindBadge = "bg-cyan-500/10 text-cyan-400 border-cyan-500/30";
                       }
 
                       const detailString =

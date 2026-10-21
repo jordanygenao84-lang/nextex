@@ -1,12 +1,13 @@
 /**
- * NEXTEХ VIGÍA — Motor de Chequeo de Salud y Disponibilidad (VIG-2 & VIG-3)
+ * NEXTEХ VIGÍA — Motor de Chequeo de Salud y Disponibilidad (VIG-2, VIG-3 & VIG-6)
  * Chequea latencia HTTP, disponibilidad web, vencimiento de certificados TLS
- * y registra incidentes en transición de estado (health_down / health_recovered).
+ * y registra incidentes y alertas en transición de estado (health_down / health_recovered).
  */
 
 import tls from "tls";
 import { URL } from "url";
 import { SupabaseClient } from "@supabase/supabase-js";
+import { sendVigiaAlert } from "@/lib/vigia/notify";
 
 export interface HealthCheckRunResult {
   skipped?: boolean;
@@ -199,7 +200,7 @@ export async function executeVigiaHealthChecks(
       },
     });
 
-    // e) Evaluar transición para incident_log:
+    // e) Evaluar transición para incident_log y alertas Telegram:
     // Transición hacia caída: ok/degraded -> down
     if (prevStatus && prevStatus !== "down" && status === "down") {
       await (supabase.from("incident_log") as any).insert({
@@ -215,6 +216,14 @@ export async function executeVigiaHealthChecks(
           error: fetchError,
         },
       });
+
+      // VIG-6: Alerta Telegram en transición a caída
+      await sendVigiaAlert(
+        `🔴 ${client.display_name} está caído`,
+        `URL: ${targetUrl}\nEstado previo: ${prevStatus}\nHTTP: ${httpStatus ?? "Sin respuesta"}\nDetalle: ${fetchError || "Tiempo de respuesta excedido / error de red"}`,
+        { clientId: client.id, kind: "health_down" },
+        supabase
+      );
     }
 
     // Transición hacia recuperación: down -> ok
@@ -231,6 +240,14 @@ export async function executeVigiaHealthChecks(
           response_ms: responseMs,
         },
       });
+
+      // VIG-6: Alerta Telegram en recuperación
+      await sendVigiaAlert(
+        `🟢 ${client.display_name} volvió en línea`,
+        `URL: ${targetUrl}\nLatencia: ${responseMs} ms\nHTTP: ${httpStatus}`,
+        { clientId: client.id, kind: "health_recovered" },
+        supabase
+      );
     }
   }
 

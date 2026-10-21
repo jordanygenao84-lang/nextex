@@ -1,12 +1,13 @@
 import { SupabaseClient } from "@supabase/supabase-js";
+import { sendVigiaAlert } from "@/lib/vigia/notify";
 
 /**
- * NEXTEХ VIGÍA — Motor de Detección de Ataques (VIG-4)
+ * NEXTEХ VIGÍA — Motor de Detección de Ataques (VIG-4 & VIG-6)
  * Analiza eventos de seguridad en ventanas de tiempo para detectar:
  * 1. Fuerza bruta: ≥20 failed_login de una IP en 10 min.
  * 2. Pico de autenticación: ≥100 eventos totales de una IP en 10 min.
  *
- * Crea security_findings e incident_log evitando duplicados abiertos en la última hora.
+ * Crea security_findings, incident_log y dispara alertas Telegram evitando duplicados abiertos en la última hora.
  */
 export async function runSecurityDetection(
   supabase: SupabaseClient,
@@ -81,6 +82,23 @@ export async function runSecurityDetection(
               evidence,
             },
           });
+
+          // VIG-6: Alerta Telegram para fuerza bruta
+          let clientName = "Cliente";
+          try {
+            const { data: clientRow } = await (supabase.from("clients") as any)
+              .select("display_name")
+              .eq("id", clientId)
+              .maybeSingle();
+            if (clientRow?.display_name) clientName = clientRow.display_name;
+          } catch {}
+
+          await sendVigiaAlert(
+            `🛡️ Posible fuerza bruta en ${clientName} — IP ${normalizedIp}, ${failedCount} intentos`,
+            `Se detectaron ${failedCount} intentos fallidos de inicio de sesión desde la IP ${normalizedIp} en los últimos 10 minutos.`,
+            { clientId, kind: "attack_detected" },
+            supabase
+          );
         }
       }
     }

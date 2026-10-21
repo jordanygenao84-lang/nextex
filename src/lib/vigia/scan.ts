@@ -1,12 +1,14 @@
 import { SupabaseClient } from "@supabase/supabase-js";
+import { sendVigiaAlert } from "@/lib/vigia/notify";
 
 /**
- * NEXTEХ VIGÍA — Motor de Escaneo Periódico de Seguridad (VIG-5)
+ * NEXTEХ VIGÍA — Motor de Escaneo Periódico de Seguridad (VIG-5 & VIG-6)
  * Escaneo externo directo (sin IA) sobre clientes activos:
  * 1. Cabeceras HTTP de seguridad (HSTS, CSP, X-Frame-Options / frame-ancestors, X-Content-Type-Options).
  * 2. Sondas de rutas sensibles expuestas (/.env, /.env.local, /.git/config, /.git/HEAD).
  * 3. Proximidad de vencimiento de certificado SSL (<15 días).
  * 4. Gestión de ciclo de vida de hallazgos (apertura, deduplicación y auto-cierre 'fixed').
+ * 5. Alertas críticas automáticas a Telegram.
  */
 
 export interface DetectedFinding {
@@ -336,6 +338,16 @@ export async function scanClientSecurity(
         },
       });
       newFindingsCount++;
+
+      // VIG-6: Alerta Telegram para finding crítico de ruta sensible expuesta
+      if (findingData.type === "exposed_sensitive_path") {
+        await sendVigiaAlert(
+          `🚨 Ruta sensible expuesta en ${client.display_name}: ${findingData.evidence?.path}`,
+          `Se detectó que la ruta '${findingData.evidence?.path}' responde con código HTTP 200 en ${baseUrl}. Requiere bloqueo inmediato.`,
+          { clientId: client.id, kind: "finding_opened" },
+          supabase
+        );
+      }
     }
   }
 
