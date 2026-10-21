@@ -23,6 +23,7 @@ import {
   Bot,
   Briefcase,
   MessageSquare,
+  Activity,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Logo } from "@/components/ui/Logo";
@@ -100,6 +101,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
       href: "/conversations",
       icon: MessageSquare,
       badge: "Inbox",
+    },
+  ];
+
+  const adminNav = [
+    {
+      name: "Overview",
+      href: "/admin",
+      icon: LayoutDashboard,
+    },
+    {
+      name: "Vigilancia",
+      href: "/admin/vigilancia",
+      icon: Activity,
+      badge: "VIGÍA",
     },
   ];
 
@@ -220,6 +235,61 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {!collapsed && item.badge && (
                       <Badge
                         variant={isActive ? "indigo" : "default"}
+                        size="sm"
+                        className="text-[10px] px-1.5 py-0"
+                      >
+                        {item.badge}
+                      </Badge>
+                    )}
+                    {isActive && (
+                      <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-texter-indigo" />
+                    )}
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
+
+          <div>
+            {!collapsed && (
+              <p className="px-2 mb-2 text-[10px] font-semibold text-texter-text-dim uppercase tracking-wider font-mono">
+                Administración
+              </p>
+            )}
+            <nav className="space-y-1">
+              {adminNav.map((item) => {
+                const isActive =
+                  item.href === "/admin"
+                    ? pathname === "/admin"
+                    : pathname.startsWith(item.href);
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    onClick={onCloseMobile}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group select-none relative",
+                      isActive
+                        ? "bg-texter-indigo/15 text-white border border-indigo-500/30 shadow-sm"
+                        : "text-texter-text-secondary hover:text-white hover:bg-texter-surface-hover hover:border-texter-border border border-transparent"
+                    )}
+                    title={collapsed ? item.name : undefined}
+                  >
+                    <Icon
+                      className={cn(
+                        "w-5 h-5 shrink-0 transition-colors",
+                        isActive
+                          ? "text-texter-indigo"
+                          : "text-texter-text-muted group-hover:text-texter-text-primary"
+                      )}
+                    />
+                    {!collapsed && (
+                      <span className="truncate flex-1">{item.name}</span>
+                    )}
+                    {!collapsed && item.badge && (
+                      <Badge
+                        variant={isActive ? "indigo" : "cyan"}
                         size="sm"
                         className="text-[10px] px-1.5 py-0"
                       >

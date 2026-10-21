@@ -1,5 +1,5 @@
 /**
- * NEXTEХ VIGÍA — Motor de Chequeo de Salud y Disponibilidad (VIG-2)
+ * NEXTEХ VIGÍA — Motor de Chequeo de Salud y Disponibilidad (VIG-2 & VIG-3)
  * Chequea latencia HTTP, disponibilidad web, vencimiento de certificados TLS
  * y registra incidentes en transición de estado (health_down / health_recovered).
  */
@@ -79,22 +79,25 @@ export async function getSslDaysLeft(rawUrl: string): Promise<number | null> {
 
 /**
  * Ejecuta el ciclo de chequeo de salud para todos los clientes activos.
- * Incluye puerta de debounce de 5 minutos: si hubo un chequeo hace menos de 5 min, se omite.
+ * Incluye puerta de debounce de 5 minutos (salvo que options?.force === true).
  */
 export async function executeVigiaHealthChecks(
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  options?: { force?: boolean }
 ): Promise<HealthCheckRunResult> {
-  // 1. Puerta de debounce de 5 minutos
-  const { data: latestCheck } = await (supabase.from("site_health_checks") as any)
-    .select("checked_at")
-    .order("checked_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // 1. Puerta de debounce de 5 minutos (omitida si force = true)
+  if (!options?.force) {
+    const { data: latestCheck } = await (supabase.from("site_health_checks") as any)
+      .select("checked_at")
+      .order("checked_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  if (latestCheck?.checked_at) {
-    const diffMs = Date.now() - new Date(latestCheck.checked_at).getTime();
-    if (diffMs < 5 * 60 * 1000) {
-      return { skipped: true };
+    if (latestCheck?.checked_at) {
+      const diffMs = Date.now() - new Date(latestCheck.checked_at).getTime();
+      if (diffMs < 5 * 60 * 1000) {
+        return { skipped: true };
+      }
     }
   }
 
