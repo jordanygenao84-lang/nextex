@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { defaultEpisodicWorker } from "@/lib/jobs/worker/worker";
 import { executeVigiaHealthChecks } from "@/lib/vigia/health";
+import { executeVigiaSecurityScans } from "@/lib/vigia/scan";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -52,11 +53,21 @@ export async function POST(req: NextRequest) {
       console.error("[VIGÍA] Error en chequeo de salud durante tick:", vErr);
     }
 
+    // VIG-5: Escaneo periódico de seguridad de VIGÍA.
+    // La puerta interna de 24 horas por cliente regula la cadencia real.
+    let vigiaScans: any = null;
+    try {
+      vigiaScans = await executeVigiaSecurityScans(supabase);
+    } catch (sErr) {
+      console.error("[VIGÍA] Error en escaneo de seguridad durante tick:", sErr);
+    }
+
     return NextResponse.json({
       success: true,
       timestamp: new Date().toISOString(),
       result,
       vigia_health: vigiaHealth,
+      vigia_scans: vigiaScans,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Internal Worker Error" }, { status: 500 });
