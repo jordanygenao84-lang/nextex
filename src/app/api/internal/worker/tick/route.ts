@@ -1,14 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { defaultEpisodicWorker } from "@/lib/jobs/worker/worker";
+import { executeVigiaHealthChecks } from "@/lib/vigia/health";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
 
 /**
  * POST /api/internal/worker/tick
- * Endpoint interno para ejecución episódica serverless del worker.
+ * Endpoint interno para ejecución episódica serverless del worker y vigilancia de salud VIGÍA.
  * Requiere encabezado: Authorization: Bearer <CRON_SECRET>
+ *
+ * Configuración alternativa directa en pg_cron (Supabase SQL Editor):
+ * select cron.schedule('vigia-health-checks', '* * * * *', $$
+ *   select net.http_post(
+ *     url := 'https://nextex-seven.vercel.app/api/vigia/run-health-checks',
+ *     headers := jsonb_build_object('Authorization', 'Bearer ' || '<CRON_SECRET>')
+ *   );
+ * $$);
  */
 export async function POST(req: NextRequest) {
   try {
@@ -34,10 +43,20 @@ export async function POST(req: NextRequest) {
     const supabase = createServiceClient();
     const result = await defaultEpisodicWorker.executeTick(supabase);
 
+    // VIG-2: Ejecución automática de VIGÍA.
+    // La puerta interna de 5 minutos evita chequeos redundantes en ticks minuto a minuto.
+    let vigiaHealth: any = null;
+    try {
+      vigiaHealth = await executeVigiaHealthChecks(supabase);
+    } catch (vErr) {
+      console.error("[VIGÍA] Error en chequeo de salud durante tick:", vErr);
+    }
+
     return NextResponse.json({
       success: true,
       timestamp: new Date().toISOString(),
       result,
+      vigia_health: vigiaHealth,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Internal Worker Error" }, { status: 500 });
