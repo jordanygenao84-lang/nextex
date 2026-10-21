@@ -6,9 +6,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/vigia/health
- * Retorna el estado de salud más reciente y el conteo de incidentes sin resolver
- * para todos los clientes activos.
- * ACCESO RESTRINGIDO: Exclusivo para superadministradores (403 si no lo es).
+ * Retorna el estado de salud y métricas de disponibilidad de los clientes activos.
+ * ACCESO RESTRINGIDO: Exclusivo para super_admin (403 si no lo es).
  */
 export async function GET(req: NextRequest) {
   try {
@@ -25,7 +24,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 1. Verificación de superadministrador (reusando helper de roles)
+    // 1. Verificación de permisos de superadministrador
     const superAdmin = await isSuperAdmin(user.id);
     if (!superAdmin) {
       return NextResponse.json(
@@ -36,9 +35,9 @@ export async function GET(req: NextRequest) {
 
     const serviceClient = createServiceClient();
 
-    // 2. Obtener clientes activos
+    // 2. Consultar clientes activos
     const { data: clients, error: clientsErr } = await (serviceClient.from("clients") as any)
-      .select("id, display_name, website_url")
+      .select("id, display_name, website_url, status")
       .eq("status", "active")
       .order("display_name", { ascending: true });
 
@@ -53,39 +52,33 @@ export async function GET(req: NextRequest) {
       return NextResponse.json([]);
     }
 
-    // 3. Consultar último chequeo e incidentes para cada cliente
+    // 3. Procesar último chequeo e incidentes no resueltos por cada cliente
     const results = await Promise.all(
-      clients.map(async (client) => {
-        // Último chequeo de salud
+      clients.map(async (client: any) => {
+        // a) Último chequeo de salud
         const { data: latestCheck } = await (serviceClient.from("site_health_checks") as any)
-          .select("status, response_ms, ssl_days_left, checked_at")
+          .select("status, response_ms, ssl_days_left, checked_at, details")
           .eq("client_id", client.id)
           .order("checked_at", { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        // Incidentes para determinar los no resueltos (health_down sin health_recovered posterior)
-        const { data: incidents } = await (serviceClient.from("incident_log") as any)
-          .select("kind, created_at")
+        // b) Incidentes de salud para determinar incidentes sin resolver
+        // (health_down sin su health_recovered posterior)
+        const { data: healthIncidents } = await (serviceClient.from("incident_log") as any)
+          .select("id, kind, created_at")
           .eq("client_id", client.id)
           .in("kind", ["health_down", "health_recovered"])
           .order("created_at", { ascending: false });
 
-        let latestRecoveredAt: string | null = null;
-        if (Array.isArray(incidents)) {
-          const recoveredItem = incidents.find((inc: any) => inc.kind === "health_recovered");
-          if (recoveredItem) {
-            latestRecoveredAt = recoveredItem.created_at;
-          }
-        }
-
-        let unresolvedCount = 0;
-        if (Array.isArray(incidents)) {
-          for (const inc of incidents) {
+        let unresolved_incidents = 0;
+        if (Array.isArray(healthIncidents)) {
+          for (const inc of healthIncidents) {
+            if (inc.kind === "health_recovered") {
+              break; // El incidente anterior ya fue resuelto
+            }
             if (inc.kind === "health_down") {
-              if (!latestRecoveredAt || inc.created_at > latestRecoveredAt) {
-                unresolvedCount++;
-              }
+              unresolved_incidents++;
             }
           }
         }
@@ -102,7 +95,7 @@ export async function GET(req: NextRequest) {
                 checked_at: latestCheck.checked_at,
               }
             : null,
-          unresolved_incidents: unresolvedCount,
+          unresolved_incidents,
         };
       })
     );
@@ -113,7 +106,7 @@ export async function GET(req: NextRequest) {
       {
         error: {
           code: "INTERNAL_ERROR",
-          message: err?.message || "Error al obtener estado de salud de clientes.",
+          message: err?.message || "Error al obtener reporte de salud de VIGÍA.",
         },
       },
       { status: 500 }
