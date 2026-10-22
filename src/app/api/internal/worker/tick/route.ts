@@ -3,13 +3,15 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { defaultEpisodicWorker } from "@/lib/jobs/worker/worker";
 import { executeVigiaHealthChecks } from "@/lib/vigia/health";
 import { executeVigiaSecurityScans } from "@/lib/vigia/scan";
+import { checkCredentialExpirations } from "@/lib/protection/credentials";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
 
 /**
  * POST /api/internal/worker/tick
- * Endpoint interno para ejecución episódica serverless del worker y vigilancia de salud VIGÍA.
+ * Endpoint interno para ejecución episódica serverless del worker, vigilancia de salud VIGÍA
+ * y chequeo de vencimiento de credenciales (NIV1-2).
  * Requiere encabezado: Authorization: Bearer <CRON_SECRET>
  *
  * Configuración alternativa directa en pg_cron (Supabase SQL Editor):
@@ -62,12 +64,22 @@ export async function POST(req: NextRequest) {
       console.error("[VIGÍA] Error en escaneo de seguridad durante tick:", sErr);
     }
 
+    // NIV1-2: Chequeo de vencimientos de credenciales.
+    // Sin puerta de tiempo: el dedup por incident_log evita el spam.
+    let credentialsCheck: any = null;
+    try {
+      credentialsCheck = await checkCredentialExpirations(supabase);
+    } catch (cErr) {
+      console.error("[PROTECCIÓN] Error en chequeo de credenciales durante tick:", cErr);
+    }
+
     return NextResponse.json({
       success: true,
       timestamp: new Date().toISOString(),
       result,
       vigia_health: vigiaHealth,
       vigia_scans: vigiaScans,
+      credentials_check: credentialsCheck,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Internal Worker Error" }, { status: 500 });

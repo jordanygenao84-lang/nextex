@@ -16,18 +16,18 @@ export interface SendAlertResult {
  * NEXTEХ VIGÍA — Notificador y Canal de Alertas a Telegram (VIG-6)
  *
  * Envía mensajes de alerta a Telegram con protección anti-ruido:
- * - Si TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID no existen: no-op silencioso con log.
+ * - Si TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID no existen: no-op silencioso con log y retorna false.
  * - Anti-ruido: antes de enviar, revisa incident_log. Si ya se envió una alerta
  *   del mismo 'kind' para el mismo cliente en la última hora, se omite (salvo force = true).
  * - Registra la alerta en incident_log con alerted: true para alimentar el anti-ruido.
- * - NUNCA lanza excepción.
+ * - NUNCA lanza excepción. Devuelve true si envió con éxito, false si no.
  */
 export async function sendVigiaAlert(
   title: string,
   body: string,
   options?: AlertOptions,
   supabase?: SupabaseClient
-): Promise<SendAlertResult> {
+): Promise<boolean> {
   const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
   const chatId = process.env.TELEGRAM_CHAT_ID?.trim();
 
@@ -35,11 +35,7 @@ export async function sendVigiaAlert(
     console.log(
       "[VIGÍA TELEGRAM] Telegram no configurado (falta TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID)"
     );
-    return {
-      sent: false,
-      skipped: true,
-      reason: "Telegram no configurado",
-    };
+    return false;
   }
 
   // 1. Anti-ruido: verificar si ya se alertó este evento para este cliente en la última hora
@@ -57,11 +53,7 @@ export async function sendVigiaAlert(
         recentAlerts.some((row: any) => row.detail?.alerted === true);
 
       if (alreadyAlerted) {
-        return {
-          sent: false,
-          skipped: true,
-          reason: "Anti-ruido activo: ya se alertó este evento en la última hora",
-        };
+        return false;
       }
     } catch (err: any) {
       console.warn(
@@ -96,7 +88,7 @@ export async function sendVigiaAlert(
         `[VIGÍA TELEGRAM] Error devuelto por Telegram API (HTTP ${res.status}):`,
         errText
       );
-      return { sent: false, reason: `HTTP ${res.status}: ${errText}` };
+      return false;
     }
 
     // 3. Registrar en incident_log que se emitió la alerta
@@ -122,12 +114,12 @@ export async function sendVigiaAlert(
       }
     }
 
-    return { sent: true };
+    return true;
   } catch (err: any) {
     console.error(
       "[VIGÍA TELEGRAM] Error de red al comunicar con Telegram:",
       err?.message || err
     );
-    return { sent: false, reason: err?.message || "Error de red" };
+    return false;
   }
 }

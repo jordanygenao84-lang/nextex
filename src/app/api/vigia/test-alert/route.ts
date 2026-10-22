@@ -45,20 +45,19 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const result = await sendVigiaAlert(
+    const sent = await sendVigiaAlert(
       "✅ Prueba de VIGÍA",
       "El canal de alertas funciona correctamente desde NEXTEХ.",
       { force: true }
     );
 
     return NextResponse.json({
-      ok: result.sent,
+      ok: Boolean(sent),
       telegram_configured: true,
-      sent: result.sent,
-      reason: result.reason,
-      message: result.sent
+      sent: Boolean(sent),
+      message: sent
         ? "Alerta de prueba enviada exitosamente a Telegram."
-        : `No se pudo entregar a Telegram: ${result.reason}`,
+        : "No se pudo entregar a Telegram (verifique credenciales o conectividad).",
     });
   } catch (err: any) {
     return NextResponse.json(
