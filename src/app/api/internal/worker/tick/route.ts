@@ -4,6 +4,7 @@ import { defaultEpisodicWorker } from "@/lib/jobs/worker/worker";
 import { executeVigiaHealthChecks } from "@/lib/vigia/health";
 import { executeVigiaSecurityScans } from "@/lib/vigia/scan";
 import { checkCredentialExpirations } from "@/lib/protection/credentials";
+import { executeScheduledBackups } from "@/lib/protection/backups";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -73,6 +74,14 @@ export async function POST(req: NextRequest) {
       console.error("[PROTECCIÓN] Error en chequeo de credenciales durante tick:", cErr);
     }
 
+    // NIV1-5: Respaldos automáticos cada 6 días por cliente configurado
+    let scheduledBackups: any = null;
+    try {
+      scheduledBackups = await executeScheduledBackups(supabase);
+    } catch (bErr) {
+      console.error("[PROTECCIÓN] Error en respaldos programados durante tick:", bErr);
+    }
+
     return NextResponse.json({
       success: true,
       timestamp: new Date().toISOString(),
@@ -80,6 +89,7 @@ export async function POST(req: NextRequest) {
       vigia_health: vigiaHealth,
       vigia_scans: vigiaScans,
       credentials_check: credentialsCheck,
+      scheduled_backups: scheduledBackups,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Internal Worker Error" }, { status: 500 });

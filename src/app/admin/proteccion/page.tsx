@@ -28,6 +28,9 @@ import {
   Activity,
   ChevronDown,
   ChevronUp,
+  HardDrive,
+  Settings,
+  Play,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -66,6 +69,27 @@ export default function ProteccionPage() {
     occurrences_24h: 0,
   });
   const [expandedErrorId, setExpandedErrorId] = useState<Record<string, boolean>>({});
+
+  // Estados para Respaldos (NIV1-5)
+  const [backupClients, setBackupClients] = useState<any[]>([]);
+  const [backupRecentRuns, setBackupRecentRuns] = useState<any[]>([]);
+  const [runningBackupClientId, setRunningBackupClientId] = useState<string | null>(null);
+  const [expandedRunDetailId, setExpandedRunDetailId] = useState<Record<string, boolean>>({});
+
+  // Modal de Configuración de Respaldo
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+  const [configClientId, setConfigClientId] = useState("");
+  const [configClientName, setConfigClientName] = useState("");
+  const [configSupabaseUrl, setConfigSupabaseUrl] = useState("");
+  const [configServiceKey, setConfigServiceKey] = useState("");
+  const [configGithubRepo, setConfigGithubRepo] = useState("");
+  const [configGithubBranch, setConfigGithubBranch] = useState("main");
+  const [configGithubToken, setConfigGithubToken] = useState("");
+  const [configEnabled, setConfigEnabled] = useState(true);
+  const [hasExistingServiceKey, setHasExistingServiceKey] = useState(false);
+  const [hasExistingGithubToken, setHasExistingGithubToken] = useState(false);
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [configError, setConfigError] = useState<string | null>(null);
 
   // Modal de Crear / Editar
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -142,21 +166,33 @@ export default function ProteccionPage() {
     }
   }, []);
 
+  const fetchBackups = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/backups");
+      if (!res.ok) return;
+      const data = await res.json();
+      setBackupClients(data.clients || []);
+      setBackupRecentRuns(data.recent_runs || []);
+    } catch (err) {
+      console.error("Error al cargar estado de respaldos:", err);
+    }
+  }, []);
+
   useEffect(() => {
     async function init() {
       setLoading(true);
       const ok = await fetchCredentials();
       if (ok) {
-        await Promise.all([fetchClients(), fetchErrors()]);
+        await Promise.all([fetchClients(), fetchErrors(), fetchBackups()]);
       }
       setLoading(false);
     }
     init();
-  }, [fetchCredentials, fetchClients, fetchErrors]);
+  }, [fetchCredentials, fetchClients, fetchErrors, fetchBackups]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchCredentials(), fetchClients(), fetchErrors()]);
+    await Promise.all([fetchCredentials(), fetchClients(), fetchErrors(), fetchBackups()]);
     setRefreshing(false);
   };
 
@@ -165,6 +201,99 @@ export default function ProteccionPage() {
       ...prev,
       [id]: !prev[id],
     }));
+  };
+
+  const handleToggleRunDetail = (id: string) => {
+    setExpandedRunDetailId((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  const formatSizeBytes = (bytes?: number | null) => {
+    if (bytes === null || bytes === undefined || isNaN(bytes)) return "—";
+    if (bytes === 0) return "0 B";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
+  const handleOpenConfigModal = (clientItem: any) => {
+    setConfigClientId(clientItem.id);
+    setConfigClientName(clientItem.display_name);
+    const cfg = clientItem.config;
+    setConfigSupabaseUrl(cfg?.supabase_url || "");
+    setConfigServiceKey("");
+    setConfigGithubRepo(cfg?.github_repo || "");
+    setConfigGithubBranch(cfg?.github_branch || "main");
+    setConfigGithubToken("");
+    setConfigEnabled(cfg ? Boolean(cfg.enabled) : true);
+    setHasExistingServiceKey(Boolean(cfg?.has_service_key));
+    setHasExistingGithubToken(Boolean(cfg?.has_github_token));
+    setConfigError(null);
+    setIsConfigModalOpen(true);
+  };
+
+  const handleCloseConfigModal = () => {
+    if (isSavingConfig) return;
+    setIsConfigModalOpen(false);
+    setConfigError(null);
+  };
+
+  const handleSaveConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setConfigError(null);
+    setIsSavingConfig(true);
+    try {
+      const payload: any = {
+        client_id: configClientId,
+        supabase_url: configSupabaseUrl.trim() || null,
+        github_repo: configGithubRepo.trim() || null,
+        github_branch: configGithubBranch.trim() || "main",
+        enabled: configEnabled,
+      };
+      if (configServiceKey.trim()) {
+        payload.service_key = configServiceKey.trim();
+      }
+      if (configGithubToken.trim()) {
+        payload.github_token = configGithubToken.trim();
+      }
+      const res = await fetch("/api/admin/backups/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson?.error?.message || "Error al guardar configuración");
+      }
+      setIsConfigModalOpen(false);
+      await fetchBackups();
+    } catch (err: any) {
+      setConfigError(err?.message || "Error al guardar configuración de respaldo.");
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
+  const handleRunBackup = async (clientId: string) => {
+    setRunningBackupClientId(clientId);
+    try {
+      const res = await fetch("/api/admin/backups/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: clientId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error?.message || "Error al disparar el respaldo.");
+      }
+      await fetchBackups();
+    } catch (err: any) {
+      alert(err?.message || "No se pudo ejecutar el respaldo.");
+    } finally {
+      setRunningBackupClientId(null);
+    }
   };
 
   const formatRelativeTime = (isoString?: string | null) => {
@@ -806,6 +935,259 @@ export default function ProteccionPage() {
             )}
           </div>
         </div>
+
+        {/* Sección: Respaldos (NIV1-5) */}
+        <div className="space-y-4 pt-6 border-t border-texter-border">
+          <div className="space-y-0.5">
+            <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
+              <HardDrive className="w-4 h-4 text-texter-cyan" />
+              <span>💾 Respaldos</span>
+              <Badge variant="cyan" size="sm">
+                Motor v1.18
+              </Badge>
+            </h3>
+            <p className="text-xs text-texter-text-muted">
+              Motor central de copias de seguridad de BD Supabase y repositorios GitHub hacia almacenamiento protegido.
+            </p>
+          </div>
+
+          {/* Texto fijo obligatorio */}
+          <div className="p-3.5 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-texter-text-secondary flex items-start gap-2.5">
+            <ShieldCheck className="w-4 h-4 text-texter-cyan shrink-0 mt-0.5" />
+            <p className="leading-relaxed">
+              Las llaves se guardan cifradas y nunca se muestran. Este respaldo es una copia de seguridad: la restauración se hace con el kit de relanzamiento del proyecto.
+            </p>
+          </div>
+
+          {/* Tarjetas / Tabla por cliente */}
+          <div className="rounded-2xl bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
+            <div className="p-4 border-b border-texter-border/80 bg-texter-surface-subtle/50 flex items-center justify-between">
+              <span className="text-xs font-semibold text-white uppercase tracking-wider font-mono">
+                Satélites & Proyectos ({backupClients.length})
+              </span>
+              <span className="text-[11px] text-texter-text-dim font-mono">
+                Cadencia automática: cada 6 días vía tick
+              </span>
+            </div>
+
+            {backupClients.length === 0 ? (
+              <div className="p-8 text-center text-xs text-texter-text-muted">
+                No hay clientes registrados en la plataforma.
+              </div>
+            ) : (
+              <div className="divide-y divide-texter-border/40">
+                {backupClients.map((item) => {
+                  const cfg = item.config;
+                  const isConfigured = Boolean(cfg);
+                  const isEnabled = Boolean(cfg?.enabled);
+                  const latest = item.latest_run;
+                  const isRunning = runningBackupClientId === item.id;
+
+                  let statusBadge = (
+                    <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-slate-800 text-slate-400 border border-slate-700">
+                      Sin respaldos aún
+                    </span>
+                  );
+                  if (latest?.status === "ok") {
+                    statusBadge = (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 inline-flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        OK
+                      </span>
+                    );
+                  } else if (latest?.status === "partial") {
+                    statusBadge = (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30 inline-flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                        Parcial
+                      </span>
+                    );
+                  } else if (latest?.status === "failed") {
+                    statusBadge = (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 inline-flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
+                        Fallido
+                      </span>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="p-4 sm:p-5 hover:bg-texter-surface-hover/30 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4"
+                    >
+                      <div className="space-y-1.5 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <strong className="text-sm font-bold text-white tracking-tight">
+                            {item.display_name}
+                          </strong>
+                          {isConfigured ? (
+                            <span
+                              className={cn(
+                                "px-2 py-0.5 rounded text-[10px] font-mono border uppercase tracking-wider",
+                                isEnabled
+                                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                                  : "bg-slate-800 text-slate-400 border-slate-700"
+                              )}
+                            >
+                              {isEnabled ? "Activo" : "Pausado"}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                              Sin configurar
+                            </span>
+                          )}
+                          {statusBadge}
+                        </div>
+
+                        <div className="flex items-center gap-3 text-xs text-texter-text-muted flex-wrap font-mono">
+                          {latest ? (
+                            <>
+                              <span>Último: <strong className="text-white">{formatRelativeTime(latest.created_at)}</strong></span>
+                              <span>•</span>
+                              <span>Tamaño: <strong className="text-white">{formatSizeBytes(latest.size_bytes)}</strong></span>
+                              {latest.location && (
+                                <>
+                                  <span>•</span>
+                                  <span className="truncate max-w-xs text-texter-text-dim" title={latest.location}>
+                                    {latest.location}
+                                  </span>
+                                </>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-texter-text-dim italic">Nunca se ha ejecutado un respaldo para este cliente</span>
+                          )}
+                        </div>
+
+                        {cfg && (
+                          <div className="flex items-center gap-2 pt-1 text-[11px] font-mono text-texter-text-dim flex-wrap">
+                            {cfg.supabase_url && (
+                              <span className="px-1.5 py-0.5 rounded bg-black/40 border border-texter-border/50">
+                                DB: {cfg.supabase_url.replace(/^https?:\/\//, "")}
+                              </span>
+                            )}
+                            {cfg.github_repo && (
+                              <span className="px-1.5 py-0.5 rounded bg-black/40 border border-texter-border/50">
+                                Repo: {cfg.github_repo}@{cfg.github_branch || "main"}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Botones de acción */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => handleOpenConfigModal(item)}
+                          className="px-3 py-1.5 rounded-xl bg-texter-surface-subtle hover:bg-texter-surface-hover border border-texter-border text-xs text-white font-medium flex items-center gap-1.5 transition-colors"
+                        >
+                          <Settings className="w-3.5 h-3.5 text-texter-text-muted" />
+                          <span>Configurar</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleRunBackup(item.id)}
+                          disabled={isRunning || !isConfigured}
+                          className="px-3 py-1.5 rounded-xl bg-texter-indigo hover:bg-texter-indigo-hover text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-texter-glow-indigo disabled:opacity-50 disabled:cursor-not-allowed"
+                          title={!isConfigured ? "Debes configurar el respaldo primero" : "Ejecutar respaldo inmediato"}
+                        >
+                          {isRunning ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Play className="w-3.5 h-3.5" />
+                          )}
+                          <span>{isRunning ? "Respaldando..." : "Respaldar ahora"}</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Historial de corridas desde backup_runs */}
+          <div className="space-y-3 pt-2">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-texter-text-muted font-mono flex items-center gap-2">
+              <Clock className="w-3.5 h-3.5 text-texter-indigo" />
+              <span>Historial de Corridas Recientes ({backupRecentRuns.length})</span>
+            </h4>
+
+            <div className="rounded-2xl bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
+              {backupRecentRuns.length === 0 ? (
+                <div className="p-8 text-center text-xs text-texter-text-muted">
+                  No hay corridas de respaldo registradas en el historial.
+                </div>
+              ) : (
+                <div className="divide-y divide-texter-border/40 text-xs">
+                  {backupRecentRuns.map((run) => {
+                    const isExpanded = Boolean(expandedRunDetailId[run.id]);
+
+                    let badge = (
+                      <Badge variant="cyan" size="sm">
+                        {run.status}
+                      </Badge>
+                    );
+                    if (run.status === "ok") badge = <Badge variant="success" size="sm">OK</Badge>;
+                    else if (run.status === "partial") badge = <Badge variant="warning" size="sm">Parcial</Badge>;
+                    else if (run.status === "failed") badge = <Badge variant="danger" size="sm">Fallido</Badge>;
+
+                    return (
+                      <div key={run.id} className="p-3.5 sm:p-4 hover:bg-texter-surface-hover/30 transition-colors space-y-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <strong className="text-white font-semibold">
+                              {run.client?.display_name || "Cliente"}
+                            </strong>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300 border border-slate-700 uppercase">
+                              {run.kind}
+                            </span>
+                            {badge}
+                            <span className="font-mono text-texter-text-dim text-[11px]">
+                              {formatRelativeTime(run.created_at)}
+                            </span>
+                            <span className="text-texter-text-muted font-mono text-[11px]">
+                              • {formatSizeBytes(run.size_bytes)}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleToggleRunDetail(run.id)}
+                              className="px-2 py-1 rounded-lg bg-texter-surface-subtle hover:bg-texter-surface-hover border border-texter-border text-[11px] text-texter-text-secondary hover:text-white flex items-center gap-1 transition-colors"
+                            >
+                              {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                              <span>{isExpanded ? "Ocultar" : "Detalles"}</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {run.location && (
+                          <div className="text-[11px] font-mono text-texter-text-dim truncate">
+                            Destino: {run.location}
+                          </div>
+                        )}
+
+                        {isExpanded && (
+                          <div className="p-3 rounded-xl bg-black/60 border border-texter-border/50 text-[11px] font-mono space-y-2 animate-fade-in">
+                            <div className="flex justify-between text-texter-text-dim text-[10px] uppercase">
+                              <span>Detalle de corrida (detail):</span>
+                              <span>ID: {run.id}</span>
+                            </div>
+                            <pre className="text-cyan-300 overflow-x-auto whitespace-pre-wrap max-h-48 scrollbar-thin">
+                              {JSON.stringify(run.detail || {}, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Modal Crear / Editar Credencial */}
@@ -981,6 +1363,171 @@ export default function ProteccionPage() {
                   isLoading={isSaving}
                 >
                   {modalMode === "create" ? "Guardar credencial" : "Actualizar credencial"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Configuración de Respaldo (NIV1-5) */}
+      {isConfigModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="w-full max-w-lg rounded-2xl bg-texter-surface border border-texter-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-5 border-b border-texter-border flex items-center justify-between bg-texter-surface-subtle/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-texter-cyan/15 border border-cyan-500/30 flex items-center justify-center text-texter-cyan">
+                  <HardDrive className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    Configurar Respaldo: {configClientName}
+                  </h3>
+                  <p className="text-[11px] text-texter-text-muted">
+                    Parámetros de conexión para BD y repositorio
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={handleCloseConfigModal}
+                disabled={isSavingConfig}
+                className="p-1.5 text-texter-text-muted hover:text-white rounded-lg hover:bg-texter-surface-hover transition-colors"
+                aria-label="Cerrar modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveConfig} className="p-5 space-y-4 overflow-y-auto flex-1">
+              {configError && (
+                <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-center gap-2">
+                  <XCircle className="w-4 h-4 shrink-0 text-texter-rose" />
+                  <span>{configError}</span>
+                </div>
+              )}
+
+              {/* Supabase URL */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-white block">
+                  URL del Proyecto Supabase
+                </label>
+                <input
+                  type="url"
+                  value={configSupabaseUrl}
+                  onChange={(e) => setConfigSupabaseUrl(e.target.value)}
+                  placeholder="https://xxxxxxxx.supabase.co"
+                  className="w-full px-3 py-2 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white placeholder-texter-text-dim focus:outline-none focus:border-texter-indigo transition-colors"
+                />
+              </div>
+
+              {/* Service Key */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-white block">
+                    Service Role Key (Supabase)
+                  </label>
+                  {hasExistingServiceKey && (
+                    <span className="text-[10px] font-mono text-emerald-400">
+                      ✓ Clave configurada
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="password"
+                  value={configServiceKey}
+                  onChange={(e) => setConfigServiceKey(e.target.value)}
+                  placeholder={hasExistingServiceKey ? "•••••••••••••••• (dejar vacío para mantener)" : "eyJh..."}
+                  className="w-full px-3 py-2 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white placeholder-texter-text-dim focus:outline-none focus:border-texter-indigo transition-colors"
+                />
+              </div>
+
+              {/* GitHub Repo y Rama */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2 space-y-1.5">
+                  <label className="text-xs font-semibold text-white block">
+                    Repositorio GitHub (owner/repo)
+                  </label>
+                  <input
+                    type="text"
+                    value={configGithubRepo}
+                    onChange={(e) => setConfigGithubRepo(e.target.value)}
+                    placeholder="jordanygenao84-lang/satelite"
+                    className="w-full px-3 py-2 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white placeholder-texter-text-dim focus:outline-none focus:border-texter-indigo transition-colors"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-white block">
+                    Rama
+                  </label>
+                  <input
+                    type="text"
+                    value={configGithubBranch}
+                    onChange={(e) => setConfigGithubBranch(e.target.value)}
+                    placeholder="main"
+                    className="w-full px-3 py-2 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white placeholder-texter-text-dim focus:outline-none focus:border-texter-indigo transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* GitHub Token */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-white block">
+                    Token de Acceso GitHub (opcional si es repo público)
+                  </label>
+                  {hasExistingGithubToken && (
+                    <span className="text-[10px] font-mono text-emerald-400">
+                      ✓ Token configurado
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="password"
+                  value={configGithubToken}
+                  onChange={(e) => setConfigGithubToken(e.target.value)}
+                  placeholder={hasExistingGithubToken ? "•••••••••••••••• (dejar vacío para mantener)" : "ghp_..."}
+                  className="w-full px-3 py-2 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white placeholder-texter-text-dim focus:outline-none focus:border-texter-indigo transition-colors"
+                />
+              </div>
+
+              {/* Enabled Checkbox */}
+              <div className="pt-2 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="backup-enabled-checkbox"
+                  checked={configEnabled}
+                  onChange={(e) => setConfigEnabled(e.target.checked)}
+                  className="rounded border-texter-border bg-texter-surface-subtle text-texter-indigo focus:ring-0"
+                />
+                <label htmlFor="backup-enabled-checkbox" className="text-xs text-white font-medium cursor-pointer">
+                  Habilitar respaldo automático programado (cada 6 días)
+                </label>
+              </div>
+
+              <div className="p-3 rounded-xl bg-texter-surface-subtle/80 border border-texter-border/50 text-[11px] text-texter-text-dim">
+                Las llaves se guardan cifradas con AES-256-GCM y nunca se muestran en pantalla ni se registran en logs.
+              </div>
+
+              {/* Botones de acción */}
+              <div className="pt-3 border-t border-texter-border flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCloseConfigModal}
+                  disabled={isSavingConfig}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  isLoading={isSavingConfig}
+                >
+                  Guardar configuración
                 </Button>
               </div>
             </form>
