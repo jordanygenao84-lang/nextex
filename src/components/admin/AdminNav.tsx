@@ -4,11 +4,12 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Activity } from "lucide-react";
+import { LayoutDashboard, Activity, ShieldCheck } from "lucide-react";
 
 const navItems = [
   { name: "Overview", href: "/admin", icon: LayoutDashboard },
   { name: "Vigilancia", href: "/admin/vigilancia", icon: Activity },
+  { name: "Protección", href: "/admin/proteccion", icon: ShieldCheck },
 ];
 
 export const AdminNav: React.FC = () => {

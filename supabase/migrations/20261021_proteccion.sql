@@ -115,3 +115,7 @@ CREATE POLICY "Allow service_role full access on backup_runs"
     TO service_role
     USING (true)
     WITH CHECK (true);
+
+-- 7. Permitir client_id NULL en incident_log para alertas globales/del dueño (bóveda de credenciales de plataforma)
+ALTER TABLE IF EXISTS public.incident_log ALTER COLUMN client_id DROP NOT NULL;
+

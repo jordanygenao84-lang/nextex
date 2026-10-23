@@ -116,6 +116,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Activity,
       badge: "VIGÍA",
     },
+    {
+      name: "Protección",
+      href: "/admin/proteccion",
+      icon: ShieldCheck,
+      badge: "Bóveda",
+    },
   ];
 
   const secondaryNav = [
