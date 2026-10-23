@@ -24,11 +24,16 @@ import {
   X,
   FileText,
   Clock,
+  Bug,
+  Activity,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import type { CredentialRecord, CredentialStatus } from "@/lib/protection/credentials";
+import type { ErrorEventRecord, ErrorSummary } from "@/lib/protection/errors";
 
 interface ClientOption {
   id: string;
@@ -53,6 +58,14 @@ export default function ProteccionPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Estados para Errores de las webs (NIV1-4)
+  const [errors, setErrors] = useState<ErrorEventRecord[]>([]);
+  const [errorSummary, setErrorSummary] = useState<ErrorSummary>({
+    total_groups: 0,
+    occurrences_24h: 0,
+  });
+  const [expandedErrorId, setExpandedErrorId] = useState<Record<string, boolean>>({});
 
   // Modal de Crear / Editar
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -115,23 +128,62 @@ export default function ProteccionPage() {
     }
   }, []);
 
+  const fetchErrors = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/errors");
+      if (!res.ok) return;
+      const data = await res.json();
+      setErrors(data.errors || []);
+      if (data.summary) {
+        setErrorSummary(data.summary);
+      }
+    } catch (err) {
+      console.error("Error al cargar registro de errores:", err);
+    }
+  }, []);
+
   useEffect(() => {
     async function init() {
       setLoading(true);
       const ok = await fetchCredentials();
       if (ok) {
-        await fetchClients();
+        await Promise.all([fetchClients(), fetchErrors()]);
       }
       setLoading(false);
     }
     init();
-  }, [fetchCredentials, fetchClients]);
+  }, [fetchCredentials, fetchClients, fetchErrors]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchCredentials();
-    await fetchClients();
+    await Promise.all([fetchCredentials(), fetchClients(), fetchErrors()]);
     setRefreshing(false);
+  };
+
+  const handleToggleDetail = (id: string) => {
+    setExpandedErrorId((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  const formatRelativeTime = (isoString?: string | null) => {
+    if (!isoString) return "Nunca";
+    try {
+      const diffMs = Date.now() - new Date(isoString).getTime();
+      if (diffMs < 0) return "Ahora mismo";
+      const diffSec = Math.floor(diffMs / 1000);
+      if (diffSec < 60) return "hace un momento";
+      const diffMin = Math.floor(diffSec / 60);
+      if (diffMin < 60) return `hace ${diffMin} min`;
+      const diffHours = Math.floor(diffMin / 60);
+      if (diffHours < 24) return `hace ${diffHours} h`;
+      const diffDays = Math.floor(diffHours / 24);
+      if (diffDays === 1) return "hace 1 día";
+      return `hace ${diffDays} días`;
+    } catch {
+      return isoString;
+    }
   };
 
   const handleOpenCreate = () => {
@@ -628,6 +680,128 @@ export default function ProteccionPage() {
                     })}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Sección: Errores de las webs (NIV1-4) */}
+        <div className="space-y-4 pt-6 border-t border-texter-border">
+          <div className="space-y-0.5">
+            <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
+              <Bug className="w-4 h-4 text-texter-rose" />
+              <span>🐞 Errores de las webs</span>
+              <Badge variant="danger" size="sm">
+                {errorSummary.total_groups}
+              </Badge>
+            </h3>
+            <p className="text-xs text-texter-text-muted">
+              Registro centralizado de excepciones y fallos agrupados por fingerprint, reportados en vivo por las webs satélite.
+            </p>
+          </div>
+
+          {/* Contadores arriba: grupos totales y ocurrencias en 24h */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+            <div className="p-4 rounded-xl bg-texter-surface border border-texter-border space-y-1">
+              <div className="flex items-center justify-between text-texter-text-muted">
+                <span className="text-xs font-medium">Grupos Totales</span>
+                <Bug className="w-4 h-4 text-texter-rose" />
+              </div>
+              <div className="text-2xl font-bold text-white font-mono">
+                {errorSummary.total_groups}
+              </div>
+              <p className="text-[10px] text-texter-text-muted">Tipos de error únicos agrupados</p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-texter-surface border border-texter-border space-y-1">
+              <div className="flex items-center justify-between text-texter-text-muted">
+                <span className="text-xs font-medium text-amber-400">Ocurrencias (24h)</span>
+                <Activity className="w-4 h-4 text-texter-amber" />
+              </div>
+              <div className="text-2xl font-bold text-amber-400 font-mono">
+                {errorSummary.occurrences_24h}
+              </div>
+              <p className="text-[10px] text-texter-text-muted">Impacto acumulado en el último día</p>
+            </div>
+          </div>
+
+          {/* Lista de Errores */}
+          <div className="rounded-2xl bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
+            {errors.length === 0 ? (
+              <div className="p-12 text-center text-xs text-texter-text-muted space-y-2">
+                <div className="text-3xl mb-1">🎉</div>
+                <p className="text-sm font-semibold text-white">Sin errores reportados 🎉</p>
+                <p className="text-texter-text-dim max-w-sm mx-auto">
+                  Las webs satélite están operando con normalidad y no han reportado fallos recientemente.
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-texter-border/40">
+                {errors.map((err) => {
+                  const isExpanded = Boolean(expandedErrorId[err.id]);
+                  return (
+                    <div
+                      key={err.id}
+                      className="p-4 sm:p-5 hover:bg-texter-surface-hover/30 transition-colors space-y-3"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                        <div className="space-y-1.5 flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-texter-surface-subtle border border-texter-border text-white font-semibold">
+                              {err.client?.display_name || "Cliente desconocido"}
+                            </span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-rose-500/10 text-rose-400 border border-rose-500/30 uppercase tracking-wider">
+                              {err.error_type || "general"}
+                            </span>
+                            <Badge variant="danger" size="sm">
+                              {err.occurrences} {err.occurrences === 1 ? "ocurrencia" : "ocurrencias"}
+                            </Badge>
+                            <span className="text-[11px] font-mono text-texter-text-muted flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-texter-text-dim" />
+                              {formatRelativeTime(err.last_seen_at)}
+                            </span>
+                          </div>
+
+                          <p className="text-xs text-texter-text-primary font-mono leading-relaxed break-words">
+                            {err.message}
+                          </p>
+                        </div>
+
+                        {/* Botón Ver Detalle */}
+                        <div className="shrink-0 flex items-center">
+                          <button
+                            onClick={() => handleToggleDetail(err.id)}
+                            className="px-2.5 py-1.5 rounded-lg bg-texter-surface-subtle hover:bg-texter-surface-hover border border-texter-border text-[11px] text-texter-text-secondary hover:text-white flex items-center gap-1.5 transition-colors"
+                          >
+                            {isExpanded ? (
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            ) : (
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            )}
+                            <span>{isExpanded ? "Ocultar detalle" : "Ver detalle"}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Desplegable JSON detail */}
+                      {isExpanded && (
+                        <div className="p-3.5 rounded-xl bg-black/60 border border-texter-border/50 text-[11px] font-mono space-y-2 animate-fade-in">
+                          <div className="flex items-center justify-between text-texter-text-muted">
+                            <span className="text-[10px] uppercase tracking-wider text-texter-text-dim">
+                              Detalle técnico (detail):
+                            </span>
+                            <span className="text-[10px] text-texter-text-dim font-mono">
+                              Fingerprint: {err.fingerprint.slice(0, 16)}...
+                            </span>
+                          </div>
+                          <pre className="text-emerald-300 overflow-x-auto whitespace-pre-wrap max-h-64 scrollbar-thin">
+                            {JSON.stringify(err.detail || {}, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
