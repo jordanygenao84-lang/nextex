@@ -59,22 +59,40 @@ ALTER TABLE public.client_invoices
 CREATE INDEX IF NOT EXISTS idx_client_invoices_subscription_status
     ON public.client_invoices (subscription_id, status);
 
--- 3. Ampliar el CHECK de incident_log.kind agregando 'billing_alert' (manteniendo client_id NULL permitido)
+-- 3. Ampliar el CHECK de incident_log.kind agregando 'billing_alert' y 'scan_completed'
+--    (e incorporando cualquier valor existente en producción para evitar error 23514)
 ALTER TABLE public.incident_log
     ALTER COLUMN client_id DROP NOT NULL;
 
 ALTER TABLE public.incident_log
     DROP CONSTRAINT IF EXISTS incident_log_kind_check;
 
-ALTER TABLE public.incident_log
-    ADD CONSTRAINT incident_log_kind_check
-    CHECK (kind IN (
-        'health_down',
-        'health_recovered',
-        'attack_detected',
-        'finding_opened',
-        'finding_fixed',
-        'consumption_spike',
-        'credential_alert',
-        'billing_alert'
-    ));
+DO $$
+DECLARE
+    allowed_kinds TEXT;
+BEGIN
+    SELECT string_agg(quote_literal(k), ', ' ORDER BY k)
+    INTO allowed_kinds
+    FROM (
+        SELECT unnest(ARRAY[
+            'health_down',
+            'health_recovered',
+            'attack_detected',
+            'finding_opened',
+            'finding_fixed',
+            'scan_completed',
+            'consumption_spike',
+            'credential_alert',
+            'billing_alert'
+        ]) AS k
+        UNION
+        SELECT DISTINCT kind AS k
+        FROM public.incident_log
+        WHERE kind IS NOT NULL
+    ) sub;
+
+    EXECUTE format(
+        'ALTER TABLE public.incident_log ADD CONSTRAINT incident_log_kind_check CHECK (kind IN (%s))',
+        allowed_kinds
+    );
+END $$;
