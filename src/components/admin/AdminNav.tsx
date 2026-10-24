@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Receipt,
   BarChart3,
+  Globe,
 } from "lucide-react";
 
 const navItems = [
@@ -18,6 +19,7 @@ const navItems = [
   { name: "Protección", href: "/admin/proteccion", icon: ShieldCheck },
   { name: "Facturación", href: "/admin/facturacion", icon: Receipt },
   { name: "Analítica", href: "/admin/analitica", icon: BarChart3 },
+  { name: "Dominios", href: "/admin/dominios", icon: Globe },
 ];
 
 export const AdminNav: React.FC = () => {

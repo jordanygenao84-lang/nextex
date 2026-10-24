@@ -6,6 +6,7 @@ import { executeVigiaSecurityScans } from "@/lib/vigia/scan";
 import { checkCredentialExpirations } from "@/lib/protection/credentials";
 import { executeScheduledBackups } from "@/lib/protection/backups";
 import { processSubscriptions } from "@/lib/billing/subscriptions";
+import { executeDomainChecks } from "@/lib/domains/check";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -91,6 +92,14 @@ export async function POST(req: NextRequest) {
       console.error("[BILLING] Error en procesamiento de suscripciones durante tick:", subErr);
     }
 
+    // NIV2-5: Verificación de dominios/DNS (puerta 24h) y alertas de vencimiento
+    let domainsResult: any = null;
+    try {
+      domainsResult = await executeDomainChecks(supabase);
+    } catch (domErr) {
+      console.error("[DOMAINS] Error en chequeo de dominios durante tick:", domErr);
+    }
+
     return NextResponse.json({
       success: true,
       timestamp: new Date().toISOString(),
@@ -100,6 +109,7 @@ export async function POST(req: NextRequest) {
       credentials_check: credentialsCheck,
       scheduled_backups: scheduledBackups,
       subscriptions: subscriptionsResult,
+      domains: domainsResult,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Internal Worker Error" }, { status: 500 });
