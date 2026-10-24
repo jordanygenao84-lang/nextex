@@ -24,6 +24,7 @@ import {
   Briefcase,
   MessageSquare,
   Activity,
+  Receipt,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Logo } from "@/components/ui/Logo";
@@ -121,6 +122,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       href: "/admin/proteccion",
       icon: ShieldCheck,
       badge: "Bóveda",
+    },
+    {
+      name: "Facturación",
+      href: "/admin/facturacion",
+      icon: Receipt,
+      badge: "Cobros",
     },
   ];
 
