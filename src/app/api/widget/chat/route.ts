@@ -4,6 +4,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { defaultAIGateway } from "@/lib/omniengine/gateway/gateway";
 import { getCachedResponse, setCachedResponse } from "@/lib/efficiency/cache";
 import { logTokenUsage } from "@/lib/efficiency/usage";
+import { isClientServiceActive } from "@/lib/billing/subscriptions";
 
 export const dynamic = "force-dynamic";
 
@@ -137,6 +138,19 @@ export async function POST(req: NextRequest) {
     const workspaceId = widget.client.workspace_id;
     const businessName = widget.client.display_name || "la empresa";
     const allowedSources = Array.isArray(widget.allowed_sources) ? widget.allowed_sources : ["web"];
+
+    // NIV2-2: Corte de servicio si la suscripción del cliente está 'suspended' o 'cancelled'
+    // (Cliente sin suscripción = servicio activo siempre; sin logs por mensaje bloqueado)
+    const isServiceActive = await isClientServiceActive(clientId, serviceClient);
+    if (!isServiceActive) {
+      return NextResponse.json(
+        {
+          reply: "El servicio de chat no está disponible en este momento.",
+          session_id: fallbackSessionId,
+        },
+        { status: 200, headers: corsHeaders }
+      );
+    }
 
     // 4. Buscar o crear la conversación (CONV-2)
     let conversation: any = null;

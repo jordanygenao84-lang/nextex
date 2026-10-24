@@ -14,6 +14,7 @@ import { AgentError, AgentErrorCodes } from "@/lib/agents/types/errors";
 import { JobRun } from "../types";
 import { tracer } from "@/lib/observability/tracer";
 import { ObservabilityContext } from "@/lib/observability/context";
+import { isClientServiceActive } from "@/lib/billing/subscriptions";
 
 export interface WorkerTickResult {
   processed: boolean;
@@ -93,6 +94,59 @@ export class EpisodicWorker {
       },
       async () => {
         try {
+          // 2.5 NIV2-2: CORTE DE SERVICIO POR SUSPENSIÓN
+          // Resolver cliente asociado al workspace de la corrida (clients.workspace_id = run.workspace_id).
+          // Si el workspace no tiene cliente asociado o no tiene suscripción, no se corta nada.
+          let boundClientId: string | null = null;
+          try {
+            const clientsTable = supabase.from("clients") as any;
+            if (clientsTable && typeof clientsTable.select === "function") {
+              const sel = clientsTable.select("id");
+              if (sel && typeof sel.eq === "function") {
+                const eqQuery = sel.eq("workspace_id", run.workspace_id);
+                if (eqQuery && typeof eqQuery.maybeSingle === "function") {
+                  const { data: clientRow } = await eqQuery.maybeSingle();
+                  boundClientId = clientRow?.id || null;
+                }
+              }
+            }
+          } catch {
+            boundClientId = null;
+          }
+
+          if (boundClientId) {
+            const serviceActive = await isClientServiceActive(boundClientId, supabase);
+            if (!serviceActive) {
+              leaseManager.stopHeartbeat();
+              const nowIso = new Date().toISOString();
+              await (supabase.from("job_runs") as any)
+                .update({
+                  status: "cancelled",
+                  error_code: "service_suspended",
+                  error_message: "service_suspended",
+                  output: "service_suspended",
+                  worker_id: null,
+                  lease_expires_at: null,
+                  completed_at: nowIso,
+                  updated_at: nowIso,
+                })
+                .eq("id", run.id);
+
+              await jobSpan.end({
+                status: "completed",
+                attributes: { outcome: "cancelled", reason: "service_suspended" },
+              });
+
+              return {
+                processed: true,
+                workerId,
+                runId: run.id,
+                status: "cancelled",
+                message: "service_suspended",
+              };
+            }
+          }
+
           // 3. JIT CURRENT RESOURCE AUTHORITY VALIDATION
           // Principio: No depende de created_by; evalúa estado del Workspace y del Agente
           const { data: agentData, error: agErr } = await (supabase.from("agents") as any)
