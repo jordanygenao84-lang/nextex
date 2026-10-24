@@ -27,6 +27,7 @@ import {
   SendHorizontal,
   Bell,
   CheckCheck,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
@@ -98,6 +99,35 @@ export default function VigilanciaPage() {
   const [expandedEvidence, setExpandedEvidence] = useState<Record<string, boolean>>({});
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+
+  // Modal de detalle de incidente (incident_log)
+  const [selectedIncident, setSelectedIncident] = useState<IncidentItem | null>(null);
+  const [copiedIncidentJson, setCopiedIncidentJson] = useState(false);
+
+  useEffect(() => {
+    if (!selectedIncident) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSelectedIncident(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedIncident]);
+
+  const handleCopyIncidentJson = async (detail: any) => {
+    try {
+      const formatted =
+        typeof detail === "object" && detail !== null
+          ? JSON.stringify(detail, null, 2)
+          : String(detail ?? "");
+      await navigator.clipboard.writeText(formatted);
+      setCopiedIncidentJson(true);
+      setTimeout(() => setCopiedIncidentJson(false), 2000);
+    } catch {
+      alert("No se pudo copiar el JSON al portapapeles.");
+    }
+  };
 
   const fetchVigiaData = useCallback(async () => {
     try {
@@ -806,7 +836,14 @@ export default function VigilanciaPage() {
                           : String(inc.detail || "");
 
                       return (
-                        <tr key={inc.id} className="hover:bg-texter-surface-hover/50 transition-colors">
+                        <tr
+                          key={inc.id}
+                          onClick={() => {
+                            setSelectedIncident(inc);
+                            setCopiedIncidentJson(false);
+                          }}
+                          className="hover:bg-texter-surface-hover/50 transition-colors cursor-pointer"
+                        >
                           <td className="py-3 px-4 text-texter-text-muted whitespace-nowrap text-[11px]">
                             {formatDateTime(inc.created_at)}
                           </td>
@@ -834,6 +871,77 @@ export default function VigilanciaPage() {
           </div>
         </div>
       </div>
+
+      {/* Modal de Detalle Completo de Incidente */}
+      {selectedIncident && (
+        <div
+          onClick={() => setSelectedIncident(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-2xl rounded-2xl bg-texter-surface border border-texter-border shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+          >
+            <div className="p-4 sm:p-5 border-b border-texter-border flex items-start justify-between gap-3 bg-texter-surface-subtle/50">
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap font-mono text-xs">
+                  <span className="px-2 py-0.5 rounded border text-[10px] bg-slate-800 text-slate-300 border-slate-700">
+                    {selectedIncident.kind}
+                  </span>
+                  <strong className="text-white font-sans text-xs">
+                    {selectedIncident.client_name}
+                  </strong>
+                  <span className="text-texter-text-muted text-[11px]">
+                    • {formatDateTime(selectedIncident.created_at)}
+                  </span>
+                </div>
+                <h3 className="text-sm sm:text-base font-bold text-white tracking-tight break-words">
+                  {selectedIncident.title}
+                </h3>
+              </div>
+
+              <button
+                onClick={() => setSelectedIncident(null)}
+                className="p-1.5 text-texter-text-muted hover:text-white rounded-lg hover:bg-texter-surface-hover transition-colors shrink-0"
+                aria-label="Cerrar modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-5 space-y-3 overflow-y-auto flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-texter-text-muted">
+                  Detalle completo (JSON)
+                </span>
+                <button
+                  onClick={() => handleCopyIncidentJson(selectedIncident.detail)}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1.5 transition-all",
+                    copiedIncidentJson
+                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                      : "bg-texter-surface-subtle hover:bg-texter-surface-hover text-texter-text-secondary hover:text-white border-texter-border"
+                  )}
+                >
+                  {copiedIncidentJson ? (
+                    <Check className="w-3 h-3 text-emerald-400" />
+                  ) : (
+                    <Copy className="w-3 h-3" />
+                  )}
+                  <span>{copiedIncidentJson ? "¡Copiado!" : "Copiar"}</span>
+                </button>
+              </div>
+
+              <pre className="p-4 rounded-xl bg-black/60 border border-texter-border/60 text-emerald-300 text-xs font-mono overflow-auto max-h-96 whitespace-pre-wrap break-words scrollbar-thin">
+                {typeof selectedIncident.detail === "object" &&
+                selectedIncident.detail !== null
+                  ? JSON.stringify(selectedIncident.detail, null, 2)
+                  : String(selectedIncident.detail ?? "—")}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardShell>
   );
 }
