@@ -67,7 +67,7 @@ export async function PATCH(
       })
       .eq("id", invoiceId)
       .eq("client_id", clientId)
-      .select("id, client_id, period, tokens_total, amount, currency, status, created_at, updated_at")
+      .select("id, client_id, subscription_id, kind, period, tokens_total, amount, currency, status, created_at, updated_at")
       .maybeSingle();
 
     if (updateErr) {

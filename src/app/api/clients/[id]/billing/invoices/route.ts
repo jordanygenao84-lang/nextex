@@ -43,7 +43,7 @@ export async function GET(
 
     // 2. Consultar facturas ordenadas por período desc
     const { data: invoices, error: invErr } = await (serviceClient.from("client_invoices") as any)
-      .select("id, client_id, period, tokens_total, amount, currency, status, created_at, updated_at")
+      .select("id, client_id, subscription_id, kind, period, tokens_total, amount, currency, status, created_at, updated_at")
       .eq("client_id", clientId)
       .order("period", { ascending: false });
 
@@ -108,11 +108,12 @@ export async function POST(
     const periodStr = `${year}-${monthNum}`;
     const startOfMonthIso = new Date(year, now.getMonth(), 1).toISOString();
 
-    // 3. Verificar si ya existe una factura para este cliente y período
+    // 3. Verificar si ya existe una factura de consumo para este cliente y período
     const { data: existingInvoice } = await (serviceClient.from("client_invoices") as any)
       .select("id")
       .eq("client_id", clientId)
       .eq("period", periodStr)
+      .eq("kind", "consumption")
       .maybeSingle();
 
     if (existingInvoice) {
@@ -135,17 +136,18 @@ export async function POST(
       startOfMonthIso
     );
 
-    // 5. Crear la factura en client_invoices con status 'pending'
+    // 5. Crear la factura en client_invoices con status 'pending' y kind 'consumption'
     const { data: newInvoice, error: insertErr } = await (serviceClient.from("client_invoices") as any)
       .insert({
         client_id: clientId,
+        kind: "consumption",
         period: periodStr,
         tokens_total: billingSummary.tokens_total,
         amount: billingSummary.amount_estimate,
         currency: "USD",
         status: "pending",
       })
-      .select("id, client_id, period, tokens_total, amount, currency, status, created_at, updated_at")
+      .select("id, client_id, subscription_id, kind, period, tokens_total, amount, currency, status, created_at, updated_at")
       .single();
 
     if (insertErr || !newInvoice) {

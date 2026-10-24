@@ -5,6 +5,7 @@ import { executeVigiaHealthChecks } from "@/lib/vigia/health";
 import { executeVigiaSecurityScans } from "@/lib/vigia/scan";
 import { checkCredentialExpirations } from "@/lib/protection/credentials";
 import { executeScheduledBackups } from "@/lib/protection/backups";
+import { processSubscriptions } from "@/lib/billing/subscriptions";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -82,6 +83,14 @@ export async function POST(req: NextRequest) {
       console.error("[PROTECCIÓN] Error en respaldos programados durante tick:", bErr);
     }
 
+    // NIV2-1: Motor de suscripciones y cobro recurrente (facturación, mora, suspensión, reactivación)
+    let subscriptionsResult: any = null;
+    try {
+      subscriptionsResult = await processSubscriptions(supabase);
+    } catch (subErr) {
+      console.error("[BILLING] Error en procesamiento de suscripciones durante tick:", subErr);
+    }
+
     return NextResponse.json({
       success: true,
       timestamp: new Date().toISOString(),
@@ -90,6 +99,7 @@ export async function POST(req: NextRequest) {
       vigia_scans: vigiaScans,
       credentials_check: credentialsCheck,
       scheduled_backups: scheduledBackups,
+      subscriptions: subscriptionsResult,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Internal Worker Error" }, { status: 500 });
