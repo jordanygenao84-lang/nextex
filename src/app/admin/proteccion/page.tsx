@@ -1064,12 +1064,16 @@ export default function ProteccionPage() {
                           <div className="flex items-center gap-2 pt-1 text-[11px] font-mono text-texter-text-dim flex-wrap">
                             {cfg.supabase_url && (
                               <span className="px-1.5 py-0.5 rounded bg-black/40 border border-texter-border/50">
-                                DB: {cfg.supabase_url.replace(/^https?:\/\//, "")}
+                                Supabase: {cfg.supabase_url.replace(/^https?:\/\//, "")}
                               </span>
                             )}
-                            {cfg.github_repo && (
+                            {cfg.github_repo ? (
                               <span className="px-1.5 py-0.5 rounded bg-black/40 border border-texter-border/50">
                                 Repo: {cfg.github_repo}@{cfg.github_branch || "main"}
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded bg-black/40 border border-texter-border/50 text-texter-text-muted">
+                                Sin repo (solo db.json)
                               </span>
                             )}
                           </div>
@@ -1410,13 +1414,13 @@ export default function ProteccionPage() {
               {/* Supabase URL */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-white block">
-                  URL del Proyecto Supabase
+                  Proyecto / URL de Supabase
                 </label>
                 <input
-                  type="url"
+                  type="text"
                   value={configSupabaseUrl}
                   onChange={(e) => setConfigSupabaseUrl(e.target.value)}
-                  placeholder="https://xxxxxxxx.supabase.co"
+                  placeholder="https://xxxxxxxx.supabase.co o nombre del proyecto (ej. capitalia)"
                   className="w-full px-3 py-2 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white placeholder-texter-text-dim focus:outline-none focus:border-texter-indigo transition-colors"
                 />
               </div>
