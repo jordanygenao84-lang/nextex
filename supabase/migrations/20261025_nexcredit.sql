@@ -97,7 +97,7 @@ BEGIN
     )
     VALUES (
         v_client_id,
-        'capitalia',
+        'https://kctmkhilflewakjcdnvw.supabase.co',
         NULL,
         'main',
         NULL,
@@ -106,7 +106,7 @@ BEGIN
         now()
     )
     ON CONFLICT (client_id) DO UPDATE
-    SET supabase_url = COALESCE(NULLIF(TRIM(public.backup_configs.supabase_url), ''), 'capitalia'),
+    SET supabase_url = 'https://kctmkhilflewakjcdnvw.supabase.co',
         github_repo = NULL,
         github_token_encrypted = NULL,
         enabled = true,
