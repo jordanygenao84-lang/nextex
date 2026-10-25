@@ -88,6 +88,18 @@ interface ClientAiConfig {
   monthly_token_cap: number | null;
 }
 
+interface KnowledgeEntryItem {
+  id: string;
+  client_id: string;
+  title: string | null;
+  content: string;
+  tags: string[];
+  source: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 
 interface BlueprintCredentialSpec {
   key: string;
@@ -431,6 +443,23 @@ export default function ClientsPage() {
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [aiActionError, setAiActionError] = useState<string | null>(null);
 
+  // Base de Conocimiento (NIV3-1)
+  const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntryItem[]>([]);
+  const [isLoadingKnowledge, setIsLoadingKnowledge] = useState(false);
+  const [knowledgeError, setKnowledgeError] = useState<string | null>(null);
+  const [isKnowledgeModalOpen, setIsKnowledgeModalOpen] = useState(false);
+  const [editingKnowledge, setEditingKnowledge] = useState<KnowledgeEntryItem | null>(null);
+  const [kbTitle, setKbTitle] = useState("");
+  const [kbContent, setKbContent] = useState("");
+  const [kbTagsStr, setKbTagsStr] = useState("");
+  const [kbSource, setKbSource] = useState("");
+  const [kbActive, setKbActive] = useState(true);
+  const [isSavingKnowledge, setIsSavingKnowledge] = useState(false);
+  const [kbModalError, setKbModalError] = useState<string | null>(null);
+  const [togglingKnowledgeId, setTogglingKnowledgeId] = useState<string | null>(null);
+  const [deletingKnowledge, setDeletingKnowledge] = useState<KnowledgeEntryItem | null>(null);
+  const [isDeletingKnowledge, setIsDeletingKnowledge] = useState(false);
+
   // Modal Detalle
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [clientDetail, setClientDetail] = useState<ClientDetailData | null>(null);
@@ -500,6 +529,170 @@ export default function ClientsPage() {
     }
   };
 
+
+  const loadClientKnowledge = useCallback(async (clientId: string) => {
+    setIsLoadingKnowledge(true);
+    setKnowledgeError(null);
+    try {
+      const res = await fetch(`/api/admin/knowledge?client_id=${encodeURIComponent(clientId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setKnowledgeEntries(Array.isArray(data.entries) ? data.entries : []);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setKnowledgeError(data?.error?.message || "No se pudo cargar la base de conocimiento.");
+      }
+    } catch (err: any) {
+      setKnowledgeError(err?.message || "Error al consultar conocimiento.");
+    } finally {
+      setIsLoadingKnowledge(false);
+    }
+  }, []);
+
+  const handleOpenCreateKnowledge = () => {
+    setEditingKnowledge(null);
+    setKbTitle("");
+    setKbContent("");
+    setKbTagsStr("");
+    setKbSource("");
+    setKbActive(true);
+    setKbModalError(null);
+    setIsKnowledgeModalOpen(true);
+  };
+
+  const handleOpenEditKnowledge = (entry: KnowledgeEntryItem) => {
+    setEditingKnowledge(entry);
+    setKbTitle(entry.title || "");
+    setKbContent(entry.content || "");
+    setKbTagsStr(Array.isArray(entry.tags) ? entry.tags.join(", ") : "");
+    setKbSource(entry.source || "");
+    setKbActive(Boolean(entry.active));
+    setKbModalError(null);
+    setIsKnowledgeModalOpen(true);
+  };
+
+  const handleSaveKnowledge = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClient) return;
+    if (!kbContent.trim()) {
+      setKbModalError("El contenido es obligatorio.");
+      return;
+    }
+
+    setIsSavingKnowledge(true);
+    setKbModalError(null);
+    try {
+      const tags = kbTagsStr
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+
+      const isEdit = Boolean(editingKnowledge);
+      const url = `/api/admin/knowledge?client_id=${encodeURIComponent(selectedClient.id)}`;
+      const res = await fetch(url, {
+        method: isEdit ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingKnowledge?.id,
+          client_id: selectedClient.id,
+          title: kbTitle.trim() || null,
+          content: kbContent.trim(),
+          tags,
+          source: kbSource.trim() || null,
+          active: kbActive,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setKbModalError(data?.error?.message || "No se pudo guardar la entrada de conocimiento.");
+        return;
+      }
+
+      await loadClientKnowledge(selectedClient.id);
+      setIsKnowledgeModalOpen(false);
+      setEditingKnowledge(null);
+      setFeedback({
+        type: "success",
+        message: isEdit
+          ? "Entrada de conocimiento actualizada correctamente."
+          : "Entrada de conocimiento creada exitosamente.",
+      });
+    } catch (err: any) {
+      setKbModalError(err?.message || "Error inesperado al guardar la entrada.");
+    } finally {
+      setIsSavingKnowledge(false);
+    }
+  };
+
+  const handleToggleKnowledgeActive = async (entry: KnowledgeEntryItem) => {
+    if (!selectedClient) return;
+    setTogglingKnowledgeId(entry.id);
+    try {
+      const nextActive = !entry.active;
+      const res = await fetch(`/api/admin/knowledge?client_id=${encodeURIComponent(selectedClient.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: entry.id,
+          active: nextActive,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setFeedback({
+          type: "error",
+          message: data?.error?.message || "No se pudo cambiar el estado de la entrada.",
+        });
+        return;
+      }
+      setKnowledgeEntries((prev) =>
+        prev.map((item) => (item.id === entry.id ? { ...item, active: nextActive } : item))
+      );
+      setFeedback({
+        type: "success",
+        message: nextActive ? "Entrada activada." : "Entrada desactivada.",
+      });
+    } catch (err: any) {
+      setFeedback({
+        type: "error",
+        message: err?.message || "Error al cambiar estado de la entrada.",
+      });
+    } finally {
+      setTogglingKnowledgeId(null);
+    }
+  };
+
+  const handleConfirmDeleteKnowledge = async () => {
+    if (!selectedClient || !deletingKnowledge) return;
+    setIsDeletingKnowledge(true);
+    try {
+      const res = await fetch(`/api/admin/knowledge?id=${encodeURIComponent(deletingKnowledge.id)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setFeedback({
+          type: "error",
+          message: data?.error?.message || "No se pudo eliminar la entrada.",
+        });
+        return;
+      }
+      setKnowledgeEntries((prev) => prev.filter((item) => item.id !== deletingKnowledge.id));
+      setFeedback({
+        type: "success",
+        message: "Entrada de conocimiento eliminada correctamente.",
+      });
+      setDeletingKnowledge(null);
+    } catch (err: any) {
+      setFeedback({
+        type: "error",
+        message: err?.message || "Error al eliminar entrada.",
+      });
+    } finally {
+      setIsDeletingKnowledge(false);
+    }
+  };
 
   const loadClientAiData = useCallback(async (clientId: string) => {
     setIsLoadingAi(true);
@@ -1435,6 +1628,7 @@ export default function ClientsPage() {
     setSelectedClient(client);
     loadClientDetail(client.id);
     loadClientAiData(client.id);
+    loadClientKnowledge(client.id);
     loadBlueprints();
     loadClientIntegrations(client.id);
     loadSiteKeys(client.id);
@@ -1978,7 +2172,10 @@ export default function ClientsPage() {
                 type="button"
                 onClick={() => {
                   setActiveDetailTab("ai");
-                  if (selectedClient) loadClientAiData(selectedClient.id);
+                  if (selectedClient) {
+                    loadClientAiData(selectedClient.id);
+                    loadClientKnowledge(selectedClient.id);
+                  }
                 }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
                   activeDetailTab === "ai"
@@ -2420,6 +2617,146 @@ export default function ClientsPage() {
                     </Button>
                   </div>
                 </form>
+
+                {/* 4. Conocimiento del Negocio (NIV3-1) */}
+                <div className="p-4 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-3">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-texter-border pb-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <MessageSquare className="w-4 h-4 text-texter-cyan" />
+                        Conocimiento
+                        <Badge variant="cyan" size="sm" className="text-[10px] font-mono">
+                          {knowledgeEntries.filter((e) => e.active).length} activas / {knowledgeEntries.length}
+                        </Badge>
+                      </h4>
+                      <p className="text-xs text-texter-text-muted">
+                        Entradas de conocimiento del negocio que se inyectan automáticamente al chat del widget cuando coinciden con la consulta del visitante.
+                      </p>
+                    </div>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      type="button"
+                      onClick={handleOpenCreateKnowledge}
+                      className="flex items-center gap-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Nueva entrada</span>
+                    </Button>
+                  </div>
+
+                  {knowledgeError && (
+                    <div className="p-2.5 rounded-lg bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-texter-rose shrink-0" />
+                      <span>{knowledgeError}</span>
+                    </div>
+                  )}
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="text-texter-text-muted uppercase font-mono border-b border-texter-border">
+                        <tr>
+                          <th className="py-2.5 px-3">Título</th>
+                          <th className="py-2.5 px-3">Contenido</th>
+                          <th className="py-2.5 px-3">Etiquetas / Fuente</th>
+                          <th className="py-2.5 px-3">Estado</th>
+                          <th className="py-2.5 px-3 text-right">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-texter-border/50">
+                        {knowledgeEntries.map((entry) => (
+                          <tr key={entry.id} className="hover:bg-texter-surface-hover/50 transition-colors">
+                            <td className="py-2.5 px-3 font-semibold text-white align-top whitespace-nowrap">
+                              {entry.title || <span className="text-texter-text-dim italic">Sin título</span>}
+                            </td>
+                            <td className="py-2.5 px-3 text-texter-text-secondary align-top max-w-md">
+                              <p className="line-clamp-2 whitespace-pre-wrap break-words">{entry.content}</p>
+                            </td>
+                            <td className="py-2.5 px-3 align-top">
+                              <div className="flex flex-wrap gap-1">
+                                {Array.isArray(entry.tags) &&
+                                  entry.tags.map((tag, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="px-1.5 py-0.5 rounded bg-texter-surface border border-texter-border text-[10px] font-mono text-texter-cyan"
+                                    >
+                                      #{tag}
+                                    </span>
+                                  ))}
+                                {entry.source && (
+                                  <span className="text-[10px] text-texter-text-dim font-mono">
+                                    {entry.source}
+                                  </span>
+                                )}
+                                {(!entry.tags || entry.tags.length === 0) && !entry.source && (
+                                  <span className="text-texter-text-dim text-[11px]">—</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 align-top whitespace-nowrap">
+                              {entry.active ? (
+                                <Badge variant="success" size="sm" dot>
+                                  Activa
+                                </Badge>
+                              ) : (
+                                <Badge variant="default" size="sm" dot>
+                                  Inactiva
+                                </Badge>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-right align-top whitespace-nowrap">
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleKnowledgeActive(entry)}
+                                  disabled={togglingKnowledgeId === entry.id}
+                                  className={`px-2 py-1 rounded text-[11px] font-medium border transition-colors ${
+                                    entry.active
+                                      ? "border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
+                                      : "border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+                                  }`}
+                                  title={entry.active ? "Desactivar entrada" : "Activar entrada"}
+                                >
+                                  {entry.active ? "Desactivar" : "Activar"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditKnowledge(entry)}
+                                  className="p-1.5 text-texter-text-dim hover:text-texter-cyan transition-colors rounded"
+                                  title="Editar entrada"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeletingKnowledge(entry)}
+                                  className="p-1.5 text-texter-text-dim hover:text-rose-400 transition-colors rounded"
+                                  title="Eliminar entrada"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                        {knowledgeEntries.length === 0 && !isLoadingKnowledge && (
+                          <tr>
+                            <td colSpan={5} className="py-6 text-center text-texter-text-dim font-sans">
+                              Este cliente aún no tiene entradas en su base de conocimiento. Haz clic en &quot;Nueva entrada&quot; para agregar horario, envíos o preguntas frecuentes.
+                            </td>
+                          </tr>
+                        )}
+                        {isLoadingKnowledge && (
+                          <tr>
+                            <td colSpan={5} className="py-6 text-center text-texter-text-dim font-sans">
+                              Cargando base de conocimiento...
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -4938,6 +5275,137 @@ export default function ClientsPage() {
                 isLoading={isUpdatingInvoice}
               >
                 {confirmInvoiceAction.nextStatus === "paid" ? "Confirmar Pago" : "Confirmar Cancelación"}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL: CREAR / EDITAR ENTRADA DE CONOCIMIENTO (NIV3-1) */}
+      {isKnowledgeModalOpen && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-lg w-full space-y-4 bg-texter-surface border-texter-cyan/40">
+            <div className="flex items-center justify-between border-b border-texter-border pb-3">
+              <div className="flex items-center gap-2 text-texter-cyan font-bold text-base">
+                <MessageSquare className="w-5 h-5" />
+                <span>
+                  {editingKnowledge ? "Editar Entrada de Conocimiento" : "Nueva Entrada de Conocimiento"}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsKnowledgeModalOpen(false);
+                  setEditingKnowledge(null);
+                }}
+                className="text-texter-text-muted hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {kbModalError && (
+              <div className="p-2.5 rounded-lg bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-texter-rose shrink-0" />
+                <span>{kbModalError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveKnowledge} className="space-y-3.5">
+              <Input
+                label="Título (ej: Horario de atención, Política de envíos)"
+                value={kbTitle}
+                onChange={(e) => setKbTitle(e.target.value)}
+                placeholder="Horario de atención"
+              />
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-texter-text-secondary">
+                  Contenido *
+                </label>
+                <textarea
+                  value={kbContent}
+                  onChange={(e) => setKbContent(e.target.value)}
+                  rows={4}
+                  required
+                  placeholder="Ej: Atendemos de lunes a sábado de 9:00 AM a 7:00 PM. Domingos cerrado."
+                  className="w-full p-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white outline-none focus:border-texter-cyan font-sans"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Input
+                  label="Etiquetas (separadas por coma)"
+                  value={kbTagsStr}
+                  onChange={(e) => setKbTagsStr(e.target.value)}
+                  placeholder="horario, atencion, tienda"
+                />
+
+                <Input
+                  label="Fuente (opcional)"
+                  value={kbSource}
+                  onChange={(e) => setKbSource(e.target.value)}
+                  placeholder="manual, faq, web"
+                />
+              </div>
+
+              <label className="flex items-center gap-2 text-xs text-white cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={kbActive}
+                  onChange={(e) => setKbActive(e.target.checked)}
+                  className="rounded border-texter-border bg-texter-surface-subtle text-texter-cyan focus:ring-texter-cyan"
+                />
+                <span>Entrada activa (disponible para el widget de chat)</span>
+              </label>
+
+              <div className="pt-3 flex justify-end gap-2 border-t border-texter-border">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={() => {
+                    setIsKnowledgeModalOpen(false);
+                    setEditingKnowledge(null);
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button variant="primary" size="sm" type="submit" isLoading={isSavingKnowledge}>
+                  {editingKnowledge ? "Guardar Cambios" : "Crear Entrada"}
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR ELIMINAR ENTRADA DE CONOCIMIENTO */}
+      {deletingKnowledge && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-texter-rose/40">
+            <div className="flex items-center gap-2.5 text-texter-rose font-bold text-base">
+              <Trash2 className="w-5 h-5" />
+              Eliminar Entrada de Conocimiento
+            </div>
+            <p className="text-xs text-texter-text-muted leading-relaxed">
+              ¿Estás seguro de que deseas eliminar permanentemente la entrada{" "}
+              <strong className="text-white">
+                {deletingKnowledge.title || deletingKnowledge.content.slice(0, 40)}
+              </strong>
+              ? El asistente del widget dejará de utilizar esta información.
+            </p>
+            <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+              <Button variant="ghost" size="sm" onClick={() => setDeletingKnowledge(null)}>
+                Cancelar
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={handleConfirmDeleteKnowledge}
+                isLoading={isDeletingKnowledge}
+              >
+                Eliminar
               </Button>
             </div>
           </Card>

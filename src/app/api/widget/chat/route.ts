@@ -206,8 +206,85 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 6.5 NIV3-1: Buscar en knowledge_entries activas del cliente por coincidencia de términos (ilike, top 5)
+    let matchedKnowledge: Array<{ id: string; title: string | null; content: string; updated_at?: string }> = [];
+    try {
+      const stopwords = new Set([
+        "el", "la", "los", "las", "un", "una", "unos", "unas", "de", "del", "al", "en",
+        "por", "para", "con", "sin", "sobre", "que", "qué", "cual", "cuál", "cuales",
+        "cuáles", "como", "cómo", "donde", "dónde", "cuando", "cuándo", "quien", "quién",
+        "es", "son", "esta", "está", "estan", "están", "hay", "tiene", "tienen", "hacer",
+        "hacen", "puedo", "puede", "pueden", "hola", "buenos", "buenas", "dias", "días",
+        "tardes", "noches", "gracias", "favor", "me", "te", "se", "nos", "mi", "tu", "su",
+        "sus", "este", "esto", "ese", "esa", "eso", "y", "o", "u", "a", "ante", "bajo",
+        "contra", "desde", "entre", "hacia", "hasta", "segun", "según", "tras", "algo",
+      ]);
+
+      const rawTokens = cleanMessage
+        .toLowerCase()
+        .replace(/[¿?¡!.,;:()"'«»[\]{}\\/|+*=<>~@#$^&%_,-]+/g, " ")
+        .split(/\s+/)
+        .map((t) => t.trim())
+        .filter(Boolean);
+
+      let candidateTokens = rawTokens.filter((t) => t.length >= 3 && !stopwords.has(t));
+      if (candidateTokens.length === 0) {
+        candidateTokens = rawTokens.filter((t) => t.length >= 2);
+      }
+
+      const termSet = new Set<string>();
+      for (const token of candidateTokens.slice(0, 8)) {
+        termSet.add(token);
+        const unaccented = token.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        if (unaccented.length >= 3) {
+          termSet.add(unaccented);
+        }
+        if (token.endsWith("s") && token.length >= 4) {
+          termSet.add(token.slice(0, -1));
+          if (unaccented.length >= 4) {
+            termSet.add(unaccented.slice(0, -1));
+          }
+        }
+        // Comodín '_' en vocales para coincidencia insensible a tildes en PostgreSQL ILIKE
+        const baseForWildcard = unaccented.endsWith("s") && unaccented.length >= 5
+          ? unaccented.slice(0, -1)
+          : unaccented;
+        if (baseForWildcard.length >= 4) {
+          const wildcarded = baseForWildcard.replace(/[aeiou]/g, "_");
+          if (wildcarded.replace(/_/g, "").length >= 2) {
+            termSet.add(wildcarded);
+          }
+        }
+      }
+
+      const terms = Array.from(termSet).slice(0, 12);
+      if (terms.length > 0) {
+        const orConditions = terms
+          .map((t) => `title.ilike.%${t}%,content.ilike.%${t}%`)
+          .join(",");
+
+        const { data: kbRows } = await (serviceClient.from("knowledge_entries") as any)
+          .select("id, title, content, updated_at")
+          .eq("client_id", clientId)
+          .eq("active", true)
+          .or(orConditions)
+          .limit(5);
+
+        if (Array.isArray(kbRows) && kbRows.length > 0) {
+          matchedKnowledge = kbRows;
+        }
+      }
+    } catch {
+      // Si falla o la tabla aún no existe, continuar sin interrumpir el chat
+    }
+
+    const cacheKeyInput =
+      matchedKnowledge.length > 0
+        ? `${cleanMessage}__kb:${matchedKnowledge.map((k) => `${k.id}:${k.updated_at || ""}`).join("|")}`
+        : cleanMessage;
+
     // 7. EFIC-2: Verificar caché de respuestas ANTES de llamar al agente
-    const cachedHit = await getCachedResponse(workspaceId, cleanMessage);
+    const cachedHit = await getCachedResponse(workspaceId, cacheKeyInput);
     if (cachedHit) {
       // Guardar respuesta del bot en la conversación para mantener el historial intacto
       if (conversation?.id) {
@@ -243,10 +320,23 @@ export async function POST(req: NextRequest) {
 
     const executionUserId = wsRecord?.owner_id || "00000000-0000-0000-0000-000000000000";
 
-    const systemPrompt = `Eres el asistente virtual oficial de "${businessName}".
+    const baseSystemPrompt = `Eres el asistente virtual oficial de "${businessName}".
 Tu objetivo es responder de manera atenta, clara, profesional y concisa a los visitantes en su sitio web.
 Fuentes e integraciones autorizadas para este canal: ${allowedSources.join(", ")}.
 Responde en el mismo idioma del visitante (por defecto español). Nunca inventes información confidencial y mantén un tono cortés.`;
+
+    const knowledgeSection =
+      matchedKnowledge.length > 0
+        ? `\n\nConocimiento del negocio:\n${matchedKnowledge
+            .map((entry) =>
+              entry.title && String(entry.title).trim()
+                ? `- ${String(entry.title).trim()}: ${String(entry.content).trim()}`
+                : `- ${String(entry.content).trim()}`
+            )
+            .join("\n")}`
+        : "";
+
+    const systemPrompt = `${baseSystemPrompt}${knowledgeSection}`;
 
     const modelName = "gemini-1.5-flash";
 
@@ -285,7 +375,7 @@ Responde en el mismo idioma del visitante (por defecto español). Nunca inventes
       }
 
       // EFIC-2: Guardar respuesta en caché y registrar consumo de tokens
-      await setCachedResponse(workspaceId, cleanMessage, aiResponse.content, modelName);
+      await setCachedResponse(workspaceId, cacheKeyInput, aiResponse.content, modelName);
 
       const inputTokens = aiResponse.usage?.inputTokens || Math.ceil(cleanMessage.length / 4);
       const outputTokens = aiResponse.usage?.outputTokens || Math.ceil(aiResponse.content.length / 4);
