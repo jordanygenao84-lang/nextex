@@ -143,6 +143,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Globe,
       badge: "DNS",
     },
+    {
+      name: "Soporte",
+      href: "/admin/soporte",
+      icon: MessageSquare,
+      badge: "Tickets",
+    },
   ];
 
   const secondaryNav = [
