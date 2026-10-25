@@ -100,6 +100,18 @@ interface KnowledgeEntryItem {
   updated_at: string;
 }
 
+interface DeploymentItem {
+  id: string;
+  client_id: string;
+  commit_hash: string;
+  commit_message: string | null;
+  deployed_at: string;
+  deployed_by: string | null;
+  status: "ok" | "failed" | "rolled_back";
+  notes: string | null;
+  previous_commit: string | null;
+}
+
 
 interface BlueprintCredentialSpec {
   key: string;
@@ -286,7 +298,7 @@ export default function ClientsPage() {
 
 
   // Estados Pestaña IA (IA-3)
-  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "ai" | "integrations" | "connections" | "widget" | "users" | "permissions" | "consumption" | "billing">("general");
+  const [activeDetailTab, setActiveDetailTab] = useState<"general" | "ai" | "integrations" | "connections" | "widget" | "users" | "permissions" | "consumption" | "billing" | "deployments">("general");
 
   // Estados Pestaña Facturación (BILL-3)
   const [billingEstimate, setBillingEstimate] = useState<ClientBillingEstimate | null>(null);
@@ -459,6 +471,22 @@ export default function ClientsPage() {
   const [togglingKnowledgeId, setTogglingKnowledgeId] = useState<string | null>(null);
   const [deletingKnowledge, setDeletingKnowledge] = useState<KnowledgeEntryItem | null>(null);
   const [isDeletingKnowledge, setIsDeletingKnowledge] = useState(false);
+
+  // Control de Despliegues y Rollback Guiado (NIV3-2)
+  const [deployments, setDeployments] = useState<DeploymentItem[]>([]);
+  const [isLoadingDeployments, setIsLoadingDeployments] = useState(false);
+  const [deploymentsError, setDeploymentsError] = useState<string | null>(null);
+  const [isCreateDeploymentOpen, setIsCreateDeploymentOpen] = useState(false);
+  const [depCommitHash, setDepCommitHash] = useState("");
+  const [depCommitMessage, setDepCommitMessage] = useState("");
+  const [depStatus, setDepStatus] = useState<"ok" | "failed" | "rolled_back">("ok");
+  const [depNotes, setDepNotes] = useState("");
+  const [isCreatingDeployment, setIsCreatingDeployment] = useState(false);
+  const [depModalError, setDepModalError] = useState<string | null>(null);
+  const [rollbackGuideDeployment, setRollbackGuideDeployment] = useState<DeploymentItem | null>(null);
+  const [rollbackNotes, setRollbackNotes] = useState("");
+  const [isMarkingRolledBack, setIsMarkingRolledBack] = useState(false);
+  const [rollbackModalError, setRollbackModalError] = useState<string | null>(null);
 
   // Modal Detalle
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
@@ -691,6 +719,121 @@ export default function ClientsPage() {
       });
     } finally {
       setIsDeletingKnowledge(false);
+    }
+  };
+
+  const loadClientDeployments = useCallback(async (clientId: string) => {
+    setIsLoadingDeployments(true);
+    setDeploymentsError(null);
+    try {
+      const res = await fetch(`/api/admin/deployments?client_id=${encodeURIComponent(clientId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDeployments(Array.isArray(data.deployments) ? data.deployments : []);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setDeploymentsError(data?.error?.message || "No se pudieron cargar los despliegues.");
+      }
+    } catch (err: any) {
+      setDeploymentsError(err?.message || "Error al consultar despliegues.");
+    } finally {
+      setIsLoadingDeployments(false);
+    }
+  }, []);
+
+  const handleOpenCreateDeployment = () => {
+    setDepCommitHash("");
+    setDepCommitMessage("");
+    setDepStatus("ok");
+    setDepNotes("");
+    setDepModalError(null);
+    setIsCreateDeploymentOpen(true);
+  };
+
+  const handleCreateDeployment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClient) return;
+    if (!depCommitHash.trim()) {
+      setDepModalError("El hash del commit es obligatorio.");
+      return;
+    }
+
+    setIsCreatingDeployment(true);
+    setDepModalError(null);
+    try {
+      const res = await fetch(`/api/admin/deployments?client_id=${encodeURIComponent(selectedClient.id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: selectedClient.id,
+          commit_hash: depCommitHash.trim(),
+          commit_message: depCommitMessage.trim() || null,
+          status: depStatus,
+          notes: depNotes.trim() || null,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDepModalError(data?.error?.message || "No se pudo registrar el despliegue.");
+        return;
+      }
+
+      await loadClientDeployments(selectedClient.id);
+      setIsCreateDeploymentOpen(false);
+      setFeedback({
+        type: "success",
+        message: `Despliegue ${depCommitHash.trim().slice(0, 7)} registrado correctamente.`,
+      });
+    } catch (err: any) {
+      setDepModalError(err?.message || "Error inesperado al registrar despliegue.");
+    } finally {
+      setIsCreatingDeployment(false);
+    }
+  };
+
+  const handleOpenRollbackGuide = (dep: DeploymentItem) => {
+    setRollbackGuideDeployment(dep);
+    setRollbackNotes(dep.notes || "");
+    setRollbackModalError(null);
+  };
+
+  const handleMarkRolledBack = async (dep: DeploymentItem, customNotes?: string) => {
+    if (!selectedClient) return;
+    setIsMarkingRolledBack(true);
+    setRollbackModalError(null);
+    try {
+      const res = await fetch(`/api/admin/deployments?client_id=${encodeURIComponent(selectedClient.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: dep.id,
+          client_id: selectedClient.id,
+          status: "rolled_back",
+          notes: customNotes !== undefined ? customNotes.trim() || null : dep.notes,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const errMsg = data?.error?.message || "No se pudo marcar como rolled_back.";
+        setRollbackModalError(errMsg);
+        setFeedback({ type: "error", message: errMsg });
+        return;
+      }
+
+      await loadClientDeployments(selectedClient.id);
+      setRollbackGuideDeployment(null);
+      setFeedback({
+        type: "success",
+        message: `Despliegue ${dep.commit_hash.slice(0, 7)} marcado como rolled_back.`,
+      });
+    } catch (err: any) {
+      const errMsg = err?.message || "Error al actualizar el despliegue.";
+      setRollbackModalError(errMsg);
+      setFeedback({ type: "error", message: errMsg });
+    } finally {
+      setIsMarkingRolledBack(false);
     }
   };
 
@@ -1629,6 +1772,7 @@ export default function ClientsPage() {
     loadClientDetail(client.id);
     loadClientAiData(client.id);
     loadClientKnowledge(client.id);
+    loadClientDeployments(client.id);
     loadBlueprints();
     loadClientIntegrations(client.id);
     loadSiteKeys(client.id);
@@ -2342,6 +2486,29 @@ export default function ClientsPage() {
                   <span className="w-2 h-2 rounded-full bg-amber-400" title="Factura pendiente" />
                 )}
               </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveDetailTab("deployments");
+                  if (selectedClient) {
+                    loadClientDeployments(selectedClient.id);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  activeDetailTab === "deployments"
+                    ? "bg-indigo-600 text-white shadow-sm font-bold"
+                    : "text-texter-text-muted hover:text-white hover:bg-texter-surface-hover"
+                }`}
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Despliegues</span>
+                {deployments.length > 0 && (
+                  <Badge variant="indigo" size="sm" className="ml-1 text-[10px] px-1.5 py-0 font-mono">
+                    {deployments.length}
+                  </Badge>
+                )}
+              </button>
             </div>
 
             {/* PESTAÑA 1: GENERAL */}
@@ -2434,6 +2601,164 @@ export default function ClientsPage() {
                       </p>
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* SECCIÓN DESPLIEGUES (visible en General y en la pestaña Despliegues) (NIV3-2) */}
+            {(activeDetailTab === "general" || activeDetailTab === "deployments") && (
+              <div className="p-4 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-3">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-texter-border pb-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2 flex-wrap">
+                      <RotateCcw className="w-4 h-4 text-texter-cyan" />
+                      <span>Despliegues</span>
+                      {(() => {
+                        const lastOk = deployments.find((d) => d.status === "ok");
+                        return lastOk ? (
+                          <Badge variant="success" size="sm" className="font-mono text-[10px]">
+                            Último OK: {lastOk.commit_hash.slice(0, 7)}
+                          </Badge>
+                        ) : null;
+                      })()}
+                    </h4>
+                    <p className="text-xs text-texter-text-muted">
+                      Historial de despliegues del satélite y guía paso a paso para rollback seguro (sin redeploys automáticos).
+                    </p>
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    type="button"
+                    onClick={handleOpenCreateDeployment}
+                    className="flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Registrar despliegue</span>
+                  </Button>
+                </div>
+
+                {deploymentsError && (
+                  <div className="p-2.5 rounded-lg bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-texter-rose shrink-0" />
+                    <span>{deploymentsError}</span>
+                  </div>
+                )}
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-texter-text-muted uppercase font-mono border-b border-texter-border">
+                      <tr>
+                        <th className="py-2.5 px-3">Commit</th>
+                        <th className="py-2.5 px-3">Previous Commit</th>
+                        <th className="py-2.5 px-3">Fecha</th>
+                        <th className="py-2.5 px-3">Estado</th>
+                        <th className="py-2.5 px-3">Quién</th>
+                        <th className="py-2.5 px-3">Notas</th>
+                        <th className="py-2.5 px-3 text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-texter-border/50">
+                      {(() => {
+                        const lastOkId = deployments.find((d) => d.status === "ok")?.id;
+                        return deployments.map((dep) => (
+                          <tr key={dep.id} className="hover:bg-texter-surface-hover/50 transition-colors">
+                            <td className="py-2.5 px-3 align-top whitespace-nowrap">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono font-bold text-texter-cyan" title={dep.commit_hash}>
+                                  {dep.commit_hash.slice(0, 7)}
+                                </span>
+                                {dep.id === lastOkId && (
+                                  <Badge variant="success" size="sm" className="text-[9px] px-1.5 py-0 font-mono">
+                                    último ok
+                                  </Badge>
+                                )}
+                              </div>
+                              {dep.commit_message && (
+                                <p className="text-[11px] text-texter-text-secondary mt-0.5 max-w-xs truncate" title={dep.commit_message}>
+                                  {dep.commit_message}
+                                </p>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 align-top font-mono text-texter-text-muted whitespace-nowrap">
+                              {dep.previous_commit ? (
+                                <span className="px-1.5 py-0.5 rounded bg-texter-surface border border-texter-border text-white" title={dep.previous_commit}>
+                                  {dep.previous_commit.slice(0, 7)}
+                                </span>
+                              ) : (
+                                <span className="text-texter-text-dim">—</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 align-top font-mono text-texter-text-dim text-[11px] whitespace-nowrap">
+                              {new Date(dep.deployed_at).toLocaleString()}
+                            </td>
+                            <td className="py-2.5 px-3 align-top whitespace-nowrap">
+                              {dep.status === "ok" && (
+                                <Badge variant="success" size="sm" dot>
+                                  ok
+                                </Badge>
+                              )}
+                              {dep.status === "failed" && (
+                                <Badge variant="danger" size="sm" dot>
+                                  failed
+                                </Badge>
+                              )}
+                              {dep.status === "rolled_back" && (
+                                <Badge variant="warning" size="sm" dot>
+                                  rolled_back
+                                </Badge>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 align-top text-texter-text-secondary whitespace-nowrap">
+                              {dep.deployed_by || "—"}
+                            </td>
+                            <td className="py-2.5 px-3 align-top text-texter-text-muted max-w-xs">
+                              <p className="line-clamp-2 whitespace-pre-wrap break-words">{dep.notes || "—"}</p>
+                            </td>
+                            <td className="py-2.5 px-3 text-right align-top whitespace-nowrap">
+                              <div className="inline-flex items-center gap-1.5">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  type="button"
+                                  onClick={() => handleOpenRollbackGuide(dep)}
+                                  className="text-[11px] px-2.5 py-1 flex items-center gap-1"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  <span>Guía de rollback</span>
+                                </Button>
+                                {dep.status !== "rolled_back" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMarkRolledBack(dep)}
+                                    disabled={isMarkingRolledBack}
+                                    className="px-2 py-1 rounded text-[11px] font-medium border border-amber-500/30 text-amber-300 hover:bg-amber-500/10 transition-colors"
+                                    title="Marcar este despliegue como rolled_back"
+                                  >
+                                    Marcar rolled_back
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ));
+                      })()}
+                      {deployments.length === 0 && !isLoadingDeployments && (
+                        <tr>
+                          <td colSpan={7} className="py-6 text-center text-texter-text-dim font-sans">
+                            No hay despliegues registrados para este cliente. Haz clic en &quot;Registrar despliegue&quot; para llevar el control de versiones.
+                          </td>
+                        </tr>
+                      )}
+                      {isLoadingDeployments && (
+                        <tr>
+                          <td colSpan={7} className="py-6 text-center text-texter-text-dim font-sans">
+                            Cargando historial de despliegues...
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
@@ -5407,6 +5732,199 @@ export default function ClientsPage() {
               >
                 Eliminar
               </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL: REGISTRAR DESPLIEGUE (NIV3-2) */}
+      {isCreateDeploymentOpen && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-lg w-full space-y-4 bg-texter-surface border-texter-cyan/40">
+            <div className="flex items-center justify-between border-b border-texter-border pb-3">
+              <div className="flex items-center gap-2 text-texter-cyan font-bold text-base">
+                <RotateCcw className="w-5 h-5" />
+                <span>Registrar Despliegue — {selectedClient.display_name}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateDeploymentOpen(false)}
+                className="text-texter-text-muted hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {depModalError && (
+              <div className="p-2.5 rounded-lg bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-texter-rose shrink-0" />
+                <span>{depModalError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateDeployment} className="space-y-3.5">
+              <Input
+                label="Commit Hash *"
+                value={depCommitHash}
+                onChange={(e) => setDepCommitHash(e.target.value)}
+                placeholder="ej: a1b2c3d4e5f6..."
+                required
+              />
+
+              <Input
+                label="Mensaje del Commit (opcional)"
+                value={depCommitMessage}
+                onChange={(e) => setDepCommitMessage(e.target.value)}
+                placeholder="ej: feat: actualizar catálogo y precios"
+              />
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-texter-text-secondary">
+                  Estado
+                </label>
+                <select
+                  value={depStatus}
+                  onChange={(e) => setDepStatus(e.target.value as "ok" | "failed" | "rolled_back")}
+                  className="w-full p-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white outline-none font-sans"
+                >
+                  <option value="ok">ok (Despliegue exitoso)</option>
+                  <option value="failed">failed (Despliegue fallido)</option>
+                  <option value="rolled_back">rolled_back (Revertido)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-texter-text-secondary">
+                  Notas (opcional)
+                </label>
+                <textarea
+                  value={depNotes}
+                  onChange={(e) => setDepNotes(e.target.value)}
+                  rows={3}
+                  placeholder="Observaciones sobre este despliegue..."
+                  className="w-full p-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white outline-none focus:border-texter-cyan font-sans"
+                />
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-texter-surface-subtle border border-texter-border text-[11px] text-texter-text-muted font-mono">
+                previous_commit calculado automáticamente:{" "}
+                <strong className="text-white">
+                  {deployments.find((d) => d.status === "ok")?.commit_hash.slice(0, 7) || "ninguno (primer despliegue ok)"}
+                </strong>
+              </div>
+
+              <div className="pt-3 flex justify-end gap-2 border-t border-texter-border">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={() => setIsCreateDeploymentOpen(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button variant="primary" size="sm" type="submit" isLoading={isCreatingDeployment}>
+                  Guardar Despliegue
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL: GUÍA DE ROLLBACK (NIV3-2) */}
+      {rollbackGuideDeployment && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-lg w-full space-y-4 bg-texter-surface border-amber-500/40">
+            <div className="flex items-center justify-between border-b border-texter-border pb-3">
+              <div className="flex items-center gap-2 text-amber-400 font-bold text-base">
+                <RotateCcw className="w-5 h-5" />
+                <span>
+                  Guía de Rollback — Commit {rollbackGuideDeployment.commit_hash.slice(0, 7)}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRollbackGuideDeployment(null)}
+                className="text-texter-text-muted hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {rollbackModalError && (
+              <div className="p-2.5 rounded-lg bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-texter-rose shrink-0" />
+                <span>{rollbackModalError}</span>
+              </div>
+            )}
+
+            <div className="space-y-3 text-xs text-texter-text-secondary leading-relaxed">
+              <p className="text-texter-text-muted">
+                NEXTEX guía el procedimiento seguro sin ejecutar redeploys automáticos sobre el satélite:
+              </p>
+
+              <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-2">
+                <p className="font-semibold text-white">
+                  1) En el Vercel del satélite → Deployments → redeploy del despliegue anterior
+                  {rollbackGuideDeployment.previous_commit
+                    ? ` (${rollbackGuideDeployment.previous_commit.slice(0, 7)})`
+                    : ""}{" "}
+                  (o ejecutar <code className="text-texter-cyan font-mono">git revert {rollbackGuideDeployment.commit_hash.slice(0, 7)}</code> + push si fue por push).
+                </p>
+                <p className="font-semibold text-white">
+                  2) Marcar aquí el despliegue como <code className="text-amber-300 font-mono">rolled_back</code>.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 p-2.5 rounded-lg bg-texter-surface-subtle border border-texter-border font-mono text-[11px]">
+                <div>
+                  <span className="text-texter-text-dim block">Commit actual:</span>
+                  <span className="text-white font-bold">{rollbackGuideDeployment.commit_hash.slice(0, 7)}</span>
+                </div>
+                <div>
+                  <span className="text-texter-text-dim block">Commit anterior (previous_commit):</span>
+                  <span className="text-emerald-400 font-bold">
+                    {rollbackGuideDeployment.previous_commit
+                      ? rollbackGuideDeployment.previous_commit.slice(0, 7)
+                      : "—"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-texter-text-secondary">
+                  Notas del rollback (opcional)
+                </label>
+                <textarea
+                  value={rollbackNotes}
+                  onChange={(e) => setRollbackNotes(e.target.value)}
+                  rows={2}
+                  placeholder="Ej: Revertido a versión anterior por fallo en checkout..."
+                  className="w-full p-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white outline-none focus:border-amber-400 font-sans"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                onClick={() => setRollbackGuideDeployment(null)}
+              >
+                Cerrar
+              </Button>
+              {rollbackGuideDeployment.status !== "rolled_back" && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  type="button"
+                  isLoading={isMarkingRolledBack}
+                  onClick={() => handleMarkRolledBack(rollbackGuideDeployment, rollbackNotes)}
+                >
+                  Marcar como rolled_back
+                </Button>
+              )}
             </div>
           </Card>
         </div>
