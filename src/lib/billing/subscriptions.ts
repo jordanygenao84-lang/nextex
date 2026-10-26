@@ -385,7 +385,9 @@ export async function processSubscriptions(
             .maybeSingle();
 
           if (invInsertErr) {
-            // Si es duplicado por unique (client_id, period, kind), igual avanzamos next_invoice_date para no ciclar
+            // Si es duplicado por unique (client_id, subscription_id, period, kind)
+            // (migración 20261026_fix_seg8_seg9_seg10.sql), igual avanzamos
+            // next_invoice_date para no ciclar
             const isDuplicate =
               invInsertErr.code === "23505" ||
               String(invInsertErr.message || "")
