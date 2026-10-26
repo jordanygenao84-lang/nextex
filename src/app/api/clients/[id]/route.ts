@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { resolveAuthorizedClient } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -17,20 +18,17 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       );
     }
 
-    const serviceClient = createServiceClient();
     const clientId = params.id;
+    const client = await resolveAuthorizedClient(user.id, clientId);
 
-    const { data: client, error } = await (serviceClient.from("clients") as any)
-      .select("*, workspace:workspaces(id, name, slug, owner_id)")
-      .eq("id", clientId)
-      .maybeSingle();
-
-    if (error || !client) {
+    if (!client) {
       return NextResponse.json(
         { error: { code: "NOT_FOUND", message: "Cliente no encontrado." } },
         { status: 404 }
       );
     }
+
+    const serviceClient = createServiceClient();
 
     const [autoRes, jobsRes, agentsRes] = await Promise.all([
       serviceClient
@@ -80,21 +78,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       );
     }
 
-    const serviceClient = createServiceClient();
     const clientId = params.id;
+    const existing = await resolveAuthorizedClient(user.id, clientId);
 
-    const { data: existing, error: findError } = await (serviceClient.from("clients") as any)
-      .select("id, workspace_id, display_name")
-      .eq("id", clientId)
-      .maybeSingle();
-
-    if (findError || !existing) {
+    if (!existing) {
       return NextResponse.json(
         { error: { code: "NOT_FOUND", message: "Cliente no encontrado." } },
         { status: 404 }
       );
     }
 
+    const serviceClient = createServiceClient();
     const body = await req.json().catch(() => ({}));
     const updates: Record<string, any> = {
       updated_at: new Date().toISOString(),
@@ -199,20 +193,17 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       );
     }
 
-    const serviceClient = createServiceClient();
     const clientId = params.id;
+    const client = await resolveAuthorizedClient(user.id, clientId);
 
-    const { data: client, error: findError } = await (serviceClient.from("clients") as any)
-      .select("id, workspace_id")
-      .eq("id", clientId)
-      .maybeSingle();
-
-    if (findError || !client) {
+    if (!client) {
       return NextResponse.json(
         { error: { code: "NOT_FOUND", message: "Cliente no encontrado." } },
         { status: 404 }
       );
     }
+
+    const serviceClient = createServiceClient();
 
     // Verificar si tiene jobs con ejecuciones en running o queued
     const { data: wsJobs } = await (serviceClient.from("jobs") as any)

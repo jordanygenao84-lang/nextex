@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { SecretVault } from "@/lib/integrations/crypto/secret-vault";
+import { resolveAuthorizedClient } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,15 @@ export async function POST(
     }
 
     const { id: clientId, keyId } = params;
+    const client = await resolveAuthorizedClient(user.id, clientId);
+
+    if (!client) {
+      return NextResponse.json(
+        { error: { code: "NOT_FOUND", message: "Site key no encontrada para este cliente." } },
+        { status: 404 }
+      );
+    }
+
     const serviceClient = createServiceClient();
 
     // 1. Verificar existencia de la site key perteneciente a este cliente

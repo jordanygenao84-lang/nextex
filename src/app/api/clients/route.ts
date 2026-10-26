@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { getUserWorkspaces, isSuperAdmin } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -38,10 +39,18 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const superAdmin = await isSuperAdmin(user.id);
+    const allowedWorkspaces = superAdmin ? null : await getUserWorkspaces(user.id);
+
+    if (!superAdmin && (!allowedWorkspaces || allowedWorkspaces.length === 0)) {
+      return NextResponse.json([]);
+    }
+
     const serviceClient = createServiceClient();
-    const { data: clients, error } = await (serviceClient.from("clients") as any)
+    let query = (serviceClient.from("clients") as any)
       .select(`
         id,
+        workspace_id,
         display_name,
         website_url,
         status,
@@ -55,6 +64,12 @@ export async function GET(req: NextRequest) {
         workspace:workspaces(id, name)
       `)
       .order("created_at", { ascending: false });
+
+    if (!superAdmin && allowedWorkspaces) {
+      query = query.in("workspace_id", allowedWorkspaces);
+    }
+
+    const { data: clients, error } = await query;
 
     if (error) {
       return NextResponse.json(

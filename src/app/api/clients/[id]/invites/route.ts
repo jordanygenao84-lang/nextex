@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { isSuperAdmin } from "@/lib/auth/roles";
+import { isSuperAdmin, resolveAuthorizedClient } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -43,15 +43,9 @@ export async function GET(
     }
 
     const clientId = params.id;
-    const serviceClient = createServiceClient();
+    const client = await resolveAuthorizedClient(user.id, clientId);
 
-    // 1. Obtener workspace_id del cliente
-    const { data: client, error: clientErr } = await (serviceClient.from("clients") as any)
-      .select("id, workspace_id, display_name")
-      .eq("id", clientId)
-      .maybeSingle();
-
-    if (clientErr || !client || !client.workspace_id) {
+    if (!client || !client.workspace_id) {
       return NextResponse.json(
         { error: { code: "NOT_FOUND", message: "Cliente o workspace no encontrado." } },
         { status: 404 }
@@ -59,23 +53,7 @@ export async function GET(
     }
 
     const workspaceId = client.workspace_id;
-
-    // 2. Verificar que el usuario tenga acceso al workspace o sea super_admin
-    const superAdmin = await isSuperAdmin(user.id);
-    if (!superAdmin) {
-      const { data: member } = await (serviceClient.from("workspace_members") as any)
-        .select("role")
-        .eq("workspace_id", workspaceId)
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (!member) {
-        return NextResponse.json(
-          { error: { code: "FORBIDDEN", message: "No tienes permisos en este workspace." } },
-          { status: 403 }
-        );
-      }
-    }
+    const serviceClient = createServiceClient();
 
     // 3. Consultar invitaciones pendientes (no aceptadas y vigentes)
     const nowIso = new Date().toISOString();
@@ -138,15 +116,9 @@ export async function POST(
     }
 
     const clientId = params.id;
-    const serviceClient = createServiceClient();
+    const client = await resolveAuthorizedClient(user.id, clientId);
 
-    // 1. Resolver cliente y su workspace_id
-    const { data: client, error: clientErr } = await (serviceClient.from("clients") as any)
-      .select("id, workspace_id, display_name")
-      .eq("id", clientId)
-      .maybeSingle();
-
-    if (clientErr || !client || !client.workspace_id) {
+    if (!client || !client.workspace_id) {
       return NextResponse.json(
         { error: { code: "NOT_FOUND", message: "Cliente o workspace no encontrado." } },
         { status: 404 }
@@ -154,11 +126,11 @@ export async function POST(
     }
 
     const workspaceId = client.workspace_id;
+    const serviceClient = createServiceClient();
 
     // 2. Verificar autorización: Solo dueño del workspace o super_admin
     const superAdmin = await isSuperAdmin(user.id);
     if (!superAdmin) {
-      // Verificar si es owner en workspaces o en workspace_members
       const { data: wsRecord } = await (serviceClient.from("workspaces") as any)
         .select("owner_id")
         .eq("id", workspaceId)
@@ -179,13 +151,8 @@ export async function POST(
 
       if (!isDirectOwner && !isOwnerMember) {
         return NextResponse.json(
-          {
-            error: {
-              code: "FORBIDDEN",
-              message: "Solo el dueño del workspace o un superadministrador pueden generar invitaciones.",
-            },
-          },
-          { status: 403 }
+          { error: { code: "NOT_FOUND", message: "Cliente o workspace no encontrado." } },
+          { status: 404 }
         );
       }
     }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { resolveAuthorizedConversation } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -25,34 +26,16 @@ export async function GET(
     }
 
     const conversationId = params.id;
-    const serviceClient = createServiceClient();
+    const conv = await resolveAuthorizedConversation(user.id, conversationId);
 
-    // 1. Obtener conversación
-    const { data: conv, error: convErr } = await (serviceClient.from("conversations") as any)
-      .select(`
-        id,
-        client_id,
-        channel,
-        external_chat_id,
-        visitor_name,
-        status,
-        last_message_at,
-        created_at,
-        updated_at,
-        client:clients (
-          id,
-          display_name
-        )
-      `)
-      .eq("id", conversationId)
-      .maybeSingle();
-
-    if (convErr || !conv) {
+    if (!conv) {
       return NextResponse.json(
         { error: { code: "NOT_FOUND", message: "Conversación no encontrada." } },
         { status: 404 }
       );
     }
+
+    const serviceClient = createServiceClient();
 
     // 2. Obtener mensajes ordenados ascendentemente
     const { data: messages, error: msgErr } = await (serviceClient.from("conversation_messages") as any)

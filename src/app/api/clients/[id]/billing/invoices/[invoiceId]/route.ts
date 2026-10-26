@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { resolveAuthorizedClient } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
 const VALID_INVOICE_STATUSES = ["paid", "cancelled"] as const;
-type ValidInvoiceStatus = (typeof VALID_INVOICE_STATUSES)[number];
 
 /**
  * PATCH /api/clients/[id]/billing/invoices/[invoiceId]
@@ -28,20 +28,16 @@ export async function PATCH(
     }
 
     const { id: clientId, invoiceId } = params;
-    const serviceClient = createServiceClient();
+    const client = await resolveAuthorizedClient(user.id, clientId);
 
-    // 1. Verificar existencia del cliente
-    const { data: client, error: clientErr } = await (serviceClient.from("clients") as any)
-      .select("id")
-      .eq("id", clientId)
-      .maybeSingle();
-
-    if (clientErr || !client) {
+    if (!client) {
       return NextResponse.json(
         { error: { code: "NOT_FOUND", message: "Cliente no encontrado." } },
         { status: 404 }
       );
     }
+
+    const serviceClient = createServiceClient();
 
     // 2. Validar payload
     const body = await req.json().catch(() => ({}));

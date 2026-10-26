@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { resolveAuthorizedConversation } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,15 @@ export async function POST(
     }
 
     const conversationId = params.id;
+    const conv = await resolveAuthorizedConversation(user.id, conversationId);
+
+    if (!conv) {
+      return NextResponse.json(
+        { error: { code: "NOT_FOUND", message: "Conversación no encontrada." } },
+        { status: 404 }
+      );
+    }
+
     const serviceClient = createServiceClient();
 
     const { data: updated, error } = await (serviceClient.from("conversations") as any)

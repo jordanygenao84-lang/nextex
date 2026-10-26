@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
+import { resolveAuthorizedClient } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -17,15 +18,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       );
     }
 
-    const serviceClient = createServiceClient();
     const clientId = params.id;
+    const client = await resolveAuthorizedClient(user.id, clientId);
 
-    const { data: client, error } = await (serviceClient.from("clients") as any)
-      .select("id, website_url")
-      .eq("id", clientId)
-      .maybeSingle();
-
-    if (error || !client) {
+    if (!client) {
       return NextResponse.json(
         { error: { code: "NOT_FOUND", message: "Cliente no encontrado." } },
         { status: 404 }

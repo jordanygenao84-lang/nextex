@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { resolveAuthorizedConversation } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,15 @@ export async function POST(
     }
 
     const conversationId = params.id;
+    const conv = await resolveAuthorizedConversation(user.id, conversationId);
+
+    if (!conv) {
+      return NextResponse.json(
+        { error: { code: "NOT_FOUND", message: "Conversación no encontrada." } },
+        { status: 404 }
+      );
+    }
+
     const body = await req.json().catch(() => ({}));
     const { content } = body;
 
@@ -44,20 +54,6 @@ export async function POST(
     }
 
     const cleanContent = content.trim();
-    const serviceClient = createServiceClient();
-
-    // 1. Verificar estado actual de la conversación
-    const { data: conv, error: convErr } = await (serviceClient.from("conversations") as any)
-      .select("id, status")
-      .eq("id", conversationId)
-      .maybeSingle();
-
-    if (convErr || !conv) {
-      return NextResponse.json(
-        { error: { code: "NOT_FOUND", message: "Conversación no encontrada." } },
-        { status: 404 }
-      );
-    }
 
     // Si está en 'bot' -> 409 { error: 'Toma el control primero' }
     if (conv.status !== "human") {
@@ -67,6 +63,7 @@ export async function POST(
       );
     }
 
+    const serviceClient = createServiceClient();
     const now = new Date().toISOString();
 
     // 2. Insertar mensaje con role = 'human_agent'

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { resolveAuthorizedClient } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -26,15 +27,9 @@ export async function GET(
     }
 
     const clientId = params.id;
-    const serviceClient = createServiceClient();
+    const client = await resolveAuthorizedClient(user.id, clientId);
 
-    // 1. Obtener workspace_id del cliente
-    const { data: client, error: clientErr } = await (serviceClient.from("clients") as any)
-      .select("id, workspace_id, display_name")
-      .eq("id", clientId)
-      .maybeSingle();
-
-    if (clientErr || !client || !client.workspace_id) {
+    if (!client || !client.workspace_id) {
       return NextResponse.json(
         { error: { code: "NOT_FOUND", message: "Cliente no encontrado." } },
         { status: 404 }
@@ -42,6 +37,7 @@ export async function GET(
     }
 
     const workspaceId = client.workspace_id;
+    const serviceClient = createServiceClient();
 
     // 2. Consultar miembros del workspace
     const { data: members, error: memErr } = await (serviceClient.from("workspace_members") as any)

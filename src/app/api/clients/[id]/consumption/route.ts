@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { checkMonthlyBudget } from "@/lib/efficiency/usage";
+import { resolveAuthorizedClient } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -27,21 +28,16 @@ export async function GET(
     }
 
     const clientId = params.id;
-    const serviceClient = createServiceClient();
+    const client = await resolveAuthorizedClient(user.id, clientId);
 
-    // 1. Verificar existencia del cliente y obtener workspace_id
-    const { data: client, error: clientErr } = await (serviceClient.from("clients") as any)
-      .select("id, workspace_id, display_name")
-      .eq("id", clientId)
-      .maybeSingle();
-
-    if (clientErr || !client) {
+    if (!client) {
       return NextResponse.json(
         { error: { code: "NOT_FOUND", message: "Cliente no encontrado." } },
         { status: 404 }
       );
     }
 
+    const serviceClient = createServiceClient();
     const workspaceId = client.workspace_id;
 
     // 2. Definir ventana de tiempo para el mes en curso (YYYY-MM)

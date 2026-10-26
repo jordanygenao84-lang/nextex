@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { getUserWorkspaces, isSuperAdmin } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,17 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const superAdmin = await isSuperAdmin(user.id);
+    if (!superAdmin) {
+      const allowedWorkspaces = await getUserWorkspaces(user.id);
+      if (allowedWorkspaces.length === 0) {
+        return NextResponse.json(
+          { error: { code: "NOT_FOUND", message: "Recurso no encontrado." } },
+          { status: 404 }
+        );
+      }
+    }
+
     const serviceClient = createServiceClient();
     const { data: agents, error } = await (serviceClient.from("fleet_agents") as any)
       .select("id, name, status, last_seen_at, capabilities, created_at")
@@ -28,9 +40,15 @@ export async function GET(req: NextRequest) {
     const now = Date.now();
     const ninetySecondsMs = 90 * 1000;
 
-    const { data: runningJobs } = await (serviceClient.from("fleet_jobs") as any)
+    let runningJobsQuery = (serviceClient.from("fleet_jobs") as any)
       .select("id, name, target_url, vus, started_at, agent_id")
       .eq("status", "running");
+
+    if (!superAdmin) {
+      runningJobsQuery = runningJobsQuery.eq("created_by", user.id);
+    }
+
+    const { data: runningJobs } = await runningJobsQuery;
 
     const runningJobsByAgent = new Map<string, any>();
     if (runningJobs) {

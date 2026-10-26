@@ -7,6 +7,7 @@ import {
   PRESETS,
   Role,
 } from "@/lib/permissions/client-matrix";
+import { resolveAuthorizedClient } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -33,20 +34,16 @@ export async function POST(
     }
 
     const clientId = params.id;
-    const serviceClient = createServiceClient();
+    const client = await resolveAuthorizedClient(user.id, clientId);
 
-    // 1. Verificar existencia del cliente
-    const { data: client, error: clientErr } = await (serviceClient.from("clients") as any)
-      .select("id")
-      .eq("id", clientId)
-      .maybeSingle();
-
-    if (clientErr || !client) {
+    if (!client) {
       return NextResponse.json(
         { error: { code: "NOT_FOUND", message: "Cliente no encontrado." } },
         { status: 404 }
       );
     }
+
+    const serviceClient = createServiceClient();
 
     const body = await req.json().catch(() => ({}));
     const { preset, role } = body;
@@ -86,10 +83,6 @@ export async function POST(
     }
 
     // 5. Construir registros según las reglas del preset
-    // Presets:
-    // - dueno: todo allowed=true para role='owner'.
-    // - empleado: role='member' → solo conversaciones: ver=true, responder=true; resto false.
-    // - lectura: role='member' → solo ver=true en todas las secciones; resto false.
     const nowIso = new Date().toISOString();
     const rows: Array<{
       client_id: string;

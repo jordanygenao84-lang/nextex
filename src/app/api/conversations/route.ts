@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { getUserWorkspaces, isSuperAdmin } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
 /**
  * GET /api/conversations
- * Bandeja global de conversaciones omnicanal (con auth).
+ * Bandeja global de conversaciones omnicanal (con auth y aislamiento por workspace).
  * Filtros opcionales: client_id, channel, status.
  */
 export async function GET(req: NextRequest) {
@@ -28,6 +29,40 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get("status");
 
     const serviceClient = createServiceClient();
+    const superAdmin = await isSuperAdmin(user.id);
+
+    let allowedClientIds: string[] | null = null;
+    if (!superAdmin) {
+      const allowedWorkspaces = await getUserWorkspaces(user.id);
+      if (allowedWorkspaces.length === 0) {
+        if (clientId) {
+          return NextResponse.json(
+            { error: { code: "NOT_FOUND", message: "Conversación o cliente no encontrado." } },
+            { status: 404 }
+          );
+        }
+        return NextResponse.json([]);
+      }
+
+      const { data: userClients } = await (serviceClient.from("clients") as any)
+        .select("id")
+        .in("workspace_id", allowedWorkspaces);
+
+      allowedClientIds = Array.isArray(userClients)
+        ? userClients.map((c: any) => c.id)
+        : [];
+
+      if (clientId && !allowedClientIds.includes(clientId)) {
+        return NextResponse.json(
+          { error: { code: "NOT_FOUND", message: "Conversación o cliente no encontrado." } },
+          { status: 404 }
+        );
+      }
+
+      if (allowedClientIds.length === 0) {
+        return NextResponse.json([]);
+      }
+    }
 
     let query = (serviceClient.from("conversations") as any)
       .select(`
@@ -49,7 +84,10 @@ export async function GET(req: NextRequest) {
 
     if (clientId) {
       query = query.eq("client_id", clientId);
+    } else if (allowedClientIds !== null) {
+      query = query.in("client_id", allowedClientIds);
     }
+
     if (channel) {
       query = query.eq("channel", channel);
     }

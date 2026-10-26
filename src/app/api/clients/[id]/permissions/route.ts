@@ -9,6 +9,7 @@ import {
   Action,
   buildDefaultMatrix,
 } from "@/lib/permissions/client-matrix";
+import { resolveAuthorizedClient } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -35,20 +36,16 @@ export async function GET(
     }
 
     const clientId = params.id;
-    const serviceClient = createServiceClient();
+    const client = await resolveAuthorizedClient(user.id, clientId);
 
-    // 1. Verificar existencia del cliente
-    const { data: client, error: clientErr } = await (serviceClient.from("clients") as any)
-      .select("id")
-      .eq("id", clientId)
-      .maybeSingle();
-
-    if (clientErr || !client) {
+    if (!client) {
       return NextResponse.json(
         { error: { code: "NOT_FOUND", message: "Cliente no encontrado." } },
         { status: 404 }
       );
     }
+
+    const serviceClient = createServiceClient();
 
     // 2. Construir matriz con valores por defecto
     const matrix = buildDefaultMatrix();
@@ -110,20 +107,16 @@ export async function PATCH(
     }
 
     const clientId = params.id;
-    const serviceClient = createServiceClient();
+    const client = await resolveAuthorizedClient(user.id, clientId);
 
-    // 1. Verificar existencia del cliente
-    const { data: client, error: clientErr } = await (serviceClient.from("clients") as any)
-      .select("id")
-      .eq("id", clientId)
-      .maybeSingle();
-
-    if (clientErr || !client) {
+    if (!client) {
       return NextResponse.json(
         { error: { code: "NOT_FOUND", message: "Cliente no encontrado." } },
         { status: 404 }
       );
     }
+
+    const serviceClient = createServiceClient();
 
     const body = await req.json().catch(() => ({}));
     const { role, section, action, allowed } = body;

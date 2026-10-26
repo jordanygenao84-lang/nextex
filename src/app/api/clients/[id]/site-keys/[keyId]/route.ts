@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { resolveAuthorizedClient } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,15 @@ export async function DELETE(
     }
 
     const { id: clientId, keyId } = params;
+    const client = await resolveAuthorizedClient(user.id, clientId);
+
+    if (!client) {
+      return NextResponse.json(
+        { error: { code: "NOT_FOUND", message: "Site key no encontrada para este cliente." } },
+        { status: 404 }
+      );
+    }
+
     const serviceClient = createServiceClient();
 
     // 1. Buscar la llave por id + client_id

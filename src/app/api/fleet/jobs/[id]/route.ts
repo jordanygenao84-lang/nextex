@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { getUserWorkspaces, isSuperAdmin } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       );
     }
 
+    const superAdmin = await isSuperAdmin(user.id);
+    if (!superAdmin) {
+      const allowedWorkspaces = await getUserWorkspaces(user.id);
+      if (allowedWorkspaces.length === 0) {
+        return NextResponse.json({ error: { code: "NOT_FOUND", message: "Trabajo no encontrado." } }, { status: 404 });
+      }
+    }
+
     const serviceClient = createServiceClient();
     const jobId = params.id;
 
@@ -23,7 +32,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       .eq("id", jobId)
       .maybeSingle();
 
-    if (jobError || !job) {
+    if (jobError || !job || (!superAdmin && job.created_by !== user.id)) {
       return NextResponse.json({ error: { code: "NOT_FOUND", message: "Trabajo no encontrado." } }, { status: 404 });
     }
 

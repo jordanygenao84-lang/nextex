@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isDomainAllowed } from "@/lib/fleet/allowlist";
+import { getUserWorkspaces, isSuperAdmin } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -16,11 +17,28 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const superAdmin = await isSuperAdmin(user.id);
+    if (!superAdmin) {
+      const allowedWorkspaces = await getUserWorkspaces(user.id);
+      if (allowedWorkspaces.length === 0) {
+        return NextResponse.json(
+          { error: { code: "NOT_FOUND", message: "Recurso no encontrado." } },
+          { status: 404 }
+        );
+      }
+    }
+
     const serviceClient = createServiceClient();
-    const { data: jobs, error } = await (serviceClient.from("fleet_jobs") as any)
+    let query = (serviceClient.from("fleet_jobs") as any)
       .select("*, fleet_agents(id, name)")
       .order("created_at", { ascending: false })
       .limit(50);
+
+    if (!superAdmin) {
+      query = query.eq("created_by", user.id);
+    }
+
+    const { data: jobs, error } = await query;
 
     if (error) {
       return NextResponse.json({ error: { code: "DB_ERROR", message: error.message } }, { status: 500 });
@@ -50,6 +68,17 @@ export async function POST(req: NextRequest) {
         { error: { code: "AUTH_REQUIRED", message: "Sesión de usuario requerida." } },
         { status: 401 }
       );
+    }
+
+    const superAdmin = await isSuperAdmin(user.id);
+    if (!superAdmin) {
+      const allowedWorkspaces = await getUserWorkspaces(user.id);
+      if (allowedWorkspaces.length === 0) {
+        return NextResponse.json(
+          { error: { code: "NOT_FOUND", message: "Recurso no encontrado." } },
+          { status: 404 }
+        );
+      }
     }
 
     const body = await req.json().catch(() => ({}));
