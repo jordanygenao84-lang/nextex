@@ -8,6 +8,7 @@ import tls from "tls";
 import { URL } from "url";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { sendVigiaAlert } from "@/lib/vigia/notify";
+import { validateUrlAndResolveDnsForSsrf } from "@/lib/agents/tools/builtins/http_ssrf";
 
 export interface HealthCheckRunResult {
   skipped?: boolean;
@@ -23,7 +24,7 @@ export interface HealthCheckRunResult {
  */
 export async function getSslDaysLeft(rawUrl: string): Promise<number | null> {
   try {
-    const parsed = new URL(rawUrl);
+    const parsed = await validateUrlAndResolveDnsForSsrf(rawUrl);
     if (parsed.protocol !== "https:") {
       return null;
     }
@@ -127,17 +128,21 @@ export async function executeVigiaHealthChecks(
       targetUrl = `https://${targetUrl}`;
     }
 
-    // a) GET a la URL midiendo el tiempo de respuesta (timeout 10s)
+    // a) GET a la URL midiendo el tiempo de respuesta (timeout 10s), validando antes SSRF + DNS
     const startTime = Date.now();
     let responseMs = 0;
     let httpStatus: number | null = null;
     let status: "ok" | "degraded" | "down" = "down";
     let fetchError: string | null = null;
+    let ssrfAllowed = false;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
 
     try {
+      await validateUrlAndResolveDnsForSsrf(targetUrl);
+      ssrfAllowed = true;
+
       const res = await fetch(targetUrl, {
         method: "GET",
         headers: {
@@ -174,8 +179,11 @@ export async function executeVigiaHealthChecks(
     if (status === "down") downCount++;
     if (status === "degraded") degradedCount++;
 
-    // c) Días restantes de certificado TLS si es https
-    const sslDaysLeft = targetUrl.startsWith("https:") ? await getSslDaysLeft(targetUrl) : null;
+    // c) Días restantes de certificado TLS si es https y pasó validación SSRF
+    const sslDaysLeft =
+      ssrfAllowed && targetUrl.startsWith("https:")
+        ? await getSslDaysLeft(targetUrl)
+        : null;
 
     // e) Consultar chequeo anterior para registrar incidentes SOLO en transición
     const { data: prevCheck } = await (supabase.from("site_health_checks") as any)
@@ -235,6 +243,7 @@ export async function executeVigiaHealthChecks(
         detail: {
           url: targetUrl,
           previous_status: "down",
+          previous_status_code: httpStatus,
           current_status: "ok",
           http_status: httpStatus,
           response_ms: responseMs,

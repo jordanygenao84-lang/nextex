@@ -1,13 +1,15 @@
 /**
- * NEXTEХ Agent Core — Seguridad HTTP y Protección Anti-SSRF
+ * NEXTEХ Agent Core — Seguridad HTTP y Protección Anti-SSRF (con resolución DNS)
  */
+
+import dns from "dns";
 
 export const AGENT_USER_AGENT = "nextex-agent/1.0";
 export const MAX_RESPONSE_BYTES = 2 * 1024 * 1024; // 2 MB
 export const MAX_BODY_TEXT_CHARS = 50000; // 50k chars
 export const MAX_REDIRECTS = 3;
 
-function isPrivateIPv4(ip: string): boolean {
+export function isPrivateIPv4(ip: string): boolean {
   const parts = ip.split(".").map(Number);
   if (parts.length !== 4 || parts.some((p) => isNaN(p) || p < 0 || p > 255)) {
     return false;
@@ -18,11 +20,11 @@ function isPrivateIPv4(ip: string): boolean {
   if (b0 === 10) return true;
   if (b0 === 172 && b1 >= 16 && b1 <= 31) return true;
   if (b0 === 192 && b1 === 168) return true;
-  if (b0 === 169 && b1 === 254) return true;
+  if (b0 === 169 && b1 === 254) return true; // link-local y metadata 169.254.169.254
   return false;
 }
 
-function isPrivateIPv6(ip: string): boolean {
+export function isPrivateIPv6(ip: string): boolean {
   const cleanIp = ip.replace(/^\[|\]$/g, "").toLowerCase().trim();
   if (
     cleanIp === "::1" ||
@@ -106,6 +108,45 @@ export function validateUrlForSsrf(rawUrl: string): URL {
   return parsed;
 }
 
+/**
+ * Valida el hostname literal contra SSRF y luego resuelve todas sus IPs con dns.lookup({ all: true }),
+ * rechazando el destino si cualquiera de las IPs resueltas es privada o de metadata (169.254.169.254).
+ */
+export async function validateUrlAndResolveDnsForSsrf(rawUrl: string): Promise<URL> {
+  const parsed = validateUrlForSsrf(rawUrl);
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase().trim();
+
+  const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+  const isLiteralIp = ipv4Pattern.test(hostname) || hostname.includes(":");
+
+  if (isLiteralIp) {
+    if (isPrivateIPv4(hostname) || isPrivateIPv6(hostname)) {
+      throw new Error("destino privado no permitido (SSRF)");
+    }
+    return parsed;
+  }
+
+  let records: dns.LookupAddress[];
+  try {
+    records = await dns.promises.lookup(hostname, { all: true, verbatim: true });
+  } catch {
+    throw new Error(`No se pudo resolver DNS para ${hostname}`);
+  }
+
+  if (!Array.isArray(records) || records.length === 0) {
+    throw new Error(`Sin registros DNS válidos para ${hostname}`);
+  }
+
+  for (const rec of records) {
+    const addr = (rec.address || "").trim();
+    if (!addr || isPrivateIPv4(addr) || isPrivateIPv6(addr)) {
+      throw new Error("destino privado no permitido (SSRF)");
+    }
+  }
+
+  return parsed;
+}
+
 export const validateHttpUrl = validateUrlForSsrf;
 
 export function redactSensitiveHeaders(headers: Record<string, string>): Record<string, string> {
@@ -145,7 +186,7 @@ export async function executeSafeHttpRequest(
   const startTime = Date.now();
   const method = (options.method || "GET").toUpperCase();
 
-  let currentUrl = validateUrlForSsrf(options.url).toString();
+  let currentUrl = (await validateUrlAndResolveDnsForSsrf(options.url)).toString();
   let redirectCount = 0;
 
   const requestedTimeout = Number(options.timeoutMs) || 15000;
@@ -182,7 +223,7 @@ export async function executeSafeHttpRequest(
         }
 
         const nextUrlObj = new URL(location, currentUrl);
-        validateUrlForSsrf(nextUrlObj.toString());
+        await validateUrlAndResolveDnsForSsrf(nextUrlObj.toString());
         currentUrl = nextUrlObj.toString();
         continue;
       }
