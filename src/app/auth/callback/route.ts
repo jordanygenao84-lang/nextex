@@ -1,10 +1,27 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+function sanitizeRedirectPath(raw: string | null | undefined): string {
+  if (!raw || typeof raw !== "string") {
+    return "/dashboard";
+  }
+  const trimmed = raw.trim();
+  if (
+    !trimmed.startsWith("/") ||
+    trimmed.startsWith("//") ||
+    trimmed.startsWith("/\\") ||
+    trimmed.toLowerCase().startsWith("http") ||
+    trimmed.includes("://")
+  ) {
+    return "/dashboard";
+  }
+  return trimmed;
+}
+
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/dashboard";
+  const next = sanitizeRedirectPath(searchParams.get("next"));
 
   if (code) {
     const supabase = createClient();

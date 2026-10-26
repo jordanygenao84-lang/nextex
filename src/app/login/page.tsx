@@ -18,10 +18,27 @@ import {
   AlertCircle,
 } from "lucide-react";
 
+function sanitizeRedirectPath(raw: string | null | undefined): string {
+  if (!raw || typeof raw !== "string") {
+    return "/dashboard";
+  }
+  const trimmed = raw.trim();
+  if (
+    !trimmed.startsWith("/") ||
+    trimmed.startsWith("//") ||
+    trimmed.startsWith("/\\") ||
+    trimmed.toLowerCase().startsWith("http") ||
+    trimmed.includes("://")
+  ) {
+    return "/dashboard";
+  }
+  return trimmed;
+}
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectPath = searchParams.get("redirect") || "/dashboard";
+  const redirectPath = sanitizeRedirectPath(searchParams.get("redirect"));
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
