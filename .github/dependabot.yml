@@ -5,3 +5,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # Next 15+ exige params y cookies() asíncronos; toda la app usa el
+      # estilo síncrono de Next 14. No aceptar majors de next hasta migrar.
+      - dependency-name: next
+        update-types: ["version-update:semver-major"]
+      # React 19 va de la mano de Next 15+: mismo motivo.
+      - dependency-name: react
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react-dom
+        update-types: ["version-update:semver-major"]
