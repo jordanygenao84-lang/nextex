@@ -170,15 +170,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setIsLoggingOut(false);
   };
 
-  const displayName = profile?.full_name || user?.email?.split("@")[0] || "Jordany Genao";
-  const displayEmail = user?.email || "Jordanygenao84@gmail.com";
+  const displayName = user
+    ? profile?.full_name || user.email?.split("@")[0] || "Usuario"
+    : "Invitado";
+  const displayEmail = user?.email || "";
   const userPlan = (profile?.plan || "free").toUpperCase();
   const initials = displayName
     .split(" ")
     .map((w) => w[0])
     .join("")
     .slice(0, 2)
-    .toUpperCase() || "NX";
+    .toUpperCase() || "IN";
 
   return (
     <>
@@ -415,18 +417,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <p className="text-xs font-semibold text-white truncate">
                       {displayName}
                     </p>
-                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-texter-surface border border-texter-border text-texter-cyan">
-                      {userPlan}
-                    </span>
+                    {user && (
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-texter-surface border border-texter-border text-texter-cyan">
+                        {userPlan}
+                      </span>
+                    )}
                   </div>
-                  <p className="text-[10px] text-texter-text-muted truncate font-mono">
-                    {displayEmail}
-                  </p>
+                  {displayEmail && (
+                    <p className="text-[10px] text-texter-text-muted truncate font-mono">
+                      {displayEmail}
+                    </p>
+                  )}
                 </div>
               )}
             </Link>
 
-            {!collapsed && (
+            {!collapsed && user && (
               <button
                 onClick={handleSignOut}
                 disabled={isLoggingOut}

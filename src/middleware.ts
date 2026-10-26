@@ -9,12 +9,54 @@ export async function middleware(request: NextRequest) {
     },
   });
 
+  const pathname = request.nextUrl.pathname;
+  const protectedPrefixes = [
+    "/admin",
+    "/dashboard",
+    "/chat",
+    "/settings",
+    "/control-plane",
+    "/agents",
+    "/jobs",
+    "/integrations",
+    "/automations",
+    "/observability",
+    "/fleet",
+    "/clients",
+    "/conversations",
+  ];
+  const isProtectedPath = protectedPrefixes.some((prefix) => pathname.startsWith(prefix));
+  const isAuthPath =
+    pathname === "/login" ||
+    pathname === "/register" ||
+    pathname === "/reset-password" ||
+    pathname === "/update-password" ||
+    pathname === "/verify-email";
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  // Si no hay variables de entorno reales configuradas todavía, permitir navegación
+  // Fail-closed: si faltan las variables de entorno de Supabase, denegar navegación
   if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes("placeholder-project")) {
-    return response;
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "AUTH_CONFIG_MISSING",
+            message: "Configuración de autenticación no disponible.",
+          },
+        },
+        { status: 503 }
+      );
+    }
+    if (isProtectedPath) {
+      const redirectUrl = new URL("/login", request.url);
+      redirectUrl.searchParams.set("redirect", pathname);
+      return NextResponse.redirect(redirectUrl);
+    }
+    return new NextResponse("Servicio no disponible: configuración de autenticación incompleta.", {
+      status: 503,
+    });
   }
 
   const supabase = createServerClient<Database>(supabaseUrl, supabaseAnonKey, {
@@ -38,29 +80,6 @@ export async function middleware(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const pathname = request.nextUrl.pathname;
-  const protectedPrefixes = [
-    "/dashboard",
-    "/chat",
-    "/settings",
-    "/control-plane",
-    "/agents",
-    "/jobs",
-    "/integrations",
-    "/automations",
-    "/observability",
-    "/fleet",
-    "/clients",
-    "/conversations",
-  ];
-  const isProtectedPath = protectedPrefixes.some((prefix) => pathname.startsWith(prefix));
-  const isAuthPath =
-    pathname === "/login" ||
-    pathname === "/register" ||
-    pathname === "/reset-password" ||
-    pathname === "/update-password" ||
-    pathname === "/verify-email";
 
   // Redirigir a login si intenta entrar a ruta privada sin sesión
   if (isProtectedPath && !user) {
