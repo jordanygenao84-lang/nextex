@@ -384,6 +384,7 @@ export async function processSubscriptions(
             .select("id")
             .maybeSingle();
 
+          let insertFailed = false;
           if (invInsertErr) {
             // Si es duplicado por unique (client_id, subscription_id, period, kind)
             // (migración 20261026_fix_seg8_seg9_seg10.sql), igual avanzamos
@@ -401,29 +402,36 @@ export async function processSubscriptions(
               result.errors.push(
                 `Error creando factura para ${clientName}: ${invInsertErr.message}`
               );
+              insertFailed = true;
             }
           } else if (createdInv) {
             result.invoices_generated++;
           }
 
-          // Avanzar next_invoice_date un mes respetando billing_day
-          const { error: advErr } = await (
-            client.from("client_subscriptions") as any
-          )
-            .update({
-              next_invoice_date: nextInvoiceDate,
-              updated_at: now.toISOString(),
-            })
-            .eq("id", sub.id);
+          // Avanzar next_invoice_date un mes respetando billing_day, pero SOLO
+          // si la factura se creó o ya existía (duplicado). Si el insert falló
+          // por otro motivo, NO avanzar: el próximo tick reintenta el mismo
+          // periodo en vez de saltarlo en silencio (bug 2026-10-26: con
+          // client_invoices.updated_at ausente, los periodos se perdían).
+          if (!insertFailed) {
+            const { error: advErr } = await (
+              client.from("client_subscriptions") as any
+            )
+              .update({
+                next_invoice_date: nextInvoiceDate,
+                updated_at: now.toISOString(),
+              })
+              .eq("id", sub.id);
 
-          if (advErr) {
-            console.error(
-              `[BILLING] Error avanzando next_invoice_date (${sub.id}):`,
-              advErr
-            );
-            result.errors.push(
-              `Error avanzando fecha de suscripción ${sub.id}: ${advErr.message}`
-            );
+            if (advErr) {
+              console.error(
+                `[BILLING] Error avanzando next_invoice_date (${sub.id}):`,
+                advErr
+              );
+              result.errors.push(
+                `Error avanzando fecha de suscripción ${sub.id}: ${advErr.message}`
+              );
+            }
           }
         }
 
