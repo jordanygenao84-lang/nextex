@@ -20,11 +20,17 @@ type ValidMetric = (typeof VALID_METRICS)[number];
  *     "metric": "visits" | "sales" | "orders" | "revenue",
  *     "value": number (>= 0),
  *     "currency"?: string,
- *     "date"?: "YYYY-MM-DD" (default hoy UTC)
+ *     "date"?: "YYYY-MM-DD" (default hoy UTC),
+ *     "idempotency_key"?: string (opcional, máx. 128 caracteres)
  *   }
  *
  * Comportamiento:
  *   - Upsert sobre (client_id, metric, metric_date): si existe, SUMA value al existente; si no, inserta.
+ *   - SEC-009: si se envía idempotency_key, la primera recepción la registra en
+ *     metric_idempotency_keys (migración 20261026_fix_seg8_seg9_seg10.sql) y una
+ *     repetición con la misma llave devuelve 204 SIN sumar de nuevo. Si la tabla
+ *     aún no existe (migración pendiente), se registra un aviso y se mantiene el
+ *     comportamiento anterior (suma) para no romper satélites.
  *   - Respuesta 204 sin cuerpo. Nunca lanza excepción al satélite.
  */
 export async function POST(req: NextRequest) {
@@ -58,7 +64,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { metric, value, currency, date } = body;
+    const { metric, value, currency, date, idempotency_key } = body;
 
     if (
       !metric ||
@@ -119,7 +125,48 @@ export async function POST(req: NextRequest) {
         ? currency.trim().toUpperCase()
         : null;
 
+    let normalizedKey: string | null = null;
+    if (idempotency_key !== undefined && idempotency_key !== null) {
+      if (
+        typeof idempotency_key !== "string" ||
+        idempotency_key.trim() === "" ||
+        idempotency_key.trim().length > 128
+      ) {
+        return NextResponse.json(
+          {
+            error: {
+              code: "VALIDATION_ERROR",
+              message: "El campo 'idempotency_key' debe ser un texto de 1 a 128 caracteres.",
+            },
+          },
+          { status: 400 }
+        );
+      }
+      normalizedKey = idempotency_key.trim();
+    }
+
     const serviceClient = createServiceClient();
+
+    // SEC-009: si la llave ya se registró para este (cliente, métrica, día),
+    // es una repetición: devolver 204 sin sumar de nuevo. Si la tabla aún no
+    // existe (migración pendiente), avisar y seguir con el comportamiento anterior.
+    if (normalizedKey) {
+      const { error: keyErr } = await (serviceClient.from("metric_idempotency_keys") as any).insert({
+        client_id: clientId,
+        metric: normalizedMetric,
+        metric_date: metricDate,
+        idempotency_key: normalizedKey,
+      });
+      if (keyErr) {
+        if (keyErr.code === "23505") {
+          return new NextResponse(null, { status: 204 });
+        }
+        console.warn(
+          "[ANALYTICS REPORT] Idempotencia no disponible (¿migración pendiente?):",
+          keyErr.message || keyErr
+        );
+      }
+    }
 
     const { data: existing, error: selectErr } = await (
       serviceClient.from("business_metrics") as any
