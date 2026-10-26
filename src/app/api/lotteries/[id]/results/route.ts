@@ -3,24 +3,56 @@ import { createServiceClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidCalendarDate(dateStr: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return false;
+  }
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return (
+    dt.getUTCFullYear() === y &&
+    dt.getUTCMonth() === m - 1 &&
+    dt.getUTCDate() === d
+  );
+}
+
 /**
  * GET /api/lotteries/[id]/results?date=YYYY-MM-DD
+ * Endpoint PÚBLICO INTENCIONAL: expone únicamente resultados públicos de sorteos
+ * (tablas públicas lottery_catalog y lottery_results).
  * Resultados de un día (default: hoy): [{ draw_time, numbers, fetched_at }]
  * Si no hay resultados guardados → { results: [], message: 'Sin resultados aún para esta fecha' }
+ * Nunca expone mensajes internos de base de datos ni nombres de columnas.
  */
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const lotteryId = params.id;
-    const { searchParams } = new URL(req.url);
+    const lotteryId = (params.id || "").trim();
+    if (!UUID_REGEX.test(lotteryId)) {
+      return NextResponse.json(
+        { error: { code: "NOT_FOUND", message: "Lotería no encontrada." } },
+        { status: 404 }
+      );
+    }
 
-    // Fecha solicitada o default: fecha actual local (YYYY-MM-DD)
+    const { searchParams } = new URL(req.url);
     const dateParam = searchParams.get("date");
+
+    if (dateParam !== null && dateParam.trim() !== "" && !isValidCalendarDate(dateParam.trim())) {
+      return NextResponse.json(
+        { error: { code: "QUERY_ERROR", message: "Error al consultar resultados." } },
+        { status: 400 }
+      );
+    }
+
     const targetDate =
-      dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
-        ? dateParam
+      dateParam && dateParam.trim() !== ""
+        ? dateParam.trim()
         : new Date().toISOString().slice(0, 10);
 
     const serviceClient = createServiceClient();
@@ -31,7 +63,14 @@ export async function GET(
       .eq("id", lotteryId)
       .maybeSingle();
 
-    if (lotErr || !lottery) {
+    if (lotErr) {
+      return NextResponse.json(
+        { error: { code: "QUERY_ERROR", message: "Error al consultar resultados." } },
+        { status: 500 }
+      );
+    }
+
+    if (!lottery) {
       return NextResponse.json(
         { error: { code: "NOT_FOUND", message: "Lotería no encontrada." } },
         { status: 404 }
@@ -47,7 +86,7 @@ export async function GET(
 
     if (resErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: resErr.message } },
+        { error: { code: "QUERY_ERROR", message: "Error al consultar resultados." } },
         { status: 500 }
       );
     }
@@ -66,9 +105,9 @@ export async function GET(
     }));
 
     return NextResponse.json(formatted);
-  } catch (err: any) {
+  } catch {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al consultar resultados." } },
+      { error: { code: "QUERY_ERROR", message: "Error al consultar resultados." } },
       { status: 500 }
     );
   }

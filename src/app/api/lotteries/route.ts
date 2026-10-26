@@ -5,9 +5,11 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/lotteries
- * Lista el catálogo activo de loterías: [{ id, name, official_url, draw_times }]
+ * Endpoint PÚBLICO INTENCIONAL: lista el catálogo público activo de loterías
+ * (tabla pública lottery_catalog): [{ id, name, official_url, draw_times }].
+ * Nunca expone mensajes internos de base de datos ni detalles de esquema.
  */
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   try {
     const serviceClient = createServiceClient();
 
@@ -18,15 +20,15 @@ export async function GET(req: NextRequest) {
 
     if (error) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: error.message } },
+        { error: { code: "QUERY_ERROR", message: "Error al consultar resultados." } },
         { status: 500 }
       );
     }
 
     return NextResponse.json(lotteries || []);
-  } catch (err: any) {
+  } catch {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al obtener catálogo de loterías." } },
+      { error: { code: "QUERY_ERROR", message: "Error al consultar resultados." } },
       { status: 500 }
     );
   }
