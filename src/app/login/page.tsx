@@ -39,6 +39,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectPath = sanitizeRedirectPath(searchParams.get("redirect"));
+  const suspendedNotice = searchParams.get("reason") === "suspended";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -72,16 +73,10 @@ function LoginForm() {
       });
 
       if (signInError) {
-        if (
-          signInError.message.toLowerCase().includes("invalid login credentials") ||
-          signInError.message.toLowerCase().includes("invalid grant")
-        ) {
-          setError("Correo electrónico o contraseña incorrectos.");
-        } else if (signInError.message.toLowerCase().includes("email not confirmed")) {
-          setError("Tu correo electrónico aún no ha sido confirmado. Revisa tu bandeja de entrada.");
-        } else {
-          setError(signInError.message || "No fue posible iniciar sesión.");
-        }
+        // SEC-012: mensaje único para cualquier fallo de autenticación.
+        // No distinguir credenciales inválidas de email no confirmado ni
+        // exponer el mensaje crudo del proveedor (anti-enumeración).
+        setError("Correo electrónico o contraseña incorrectos.");
         setIsLoading(false);
         return;
       }
@@ -151,6 +146,13 @@ function LoginForm() {
             <div className="mb-5 p-3 rounded-xl bg-texter-amber/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
               <span>{oauthNote}</span>
+            </div>
+          )}
+
+          {suspendedNotice && (
+            <div className="mb-5 p-3 rounded-xl bg-texter-amber/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+              <span>Tu cuenta está suspendida. Contacta al administrador.</span>
             </div>
           )}
 
