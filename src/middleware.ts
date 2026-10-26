@@ -81,6 +81,45 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // SEC-003: enforcear suspensión de usuario. Solo se bloquea cuando el
+  // status es explícitamente 'suspended' o 'pending'; cualquier otro valor,
+  // perfil ausente o error de lectura permite el paso (fail-open ante
+  // errores transitorios para no bloquear a todos los usuarios).
+  // No aplica a intakes públicos de máquina (widget, vigía, errores,
+  // analítica, soporte, webhooks, loterías, salud), que autentican por
+  // llave de sitio y no por sesión de usuario.
+  const isPublicApi =
+    pathname.startsWith("/api/widget/") ||
+    pathname === "/api/vigia/events" ||
+    pathname === "/api/errors/report" ||
+    pathname === "/api/analytics/report" ||
+    pathname === "/api/support/report" ||
+    pathname.startsWith("/api/webhooks/") ||
+    pathname.startsWith("/api/inbound/") ||
+    pathname.startsWith("/api/lotteries") ||
+    pathname.startsWith("/api/health") ||
+    pathname === "/api/ai/models";
+  if (user && (isProtectedPath || pathname.startsWith("/api/")) && !isPublicApi) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("status")
+      .eq("id", user.id)
+      .maybeSingle();
+    const status = (profile as { status?: string } | null)?.status;
+    if (status === "suspended" || status === "pending") {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json(
+          { error: { code: "ACCOUNT_SUSPENDED", message: "Cuenta suspendida." } },
+          { status: 403 }
+        );
+      }
+      const redirectUrl = new URL("/login", request.url);
+      redirectUrl.searchParams.set("redirect", pathname);
+      redirectUrl.searchParams.set("reason", "suspended");
+      return NextResponse.redirect(redirectUrl);
+    }
+  }
+
   // Redirigir a login si intenta entrar a ruta privada sin sesión
   if (isProtectedPath && !user) {
     const redirectUrl = new URL("/login", request.url);
