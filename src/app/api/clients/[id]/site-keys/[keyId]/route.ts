@@ -23,35 +23,66 @@ export async function DELETE(
     const { id: clientId, keyId } = params;
     const serviceClient = createServiceClient();
 
-    // Revocar: soft-delete is_active = false
-    const { data: updated, error } = await (serviceClient.from("client_site_keys") as any)
-      .update({
-        is_active: false,
-        updated_at: new Date().toISOString(),
-      })
+    // 1. Buscar la llave por id + client_id
+    const { data: existingKey, error: findErr } = await (
+      serviceClient.from("client_site_keys") as any
+    )
+      .select("id, client_id, is_active")
       .eq("id", keyId)
       .eq("client_id", clientId)
-      .select("id")
       .maybeSingle();
 
-    if (error) {
+    if (findErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: error.message } },
+        { error: { code: "DB_ERROR", message: findErr.message } },
         { status: 500 }
       );
     }
 
-    if (!updated) {
+    if (!existingKey) {
       return NextResponse.json(
         { error: { code: "NOT_FOUND", message: "Site key no encontrada para este cliente." } },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    // 2. Si is_active=true → soft-revoke (is_active=false, updated_at=now)
+    if (existingKey.is_active) {
+      const { error: updateErr } = await (serviceClient.from("client_site_keys") as any)
+        .update({
+          is_active: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", keyId)
+        .eq("client_id", clientId);
+
+      if (updateErr) {
+        return NextResponse.json(
+          { error: { code: "DB_ERROR", message: updateErr.message } },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({ ok: true, action: "revoked" }, { status: 200 });
+    }
+
+    // 3. Si is_active=false → borrado físico definitivo
+    const { error: deleteErr } = await (serviceClient.from("client_site_keys") as any)
+      .delete()
+      .eq("id", keyId)
+      .eq("client_id", clientId);
+
+    if (deleteErr) {
+      return NextResponse.json(
+        { error: { code: "DB_ERROR", message: deleteErr.message } },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ ok: true, action: "deleted" }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al revocar site key." } },
+      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al procesar site key." } },
       { status: 500 }
     );
   }

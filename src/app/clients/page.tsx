@@ -394,6 +394,8 @@ export default function ClientsPage() {
 
   const [revokingKey, setRevokingKey] = useState<ClientSiteKey | null>(null);
   const [isRevokingKey, setIsRevokingKey] = useState(false);
+  const [deletingSiteKey, setDeletingSiteKey] = useState<ClientSiteKey | null>(null);
+  const [isDeletingSiteKey, setIsDeletingSiteKey] = useState(false);
 
   // Modales ID Bindings
   const [isCreateBindingOpen, setIsCreateBindingOpen] = useState(false);
@@ -1220,6 +1222,30 @@ export default function ClientsPage() {
       setFeedback({ type: "error", message: err?.message || "Error de red al revocar site key." });
     } finally {
       setIsRevokingKey(false);
+    }
+  };
+
+  const handleConfirmDeleteSiteKey = async () => {
+    if (!selectedClient || !deletingSiteKey) return;
+
+    setIsDeletingSiteKey(true);
+    try {
+      const res = await fetch(`/api/clients/${selectedClient.id}/site-keys/${deletingSiteKey.id}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        await loadSiteKeys(selectedClient.id);
+        setFeedback({ type: "success", message: "Site key eliminada" });
+        setDeletingSiteKey(null);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setFeedback({ type: "error", message: data?.error?.message || "Error al eliminar site key." });
+      }
+    } catch (err: any) {
+      setFeedback({ type: "error", message: err?.message || "Error de red al eliminar site key." });
+    } finally {
+      setIsDeletingSiteKey(false);
     }
   };
 
@@ -3160,7 +3186,7 @@ export default function ClientsPage() {
                                   <RotateCcw className="w-3 h-3 mr-1" />
                                   <span>Regenerar</span>
                                 </Button>
-                                {k.is_active && (
+                                {k.is_active ? (
                                   <Button
                                     variant="danger"
                                     size="sm"
@@ -3170,6 +3196,17 @@ export default function ClientsPage() {
                                   >
                                     <Trash2 className="w-3 h-3 mr-1" />
                                     <span>Revocar</span>
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="danger"
+                                    size="sm"
+                                    onClick={() => setDeletingSiteKey(k)}
+                                    className="text-[11px] h-7 px-2"
+                                    title="Eliminar clave revocada"
+                                  >
+                                    <Trash2 className="w-3 h-3 mr-1" />
+                                    <span>Eliminar</span>
                                   </Button>
                                 )}
                               </div>
@@ -5001,6 +5038,29 @@ export default function ClientsPage() {
               </Button>
               <Button variant="danger" size="sm" onClick={handleConfirmRevokeKey} isLoading={isRevokingKey}>
                 Confirmar Revocación
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR ELIMINAR SITE KEY REVOCADA */}
+      {deletingSiteKey && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <Card variant="elevated" className="max-w-md w-full space-y-4 bg-texter-surface border-texter-rose/40">
+            <div className="flex items-center gap-2.5 text-texter-rose font-bold text-base">
+              <Trash2 className="w-5 h-5" />
+              Eliminar Site Key
+            </div>
+            <p className="text-xs text-texter-text-muted leading-relaxed">
+              ¿Estás seguro de que deseas eliminar definitivamente la clave revocada <strong className="text-white">&quot;{deletingSiteKey.name}&quot;</strong> ({deletingSiteKey.key_prefix}...)? Esta acción no se puede deshacer.
+            </p>
+            <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
+              <Button variant="ghost" size="sm" onClick={() => setDeletingSiteKey(null)}>
+                Volver
+              </Button>
+              <Button variant="danger" size="sm" onClick={handleConfirmDeleteSiteKey} isLoading={isDeletingSiteKey}>
+                Eliminar definitivamente
               </Button>
             </div>
           </Card>
