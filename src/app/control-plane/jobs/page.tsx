@@ -35,6 +35,7 @@ export default function JobsControlPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [hideTests, setHideTests] = useState(false);
 
   const [modalState, setModalState] = useState<{
     isOpen: boolean;
@@ -177,6 +178,15 @@ export default function JobsControlPage() {
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
               Refrescar
             </Button>
+            <label className="flex items-center gap-2 text-xs text-texter-text-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={hideTests}
+                onChange={(e) => setHideTests(e.target.checked)}
+                className="accent-indigo-500"
+              />
+              Ocultar pruebas (TEST o Prueba)
+            </label>
           </div>
         </div>
 
@@ -202,14 +212,14 @@ export default function JobsControlPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-texter-border/50 text-texter-text-secondary">
-                {jobs.length === 0 ? (
+                {jobs.filter((j) => !hideTests || !/test|prueba/i.test(j.name)).length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-8 text-center text-texter-text-muted">
                       {isLoading ? "Consultando jobs..." : "No se encontraron jobs."}
                     </td>
                   </tr>
                 ) : (
-                  jobs.map((j) => (
+                  jobs.filter((j) => !hideTests || !/test|prueba/i.test(j.name)).map((j) => (
                     <tr key={j.id} className="hover:bg-texter-surface-hover/50 transition-colors">
                       <td className="py-3 px-4">
                         <Link
@@ -247,24 +257,28 @@ export default function JobsControlPage() {
                         )}
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openActionModal(j, "cancel")}
-                            className="text-[11px] text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 px-2 py-1 h-auto"
-                          >
-                            Cancel
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openActionModal(j, "retry")}
-                            className="text-[11px] text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 px-2 py-1 h-auto"
-                          >
-                            Retry
-                          </Button>
-                        </div>
+                        {j.status === "active" ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openActionModal(j, "cancel")}
+                              className="text-[11px] text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 px-2 py-1 h-auto"
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openActionModal(j, "retry")}
+                              className="text-[11px] text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 px-2 py-1 h-auto"
+                            >
+                              Retry
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-texter-text-muted text-[11px]">—</span>
+                        )}
                       </td>
                     </tr>
                   ))

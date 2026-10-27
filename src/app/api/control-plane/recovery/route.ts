@@ -37,6 +37,12 @@ export async function GET(req: NextRequest) {
       .eq("workspace_id", member.workspace_id)
       .in("status", ["STALE", "QUARANTINED"]);
 
+    // Total de workers registrados: sin este dato, 0 workers obsoletos se
+    // leía como "todos responden a tiempo" aunque no hubiera ninguno.
+    const { count: workersCount } = await (supabase.from("workers") as any)
+      .select("id", { count: "exact", head: true })
+      .eq("workspace_id", member.workspace_id);
+
     // Consultar Leases expirados
     const { data: expiredLeases } = await (supabase.from("worker_leases") as any)
       .select("*, workers(worker_identity), job_runs(id, status, fencing_token)")
@@ -65,6 +71,7 @@ export async function GET(req: NextRequest) {
       staleWorkers: staleWorkers || [],
       expiredLeases: expiredLeases || [],
       recoveryEvents: recoveryEvents || [],
+      workersCount: workersCount ?? 0,
     });
   } catch (err: any) {
     return NextResponse.json(

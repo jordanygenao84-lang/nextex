@@ -96,6 +96,7 @@ export default function LandingPage() {
                   </span>
                 </div>
                 <div className="flex items-center gap-3 text-xs font-mono text-texter-text-dim">
+                  <Badge variant="warning" size="sm">Vista previa ilustrativa</Badge>
                   <span className="text-emerald-400 flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                     Supabase Conectado

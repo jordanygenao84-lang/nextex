@@ -62,6 +62,7 @@ export default function AutomationsPage() {
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [hideTests, setHideTests] = useState(false);
 
   // Modal y Modo de Creación
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -627,8 +628,21 @@ export default function AutomationsPage() {
         )}
 
         {/* Lista de Automations */}
+        <div className="flex items-center justify-end">
+          <label className="flex items-center gap-2 text-xs text-texter-text-muted cursor-pointer">
+            <input
+              type="checkbox"
+              checked={hideTests}
+              onChange={(e) => setHideTests(e.target.checked)}
+              className="accent-indigo-500"
+            />
+            Ocultar pruebas (nombres con TEST o Prueba)
+          </label>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {automations.map((auto) => (
+          {automations
+            .filter((auto) => !hideTests || !/test|prueba/i.test(auto.name))
+            .map((auto) => (
             <Card key={auto.id} variant="elevated" className="space-y-3">
               <div className="flex justify-between items-start">
                 <div>
@@ -685,15 +699,17 @@ export default function AutomationsPage() {
                       <span>Activar</span>
                     </Button>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleStatusChange(auto.id, "archive")}
-                    className="text-xs text-texter-text-dim hover:text-rose-400"
-                    title="Archivar"
-                  >
-                    <Archive className="w-3.5 h-3.5" />
-                  </Button>
+                  {auto.status !== "archived" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleStatusChange(auto.id, "archive")}
+                      className="text-xs text-texter-text-dim hover:text-rose-400"
+                      title="Archivar"
+                    >
+                      <Archive className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
                 </div>
                 <span className="text-[11px] text-texter-text-dim flex items-center gap-1 font-mono">
                   <Clock className="w-3 h-3 text-texter-indigo" />

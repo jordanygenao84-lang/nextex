@@ -29,17 +29,20 @@ type RunRow = {
 const RUNNING = ["running", "claimed", "waiting_approval"];
 const FAILED = ["failed", "timeout", "dead_letter"];
 
-function groupOf(status: string): "completed" | "running" | "failed" | "queued" | "other" {
+function groupOf(status: string): "completed" | "running" | "failed" | "queued" | "cancelled" | "other" {
   if (status === "completed") return "completed";
   if (RUNNING.includes(status)) return "running";
   if (FAILED.includes(status)) return "failed";
   if (status === "queued") return "queued";
+  if (status === "cancelled") return "cancelled";
   return "other";
 }
 
+// Etiquetas idénticas a /jobs: el mismo run debe llamarse igual en todas
+// las páginas (antes el dashboard decía "Error" donde /jobs decía
+// "Fallido"/"Descartado" y Control Plane mostraba el código en inglés).
 function statusBadge(status: string) {
-  const g = groupOf(status);
-  switch (g) {
+  switch (status) {
     case "completed":
       return (
         <Badge variant="success" size="sm" dot>
@@ -49,19 +52,49 @@ function statusBadge(status: string) {
     case "running":
       return (
         <Badge variant="cyan" size="sm" dot>
-          Ejecutando
+          En ejecución
         </Badge>
       );
-    case "failed":
+    case "claimed":
       return (
-        <Badge variant="error" size="sm" dot>
-          Error
+        <Badge variant="cyan" size="sm" dot>
+          Reclamado
+        </Badge>
+      );
+    case "waiting_approval":
+      return (
+        <Badge variant="warning" size="sm" dot>
+          Esperando aprobación
         </Badge>
       );
     case "queued":
       return (
         <Badge variant="warning" size="sm" dot>
           En cola
+        </Badge>
+      );
+    case "failed":
+      return (
+        <Badge variant="danger" size="sm" dot>
+          Fallido
+        </Badge>
+      );
+    case "timeout":
+      return (
+        <Badge variant="danger" size="sm" dot>
+          Timeout
+        </Badge>
+      );
+    case "dead_letter":
+      return (
+        <Badge variant="danger" size="sm" dot>
+          Descartado
+        </Badge>
+      );
+    case "cancelled":
+      return (
+        <Badge variant="default" size="sm" dot>
+          Cancelado
         </Badge>
       );
     default:
@@ -133,6 +166,16 @@ export const JobsTable: React.FC = () => {
       id: "failed",
       label: "Fallidos",
       count: runs.filter((j) => groupOf(j.status) === "failed").length,
+    },
+    {
+      id: "queued",
+      label: "En cola",
+      count: runs.filter((j) => groupOf(j.status) === "queued").length,
+    },
+    {
+      id: "cancelled",
+      label: "Cancelados",
+      count: runs.filter((j) => groupOf(j.status) === "cancelled").length,
     },
   ];
 

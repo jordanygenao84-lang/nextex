@@ -28,6 +28,7 @@ export default function IntegrationsPage() {
   const { workspace } = useAuth();
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [hideTests, setHideTests] = useState(false);
 
   // Modal de Creación
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -244,8 +245,21 @@ export default function IntegrationsPage() {
         )}
 
         {/* Lista de Integraciones */}
+        <div className="flex items-center justify-end">
+          <label className="flex items-center gap-2 text-xs text-texter-text-muted cursor-pointer">
+            <input
+              type="checkbox"
+              checked={hideTests}
+              onChange={(e) => setHideTests(e.target.checked)}
+              className="accent-indigo-500"
+            />
+            Ocultar pruebas (nombres con TEST o Prueba)
+          </label>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {integrations.map((integ) => (
+          {integrations
+            .filter((integ) => !hideTests || !/test|prueba/i.test(integ.name))
+            .map((integ) => (
             <Card key={integ.id} variant="elevated" className="space-y-3">
               <div className="flex justify-between items-start">
                 <div>
@@ -277,9 +291,11 @@ export default function IntegrationsPage() {
                       <Play className="w-3.5 h-3.5 text-texter-success" />
                     </Button>
                   )}
-                  <Button variant="ghost" size="sm" onClick={() => handleStatusChange(integ.id, "revoke")} title="Revocar">
-                    <Ban className="w-3.5 h-3.5 text-texter-error" />
-                  </Button>
+                  {integ.status !== "revoked" && (
+                    <Button variant="ghost" size="sm" onClick={() => handleStatusChange(integ.id, "revoke")} title="Revocar">
+                      <Ban className="w-3.5 h-3.5 text-texter-error" />
+                    </Button>
+                  )}
                 </div>
 
                 <Link href={`/integrations/${integ.id}`}>

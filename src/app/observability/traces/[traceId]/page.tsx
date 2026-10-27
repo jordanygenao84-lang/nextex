@@ -335,6 +335,15 @@ export default function TraceDetailPage() {
                 {/* Atributos sanitizados */}
                 <div className="space-y-1.5 pt-2 border-t border-texter-border/50">
                   <span className="text-texter-text-dim block">Atributos Sanitizados (Capa 1/2):</span>
+                  {(selectedSpan.attributes?.source || selectedSpan.attributes?.actor_type) && (
+                    <p className="text-[11px] text-texter-text-dim leading-relaxed">
+                      Leyenda: "source" es quién originó la acción y
+                      "actor_type" quién la ejecuta; que una cancelación
+                      muestre source "user" con actor_type "system" es
+                      correcto (el usuario la pidió, el sistema la ejecuta).
+                      Un correlation_id vacío significa que no se aportó uno.
+                    </p>
+                  )}
                   <pre className="p-3 rounded-xl bg-black/50 border border-texter-border/50 text-[11px] text-texter-cyan overflow-x-auto max-h-60">
                     {JSON.stringify(selectedSpan.attributes, null, 2)}
                   </pre>

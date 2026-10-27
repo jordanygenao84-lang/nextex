@@ -36,6 +36,7 @@ export default function SettingsPage() {
 
   // Estados de gobernanza y miembros (Fase 4.4)
   const [members, setMembers] = useState<any[]>([]);
+  const [membersLoading, setMembersLoading] = useState(true);
   const [overrides, setOverrides] = useState<any[]>([]);
   const [selectedMember, setSelectedMember] = useState<any | null>(null);
 
@@ -56,6 +57,7 @@ export default function SettingsPage() {
   useEffect(() => {
     async function loadWorkspaceGovernance() {
       if (!workspace?.id) return;
+      setMembersLoading(true);
       try {
         const supabase = createClient();
         const { data: memberRows } = await (supabase.from("workspace_members") as any)
@@ -90,6 +92,8 @@ export default function SettingsPage() {
         }
       } catch {
         // Fallback no bloqueante
+      } finally {
+        setMembersLoading(false);
       }
     }
 
@@ -307,14 +311,14 @@ export default function SettingsPage() {
             <div className="p-3.5 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-1">
               <span className="text-[11px] font-mono text-texter-text-dim uppercase">Nombre del Workspace</span>
               <p className="text-sm font-semibold text-white font-mono">
-                {workspace?.name || `${fullName || "Personal"} Workspace`}
+                {workspace ? workspace.name : "Cargando…"}
               </p>
             </div>
 
             <div className="p-3.5 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-1">
               <span className="text-[11px] font-mono text-texter-text-dim uppercase">Identificador Slug</span>
               <p className="text-sm font-semibold text-texter-cyan font-mono">
-                {workspace?.slug || "nx-personal-8819"}
+                {workspace ? workspace.slug : "Cargando…"}
               </p>
             </div>
           </div>
@@ -347,7 +351,7 @@ export default function SettingsPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-semibold text-texter-text-secondary uppercase tracking-wider font-mono">
-                  Miembros Registrados ({members.length})
+                  Miembros Registrados ({membersLoading ? "…" : members.length})
                 </h4>
                 {isOwner && (
                   <span className="text-[10px] text-emerald-400 font-mono">

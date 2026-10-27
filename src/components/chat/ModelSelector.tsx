@@ -70,7 +70,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
         {currentModel?.status === "available" ? (
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-        ) : (
+        ) : isLoading ? null : (
           <span className="text-[10px] px-1 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono">
             No configurado
           </span>

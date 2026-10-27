@@ -212,7 +212,9 @@ export default function WorkersPage() {
                 {workers.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-8 text-center text-texter-text-muted">
-                      {isLoading ? "Consultando workers..." : "No hay workers registrados en este workspace."}
+                      {isLoading
+                        ? "Consultando workers..."
+                        : "No hay workers registrados en este workspace. Las ejecuciones que ves en Runs usan identificadores efímeros por ejecución, no workers registrados; por eso el contador es 0 aunque haya runs."}
                     </td>
                   </tr>
                 ) : (

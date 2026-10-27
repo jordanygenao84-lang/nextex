@@ -31,13 +31,22 @@ export default function ObservabilityDashboardPage() {
   const [componentFilter, setComponentFilter] = useState<string>("all");
   const [isLoading, setIsLoading] = useState(true);
 
+  // Filtro local a nivel de traza: la lista siempre muestra lo que el
+  // filtro seleccionado dice, aunque la respuesta del servidor no viniera
+  // filtrada. (El endpoint también filtra a nivel de traza, no de span.)
+  const filteredTraces = traces.filter(
+    (t) =>
+      (statusFilter === "all" || t.status === statusFilter) &&
+      (componentFilter === "all" || (t.components || []).includes(componentFilter))
+  );
+
   const loadData = async () => {
     if (!workspace?.id) return;
     setIsLoading(true);
     try {
-      let url = `/api/observability/traces?workspaceId=${workspace.id}&limit=50`;
-      if (statusFilter !== "all") url += `&status=${statusFilter}`;
-      if (componentFilter !== "all") url += `&component=${componentFilter}`;
+      // Se traen todas las trazas y el filtro se aplica en local (ver
+      // filteredTraces): así el conteo "X de Y" siempre es coherente.
+      const url = `/api/observability/traces?workspaceId=${workspace.id}&limit=50`;
 
       const [tracesRes, statsRes] = await Promise.all([
         fetch(url),
@@ -124,11 +133,11 @@ export default function ObservabilityDashboardPage() {
 
           <Card variant="elevated" padding="md" className="space-y-2 border-texter-border/80">
             <div className="flex items-center justify-between text-texter-text-muted">
-              <span className="text-xs font-medium">Tasa de Éxito</span>
+              <span className="text-xs font-medium">Tasa de Éxito (spans)</span>
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="text-2xl font-bold text-white font-mono">
-              {stats?.successRate ? `${stats.successRate.toFixed(1)}%` : "100%"}
+              {stats == null ? "—" : `${stats.successRate.toFixed(1)}%`}
             </div>
             <p className="text-[11px] text-texter-text-dim font-mono">
               Fallos registrados: {stats?.failedCount || 0}
@@ -188,7 +197,7 @@ export default function ObservabilityDashboardPage() {
           </div>
 
           <span className="text-xs font-mono text-texter-text-dim">
-            Mostrando {traces.length} traza(s)
+            Mostrando {filteredTraces.length} de {traces.length} traza(s)
           </span>
         </div>
 
@@ -201,9 +210,13 @@ export default function ObservabilityDashboardPage() {
               Las ejecuciones de Webhooks, Jobs y Agentes aparecerán automáticamente en esta vista.
             </p>
           </Card>
+        ) : filteredTraces.length === 0 ? (
+          <p className="text-sm text-texter-text-muted text-center py-8">
+            Ninguna traza coincide con el filtro seleccionado.
+          </p>
         ) : (
           <div className="space-y-3">
-            {traces.map((trace) => {
+            {filteredTraces.map((trace) => {
               const isFailed = trace.status === "failed";
               const timing = trace.timing;
 

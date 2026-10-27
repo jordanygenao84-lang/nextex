@@ -135,7 +135,7 @@ export class MetricsCollector {
       }
     }
 
-    const successRate = totalSpans > 0 ? (completedCount / totalSpans) * 100 : 100;
+    const successRate = totalSpans > 0 ? (completedCount / totalSpans) * 100 : 0;
     const avgDurationMs = totalSpans > 0 ? Math.round(totalDurationMs / totalSpans) : 0;
 
     return {

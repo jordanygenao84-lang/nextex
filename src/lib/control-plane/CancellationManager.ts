@@ -82,7 +82,7 @@ export class CancellationManager {
         source,
         actor_id: actorId || "system",
         actor_type: actorType || "system",
-        correlation_id: correlationId || "",
+        correlation_id: correlationId || null,
       },
     });
 
@@ -433,7 +433,7 @@ export class CancellationManager {
         timeout_ms: timeoutMs,
         reason,
         actor_id: actorId,
-        correlation_id: correlationId || "",
+        correlation_id: correlationId || null,
       },
     });
 

@@ -31,6 +31,7 @@ interface WebSummary {
   backup_last_size_bytes: number | null;
   open_tickets: number;
   tickets_total: number;
+  open_critical_findings: number;
   active_keys: number;
   last_activity_at: string | null;
 }
@@ -95,6 +96,8 @@ export default function AdminWebsPage() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<WebDetail | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [lastDetailId, setLastDetailId] = useState<string | null>(null);
 
   const [showRegister, setShowRegister] = useState(false);
   const [formName, setFormName] = useState("");
@@ -133,14 +136,18 @@ export default function AdminWebsPage() {
 
   const loadWebDetail = async (webId: string) => {
     setIsLoadingDetail(true);
+    setDetailError(null);
+    setLastDetailId(webId);
     try {
       const res = await fetch(`/api/admin/webs/${webId}`, { cache: "no-store" });
       const json = await res.json();
       if (res.ok && json.web) {
         setSelected(json as WebDetail);
+      } else {
+        setDetailError("No se pudo cargar la ficha de esta web.");
       }
     } catch {
-      // Silencioso
+      setDetailError("No se pudo cargar la ficha de esta web (error de red).");
     } finally {
       setIsLoadingDetail(false);
     }
@@ -222,6 +229,28 @@ export default function AdminWebsPage() {
       default:
         return <Badge variant="default" size="sm">Sin datos</Badge>;
     }
+  };
+
+  // "Salud OK" solo si TODO está bien: salud ok + backup al día + sin
+  // hallazgos críticos abiertos. Si la salud responde pero el respaldo
+  // falla o hay un hallazgo crítico, la web necesita revisión aunque el
+  // chequeo HTTP dé ok.
+  const saludGeneral = (s: WebSummary) => {
+    if (
+      s.health_status === "ok" &&
+      s.backup_status === "al_dia" &&
+      (s.open_critical_findings ?? 0) === 0
+    ) {
+      return healthBadge("ok");
+    }
+    if (s.health_status === "ok") {
+      return (
+        <Badge variant="warning" size="sm" dot>
+          Revisar
+        </Badge>
+      );
+    }
+    return healthBadge(s.health_status);
   };
 
   const backupBadge = (status: string) => {
@@ -488,7 +517,12 @@ export default function AdminWebsPage() {
               className="w-full p-2 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white outline-none"
             />
             <span className="text-xs font-mono text-texter-text-muted shrink-0">
-              Total: <strong className="text-white ml-1">{webs.length}</strong>
+              Total:{" "}
+              <strong className="text-white ml-1">
+                {search.trim()
+                  ? `${filtered.length} de ${webs.length}`
+                  : webs.length}
+              </strong>
             </span>
           </div>
         </Card>
@@ -517,7 +551,7 @@ export default function AdminWebsPage() {
                         {w.display_name}
                       </p>
                       <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
-                        {healthBadge(w.summary.health_status)}
+                        {saludGeneral(w.summary)}
                         {backupBadge(w.summary.backup_status)}
                       </div>
                     </div>
@@ -561,14 +595,26 @@ export default function AdminWebsPage() {
             variant="elevated"
             className="lg:col-span-7 p-4 flex flex-col min-h-[480px]"
           >
-            {!selected ? (
+            {isLoadingDetail ? (
+              <div className="my-auto text-center py-16 text-xs text-texter-text-dim">
+                Cargando ficha de la web...
+              </div>
+            ) : detailError ? (
+              <div className="my-auto text-center py-16 text-xs space-y-3">
+                <p className="text-red-400">{detailError}</p>
+                {lastDetailId && (
+                  <button
+                    onClick={() => loadWebDetail(lastDetailId)}
+                    className="px-3 py-1.5 rounded-xl bg-texter-indigo text-white text-xs"
+                  >
+                    Reintentar
+                  </button>
+                )}
+              </div>
+            ) : !selected ? (
               <div className="my-auto text-center py-16 text-xs text-texter-text-dim">
                 Selecciona una web de la lista para ver su soporte, seguimiento,
                 dominios y backups.
-              </div>
-            ) : isLoadingDetail ? (
-              <div className="my-auto text-center py-16 text-xs text-texter-text-dim">
-                Cargando ficha de la web...
               </div>
             ) : (
               <div className="space-y-6">
@@ -577,9 +623,27 @@ export default function AdminWebsPage() {
                     <h3 className="text-base font-bold text-white">
                       {selected.web.display_name}
                     </h3>
-                    {healthBadge(
-                      selected.tracking.health?.status || "sin_datos"
-                    )}
+                    {(() => {
+                      const listSummary = webs.find(
+                        (w) => w.id === selected.web.id
+                      )?.summary;
+                      return listSummary
+                        ? saludGeneral(listSummary)
+                        : healthBadge(
+                            selected.tracking.health?.status || "sin_datos"
+                          );
+                    })()}
+                    {(() => {
+                      const crit = webs.find(
+                        (w) => w.id === selected.web.id
+                      )?.summary.open_critical_findings;
+                      return crit ? (
+                        <span className="text-xs text-amber-400">
+                          {crit} hallazgo(s) crítico(s) abierto(s) — ver en
+                          Vigilancia
+                        </span>
+                      ) : null;
+                    })()}
                   </div>
                   <p className="text-xs text-texter-text-muted mt-1">
                     {selected.web.website_url ? (

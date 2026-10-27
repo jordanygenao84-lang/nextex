@@ -27,6 +27,7 @@ export default function JobsPage() {
   const [runs, setRuns] = useState<JobRun[]>([]);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [hideTests, setHideTests] = useState(false);
   const [agents, setAgents] = useState<{ id: string; name: string; model_id?: string }[]>([]);
   const [runningJobId, setRunningJobId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -362,8 +363,21 @@ export default function JobsPage() {
         )}
 
         {/* Lista de Jobs */}
+        <div className="flex items-center justify-end">
+          <label className="flex items-center gap-2 text-xs text-texter-text-muted cursor-pointer">
+            <input
+              type="checkbox"
+              checked={hideTests}
+              onChange={(e) => setHideTests(e.target.checked)}
+              className="accent-indigo-500"
+            />
+            Ocultar pruebas (nombres con TEST o Prueba)
+          </label>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {jobs.map((job) => (
+          {jobs
+            .filter((job) => !hideTests || !/test|prueba/i.test(job.name))
+            .map((job) => (
             <Card key={job.id} variant="elevated" className="space-y-3 flex flex-col justify-between">
               <div className="space-y-3">
                 <div className="flex justify-between items-start">

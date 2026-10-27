@@ -37,6 +37,7 @@ interface ExpiredLease {
 
 export default function RecoveryControlPage() {
   const [staleWorkers, setStaleWorkers] = useState<StaleWorker[]>([]);
+  const [workersCount, setWorkersCount] = useState<number | null>(null);
   const [expiredLeases, setExpiredLeases] = useState<ExpiredLease[]>([]);
   const [recoveryEvents, setRecoveryEvents] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -55,6 +56,9 @@ export default function RecoveryControlPage() {
       }
       const data = await res.json();
       setStaleWorkers(data.staleWorkers || []);
+      setWorkersCount(
+        typeof data.workersCount === "number" ? data.workersCount : null
+      );
       setExpiredLeases(data.expiredLeases || []);
       setRecoveryEvents(data.recoveryEvents || []);
     } catch (err: any) {
@@ -166,7 +170,13 @@ export default function RecoveryControlPage() {
             </div>
 
             <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-              {staleWorkers.length === 0 ? (
+              {workersCount === 0 ? (
+                <p className="text-texter-text-muted text-[11px] py-4 text-center">
+                  Sin workers registrados para evaluar: las ejecuciones usan
+                  identificadores efímeros por run y no hay workers
+                  registrados en este workspace.
+                </p>
+              ) : staleWorkers.length === 0 ? (
                 <p className="text-texter-text-muted text-[11px] py-4 text-center">
                   Todos los workers están respondiendo a tiempo.
                 </p>

@@ -19,6 +19,24 @@ export const DecisionBadge: React.FC<DecisionBadgeProps> = ({
 }) => {
   const norm = String(decision || "").toLowerCase();
 
+  // Etiquetas en español para estados de run (iguales que en /jobs y en el
+  // dashboard). Las decisiones de gobernanza (allow/deny/...) no están en
+  // el mapa y se muestran como antes.
+  const RUN_LABELS: Record<string, string> = {
+    completed: "Completado",
+    running: "En ejecución",
+    claimed: "Reclamado",
+    waiting_approval: "Esperando aprobación",
+    queued: "En cola",
+    failed: "Fallido",
+    timeout: "Timeout",
+    dead_letter: "Descartado",
+    cancelled: "Cancelado",
+    retry_scheduled: "Reintento programado",
+    cancellation_requested: "Cancelación solicitada",
+  };
+  const label = RUN_LABELS[norm] ?? decision.toUpperCase();
+
   switch (norm) {
     case "allow":
     case "approved":
@@ -33,7 +51,7 @@ export const DecisionBadge: React.FC<DecisionBadgeProps> = ({
           )}
         >
           {showIcon && <CheckCircle2 className="w-3.5 h-3.5" />}
-          {decision.toUpperCase()}
+          {label}
         </span>
       );
 
@@ -51,7 +69,7 @@ export const DecisionBadge: React.FC<DecisionBadgeProps> = ({
           )}
         >
           {showIcon && <XCircle className="w-3.5 h-3.5" />}
-          {decision.toUpperCase()}
+          {label}
         </span>
       );
 
@@ -68,7 +86,7 @@ export const DecisionBadge: React.FC<DecisionBadgeProps> = ({
           )}
         >
           {showIcon && <AlertCircle className="w-3.5 h-3.5" />}
-          {decision.toUpperCase()}
+          {label}
         </span>
       );
 
@@ -84,7 +102,7 @@ export const DecisionBadge: React.FC<DecisionBadgeProps> = ({
           )}
         >
           {showIcon && <ShieldAlert className="w-3.5 h-3.5" />}
-          {decision.toUpperCase()}
+          {label}
         </span>
       );
 
@@ -100,7 +118,7 @@ export const DecisionBadge: React.FC<DecisionBadgeProps> = ({
           )}
         >
           {showIcon && <Clock className="w-3.5 h-3.5" />}
-          {decision.toUpperCase()}
+          {label}
         </span>
       );
 
@@ -113,7 +131,7 @@ export const DecisionBadge: React.FC<DecisionBadgeProps> = ({
             className
           )}
         >
-          {decision.toUpperCase()}
+          {label}
         </span>
       );
   }

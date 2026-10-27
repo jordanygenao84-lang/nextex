@@ -45,7 +45,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [collapsed, setCollapsed] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, isLoading } = useAuth();
 
   const mainNav = [
     {
@@ -64,7 +64,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       name: "Agentes Autónomos",
       href: "/agents",
       icon: Bot,
-      badge: "Core v4.1",
+      badge: "Core v4.4",
     },
     {
       name: "Control Plane",
@@ -170,11 +170,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setIsLoggingOut(false);
   };
 
-  const displayName = user
-    ? profile?.full_name || user.email?.split("@")[0] || "Usuario"
-    : "Invitado";
+  // Mientras la autenticación carga no se muestra ningún valor provisional:
+  // antes aparecían "Invitado" y "FREE" durante segundos y luego cambiaban
+  // al nombre y plan reales.
+  const displayName = isLoading
+    ? "Cargando…"
+    : user
+      ? profile?.full_name || user.email?.split("@")[0] || "Usuario"
+      : "Invitado";
   const displayEmail = user?.email || "";
-  const userPlan = (profile?.plan || "free").toUpperCase();
+  const userPlan = isLoading ? "—" : (profile?.plan || "free").toUpperCase();
   const initials = displayName
     .split(" ")
     .map((w) => w[0])

@@ -175,9 +175,24 @@ export default function IntegrationDetailPage({ params }: { params: { id: string
             <h1 className="text-xl font-bold text-white flex items-center gap-2">
               <Webhook className="w-5 h-5 text-texter-cyan" />
               {integration?.name || "Cargando..."}
+              {integration?.status === "active" && (
+                <Badge variant="success" size="sm" dot>Activa</Badge>
+              )}
+              {integration?.status === "paused" && (
+                <Badge variant="warning" size="sm" dot>Pausada</Badge>
+              )}
+              {integration?.status === "revoked" && (
+                <Badge variant="error" size="sm" dot>Revocada</Badge>
+              )}
+              {integration?.status === "archived" && (
+                <Badge variant="default" size="sm" dot>Archivada</Badge>
+              )}
             </h1>
             <p className="text-xs text-texter-text-muted">
               Proveedor: <span className="font-mono text-white">{integration?.provider}</span>
+              {integration?.status === "revoked" && (
+                <span className="text-texter-text-dim"> · Los endpoints de esta integración están inactivos aunque su registro individual diga "active".</span>
+              )}
             </p>
           </div>
         </div>
@@ -235,7 +250,8 @@ export default function IntegrationDetailPage({ params }: { params: { id: string
                         variant="outline"
                         size="sm"
                         onClick={() => handleRotateSecret(ep.id, ep.name)}
-                        disabled={isRotating === ep.id}
+                        disabled={isRotating === ep.id || integration?.status === "revoked"}
+                        title={integration?.status === "revoked" ? "La integración está revocada" : undefined}
                         className="text-texter-warning border-texter-warning/30 hover:bg-texter-warning/10 text-xs"
                       >
                         <KeyRound className="w-3.5 h-3.5 mr-1" />
@@ -336,7 +352,14 @@ export default function IntegrationDetailPage({ params }: { params: { id: string
                       </td>
                     </tr>
                   ))}
-                  {events.length === 0 && (
+                  {isLoading && (
+                    <tr>
+                      <td colSpan={7} className="p-6 text-center text-texter-text-dim">
+                        Cargando eventos…
+                      </td>
+                    </tr>
+                  )}
+                  {events.length === 0 && !isLoading && (
                     <tr>
                       <td colSpan={7} className="p-6 text-center text-texter-text-dim">
                         No se han recibido eventos para esta integración.

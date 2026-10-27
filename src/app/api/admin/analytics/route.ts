@@ -346,13 +346,25 @@ export async function GET(req: NextRequest) {
     }> = [];
 
     try {
-      const { data: healthRows, error: hErr } = await (
-        serviceClient.from("site_health_checks") as any
-      )
-        .select("client_id, status, checked_at")
-        .gte("checked_at", sevenDaysAgoIso);
-
-      if (hErr) throw hErr;
+      // Paginación obligatoria: PostgREST devuelve 1000 filas por defecto y
+      // los chequeos son por minuto (~17k en 7 días). Sin paginar, las
+      // primeras 1000 filas eran casi todas de un solo cliente y el otro
+      // salía "Sin chequeos" aunque sí tenía chequeos recientes.
+      const healthRows: any[] = [];
+      const PAGE = 1000;
+      for (let page = 0; page < 50; page++) {
+        const { data: chunk, error: pgErr } = await (
+          serviceClient.from("site_health_checks") as any
+        )
+          .select("client_id, status, checked_at")
+          .gte("checked_at", sevenDaysAgoIso)
+          .order("checked_at", { ascending: true })
+          .range(page * PAGE, page * PAGE + PAGE - 1);
+        if (pgErr) throw pgErr;
+        if (!chunk || chunk.length === 0) break;
+        healthRows.push(...chunk);
+        if (chunk.length < PAGE) break;
+      }
 
       const healthMap = new Map<string, { ok: number; total: number }>();
       for (const c of clientsList) {
@@ -398,6 +410,12 @@ export async function GET(req: NextRequest) {
         orders: number;
         revenue: number;
       };
+      reported: {
+        visits: boolean;
+        sales: boolean;
+        orders: boolean;
+        revenue: boolean;
+      };
       currency: string | null;
       has_data: boolean;
     }> = [];
@@ -418,33 +436,35 @@ export async function GET(req: NextRequest) {
           sales: number;
           orders: number;
           revenue: number;
+          reported: {
+            visits: boolean;
+            sales: boolean;
+            orders: boolean;
+            revenue: boolean;
+          };
           currency: string | null;
           has_data: boolean;
         }
       >();
 
+      const emptyEntry = () => ({
+        visits: 0,
+        sales: 0,
+        orders: 0,
+        revenue: 0,
+        reported: { visits: false, sales: false, orders: false, revenue: false },
+        currency: null as string | null,
+        has_data: false,
+      });
+
       for (const c of clientsList) {
-        metricsMap.set(c.id, {
-          visits: 0,
-          sales: 0,
-          orders: 0,
-          revenue: 0,
-          currency: null,
-          has_data: false,
-        });
+        metricsMap.set(c.id, emptyEntry());
       }
 
       for (const row of metricRows || []) {
         if (!row.client_id) continue;
         if (!metricsMap.has(row.client_id)) {
-          metricsMap.set(row.client_id, {
-            visits: 0,
-            sales: 0,
-            orders: 0,
-            revenue: 0,
-            currency: null,
-            has_data: false,
-          });
+          metricsMap.set(row.client_id, emptyEntry());
         }
         const entry = metricsMap.get(row.client_id)!;
         const val = Number(row.value || 0);
@@ -461,6 +481,7 @@ export async function GET(req: NextRequest) {
                 val
               ).toFixed(2)
             );
+          entry.reported[row.metric as "visits" | "sales" | "orders" | "revenue"] = true;
           entry.has_data = true;
         }
         if (row.currency && !entry.currency) {
@@ -479,6 +500,7 @@ export async function GET(req: NextRequest) {
             orders: data.orders,
             revenue: data.revenue,
           },
+          reported: data.reported,
           currency: data.currency,
           has_data: data.has_data,
         })

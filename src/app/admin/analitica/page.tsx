@@ -61,6 +61,14 @@ interface BusinessMetricsClientItem {
     orders: number;
     revenue: number;
   };
+  // Qué métricas reportó realmente el satélite: una métrica nunca
+  // reportada se muestra como "—", no como 0.
+  reported?: {
+    visits: boolean;
+    sales: boolean;
+    orders: boolean;
+    revenue: boolean;
+  };
   currency: string | null;
   has_data: boolean;
 }
@@ -501,13 +509,13 @@ export default function AdminAnaliticaPage() {
                             {hasBm ? (
                               <div className="flex items-center gap-2 flex-wrap font-mono text-[11px]">
                                 <span className="px-2 py-0.5 rounded bg-texter-indigo/15 text-indigo-300 border border-indigo-500/30">
-                                  Pedidos: <strong>{bmMetrics.orders}</strong>
+                                  Pedidos: <strong>{row.business?.reported?.orders ?? true ? bmMetrics.orders : "—"}</strong>
                                 </span>
                                 <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                                  Ventas: <strong>{bmMetrics.sales}</strong>
+                                  Ventas: <strong>{row.business?.reported?.sales ?? true ? bmMetrics.sales : "—"}</strong>
                                 </span>
                                 <span className="px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                                  Visitas: <strong>{bmMetrics.visits}</strong>
+                                  Visitas: <strong>{row.business?.reported?.visits ?? true ? bmMetrics.visits : "—"}</strong>
                                 </span>
                                 {bmMetrics.revenue > 0 && (
                                   <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">

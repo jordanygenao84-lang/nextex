@@ -7,14 +7,16 @@ import { ChatMessage } from "@/components/chat/ChatMessage";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ModelSelector } from "@/components/chat/ModelSelector";
 import { useAuth } from "@/context/AuthContext";
-import { MOCK_CHAT_MESSAGES, ChatMessage as ChatMessageType } from "@/lib/mock-data";
+import { ChatMessage as ChatMessageType } from "@/lib/mock-data";
 import { Bot, AlertCircle, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 
 export default function ChatPage() {
   const { workspace } = useAuth();
-  const [messages, setMessages] = useState<ChatMessageType[]>(MOCK_CHAT_MESSAGES);
-  const [activeSessionId, setActiveSessionId] = useState("chat-1");
+  // El chat arranca vacío: antes venía precargado con una conversación de
+  // muestra y una lista de sesiones falsas que al pulsarlas no cambiaban
+  // el contenido. El historial de sesiones aún no se guarda.
+  const [messages, setMessages] = useState<ChatMessageType[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string>("nextex-simulation");
   const [isGenerating, setIsGenerating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -184,8 +186,6 @@ export default function ChatPage() {
         {/* Chat History Sidebar */}
         <div className="hidden md:block h-full">
           <ChatSidebar
-            activeSessionId={activeSessionId}
-            onSelectSession={setActiveSessionId}
             onNewChat={handleNewChat}
           />
         </div>
@@ -243,6 +243,16 @@ export default function ChatPage() {
 
           {/* Messages Feed */}
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+            {messages.length === 0 && !isGenerating && (
+              <div className="text-center py-16 space-y-2">
+                <p className="text-sm font-semibold text-white">
+                  Espacio de trabajo listo.
+                </p>
+                <p className="text-xs text-texter-text-muted">
+                  Escribe abajo qué tarea o pipeline deseas que ejecute.
+                </p>
+              </div>
+            )}
             {messages.map((message) => (
               <ChatMessage key={message.id} message={message} />
             ))}

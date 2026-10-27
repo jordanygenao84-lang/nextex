@@ -14,12 +14,12 @@ import { Sparkles, Building, ShieldCheck, ArrowRight } from "lucide-react";
 import Link from "next/link";
 
 export default function DashboardPage() {
-  const { user, profile, workspace } = useAuth();
+  const { user, profile, workspace, isLoading } = useAuth();
 
   // Obtener primer nombre real del usuario autenticado
   const fullName = profile?.full_name || user?.email?.split("@")[0] || "Jordany";
   const firstName = fullName.trim().split(" ")[0];
-  const userPlan = (profile?.plan || "free").toUpperCase();
+  const userPlan = isLoading ? "—" : (profile?.plan || "free").toUpperCase();
 
   // Saludo según la hora
   const currentHour = new Date().getHours();

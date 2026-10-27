@@ -91,10 +91,14 @@ export function calculateTraceTiming(spans: ObservabilitySpan[]): TimingBreakdow
       executionIntervals.push({ start: startMs, end: endMs });
     }
 
-    // Atributos explícitos adicionales si fueron anotados en el span
+    // Atributos explícitos adicionales si fueron anotados en el span.
+    // La espera previa al inicio también abre la ventana del wall-clock:
+    // antes quedaba fuera de [minStart, maxEnd] y la Espera Cola podía
+    // superar al Wall-Clock, lo cual es imposible en un desglose.
     if (span.attributes?.queue_wait_ms && typeof span.attributes.queue_wait_ms === "number") {
       const wait = span.attributes.queue_wait_ms;
       queueIntervals.push({ start: startMs - wait, end: startMs });
+      minGlobalStart = Math.min(minGlobalStart, startMs - wait);
     }
   }
 

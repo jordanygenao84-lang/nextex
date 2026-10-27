@@ -774,7 +774,16 @@ export default function FleetPage() {
               </div>
             )}
 
-            {/* Tarjetas de Métricas en Vivo */}
+            {/* Tarjetas de Métricas: si el trabajo terminó y tiene resumen
+                final, las tarjetas muestran el AGREGADO de toda la corrida
+                (los mismos números del JSON de abajo); si sigue en curso,
+                muestran el ÚLTIMO punto en vivo. Antes mezclaba ambos sin
+                decirlo y los números no coincidían con el resumen. */}
+            <div className="text-[11px] text-texter-text-dim font-mono -mb-1">
+              {selectedJob.summary
+                ? "Agregado final de la corrida (coincide con el resumen JSON de abajo)"
+                : "Último punto de telemetría en vivo"}
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
                 <span className="text-[11px] text-texter-text-muted uppercase font-mono">VUs Pico</span>
@@ -787,25 +796,25 @@ export default function FleetPage() {
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
                 <span className="text-[11px] text-texter-text-muted uppercase font-mono">RPS</span>
                 <p className="text-xl font-bold font-mono text-texter-cyan mt-1">
-                  {latestMetric?.rps ?? 0}
+                  {selectedJob.summary?.avg_rps ?? latestMetric?.rps ?? 0}
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
                 <span className="text-[11px] text-texter-text-muted uppercase font-mono">p50</span>
                 <p className="text-xl font-bold font-mono text-emerald-400 mt-1">
-                  {formatMs(latestMetric?.p50_ms)}
+                  {formatMs(selectedJob.summary?.p50 ?? latestMetric?.p50_ms)}
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
                 <span className="text-[11px] text-texter-text-muted uppercase font-mono">p95</span>
                 <p className="text-xl font-bold font-mono text-amber-400 mt-1">
-                  {formatMs(latestMetric?.p95_ms)}
+                  {formatMs(selectedJob.summary?.p95 ?? latestMetric?.p95_ms)}
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
                 <span className="text-[11px] text-texter-text-muted uppercase font-mono">p99</span>
                 <p className="text-xl font-bold font-mono text-rose-400 mt-1">
-                  {formatMs(latestMetric?.p99_ms)}
+                  {formatMs(selectedJob.summary?.p99 ?? latestMetric?.p99_ms)}
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">

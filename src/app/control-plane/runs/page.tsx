@@ -255,7 +255,13 @@ export default function RunsControlPage() {
                         {r.fencing_token ?? 1}
                       </td>
                       <td className="py-3 px-4 text-texter-text-muted">
-                        {r.durationMs !== null ? `${(r.durationMs / 1000).toFixed(1)}s` : "En curso"}
+                        {r.durationMs !== null
+                          ? `${(r.durationMs / 1000).toFixed(1)}s`
+                          : r.status === "cancelled"
+                            ? "—"
+                            : r.status === "queued"
+                              ? "Pendiente"
+                              : "En curso"}
                       </td>
                       <td className="py-3 px-4 text-[11px] text-texter-text-muted">
                         {new Date(r.created_at).toLocaleTimeString()}

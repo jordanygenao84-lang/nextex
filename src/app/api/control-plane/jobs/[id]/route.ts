@@ -54,12 +54,24 @@ export async function GET(
       );
     }
 
-    // Consultar Job Runs con Agent Runs y Steps
-    const { data: runs } = await (supabase.from("job_runs") as any)
+    // Consultar Job Runs con Agent Runs y Steps. Si el join anidado falla
+    // (p. ej. RLS sobre agent_runs), la consulta anterior devolvía data null
+    // y la página mostraba 0 runs aunque el job sí los tuviera: en ese caso
+    // se reintenta con un select plano, que es el mismo que usa la lista.
+    let { data: runs, error: runsErr } = await (supabase.from("job_runs") as any)
       .select("*, agent_runs(*, agent_run_steps(*))")
       .eq("job_id", job.id)
       .order("created_at", { ascending: false })
       .limit(20);
+
+    if (runsErr || !runs) {
+      const plain = await (supabase.from("job_runs") as any)
+        .select("*")
+        .eq("job_id", job.id)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      runs = plain.data || [];
+    }
 
     return NextResponse.json({
       job,

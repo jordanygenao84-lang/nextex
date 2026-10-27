@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
 
     const webs = await Promise.all(
       (clients || []).map(async (c: any) => {
-        const [domainsRes, backupCfgRes, backupRunRes, ticketsRes, healthRes, keysRes] =
+        const [domainsRes, backupCfgRes, backupRunRes, ticketsRes, healthRes, keysRes, findingsRes] =
           await Promise.all([
             (serviceClient.from("domains") as any)
               .select("id, dns_status")
@@ -86,6 +86,11 @@ export async function GET(req: NextRequest) {
               .select("id")
               .eq("client_id", c.id)
               .eq("is_active", true),
+            (serviceClient.from("security_findings") as any)
+              .select("id")
+              .eq("client_id", c.id)
+              .eq("status", "open")
+              .eq("severity", "critical"),
           ]);
 
         const domains = domainsRes.data || [];
@@ -150,6 +155,7 @@ export async function GET(req: NextRequest) {
             backup_last_size_bytes: lastBackup?.size_bytes ?? null,
             open_tickets: openTickets,
             tickets_total: tickets.length,
+            open_critical_findings: (findingsRes.data || []).length,
             active_keys: (keysRes.data || []).length,
             last_activity_at: lastActivity,
           },

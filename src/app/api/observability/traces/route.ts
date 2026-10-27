@@ -51,21 +51,14 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10), 100);
     const offset = Math.max(parseInt(searchParams.get("offset") || "0", 10), 0);
 
-    // Consulta con RLS activo sobre observability_spans
-    let query = (supabase.from("observability_spans") as any)
+    // Consulta con RLS activo sobre observability_spans. Los filtros NO se
+    // aplican a nivel de span: filtrar spans por status/componente partía
+    // las trazas (una traza mixta aparecía "completed" sin su span fallido).
+    // Se agrupa primero y se filtra por traza completa más abajo.
+    const query = (supabase.from("observability_spans") as any)
       .select("*")
       .eq("workspace_id", workspaceId)
       .order("started_at", { ascending: false });
-
-    if (status) {
-      query = query.eq("status", status);
-    }
-    if (component) {
-      query = query.eq("component", component);
-    }
-    if (spanType) {
-      query = query.eq("span_type", spanType);
-    }
 
     const { data: spans, error } = await query.range(offset, offset + limit * 5);
 
@@ -95,8 +88,17 @@ export async function GET(req: NextRequest) {
             new Date(a.started_at).getTime() - new Date(b.started_at).getTime()
         )[0];
 
-      const timing = calculateTraceTiming(traceSpans);
       const hasErrors = traceSpans.some((s: ObservabilitySpan) => s.status === "failed");
+      const traceStatus = hasErrors ? "failed" : rootSpan?.status || "completed";
+
+      // Filtro a nivel de traza (no de span): filtrar spans por status
+      // partía las trazas (una traza mixta aparecía "completed" sin su
+      // span fallido). Aquí se filtra la traza completa ya calculada.
+      if (status && traceStatus !== status) continue;
+      if (component && !traceSpans.some((s: ObservabilitySpan) => s.component === component)) continue;
+      if (spanType && !traceSpans.some((s: ObservabilitySpan) => s.span_type === spanType)) continue;
+
+      const timing = calculateTraceTiming(traceSpans);
       const errorCount = traceSpans.filter((s: ObservabilitySpan) => s.status === "failed").length;
       const components = Array.from(
         new Set(traceSpans.map((s: ObservabilitySpan) => s.component))

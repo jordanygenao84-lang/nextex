@@ -791,7 +791,11 @@ export default function VigilanciaPage() {
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-texter-text-muted font-mono flex items-center gap-2">
               <Activity className="w-3.5 h-3.5 text-texter-rose" />
-              <span>Incidentes Recientes (Últimos 20)</span>
+              <span>
+                Incidentes Recientes
+                {incidents.length > 0 &&
+                  ` (${incidents.length} de un máximo de 20)`}
+              </span>
             </h3>
             <span className="text-[11px] font-mono text-texter-text-dim">
               Tabla: incident_log
