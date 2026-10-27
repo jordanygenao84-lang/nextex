@@ -152,6 +152,25 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       // La cascada usa el cliente de servicio (el borrado forzado ya está
       // gated a super_admin arriba) para no chocar con RLS en los hijos.
       const serviceClient = createServiceClient();
+      // La auditoría de eventos es append-only por trigger
+      // (INTEGRATION_AUDIT_LOG_IMMUTABLE): borrar un evento que tiene
+      // entradas de auditoría intentaría poner su event_id a NULL y el
+      // trigger lo bloquea. Se rechaza con un 409 claro antes de tocar nada.
+      const { data: eventRows } = await (serviceClient.from("integration_events") as any)
+        .select("id")
+        .eq("integration_id", params.id);
+      const eventIds: string[] = (eventRows || []).map((e: any) => e.id);
+      if (eventIds.length > 0) {
+        const { count: auditCount } = await (serviceClient.from("integration_event_audit_log") as any)
+          .select("id", { count: "exact", head: true })
+          .in("event_id", eventIds);
+        if (auditCount && auditCount > 0) {
+          return NextResponse.json(
+            { error: { code: "INTEGRATION_HAS_IMMUTABLE_AUDIT", message: "No se puede eliminar: la integración tiene historial de auditoría inmutable (append-only). Déjala revocada y oculta con el filtro de pruebas.", statusCode: 409 } },
+            { status: 409 }
+          );
+        }
+      }
       const { error: eventsErr } = await (serviceClient.from("integration_events") as any)
         .delete()
         .eq("integration_id", params.id);

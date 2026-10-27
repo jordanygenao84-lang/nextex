@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { GovernanceManager, AuditManager, CancellationManager } from "@/lib/control-plane";
 
 export const dynamic = "force-dynamic";
@@ -241,40 +241,66 @@ export async function DELETE(
       );
     }
 
-    // Cascada hijos-primero: runs del job, su auditoría y sus runs de agente.
-    const { data: runs } = await (supabase.from("job_runs") as any)
+    // La auditoría de jobs es append-only por trigger (JOB_AUDIT_LOG_IMMUTABLE):
+    // ni el cliente de servicio puede borrar sus filas, y borrar el job
+    // cascada hacia ellas vía job_id. Si el job tiene auditoría, el borrado
+    // es imposible por diseño: se rechaza con un 409 claro en vez de un
+    // error críptico de RLS/trigger. Borrar sus runs tampoco sirve: las
+    // filas de auditoría que los referencian se actualizarían a NULL y el
+    // trigger también lo bloquea.
+    const serviceClient = createServiceClient();
+    const { data: runs } = await (serviceClient.from("job_runs") as any)
       .select("id")
       .eq("job_id", job.id);
     const runIds: string[] = (runs || []).map((r: any) => r.id);
 
+    let auditQuery = (serviceClient.from("job_audit_log") as any)
+      .select("id", { count: "exact", head: true })
+      .eq("job_id", job.id);
     if (runIds.length > 0) {
-      const { error: auditErr } = await (supabase.from("job_audit_log") as any)
-        .delete()
+      const { count: runAuditCount } = await (serviceClient.from("job_audit_log") as any)
+        .select("id", { count: "exact", head: true })
         .in("job_run_id", runIds);
-      if (auditErr) throw auditErr;
+      if (runAuditCount && runAuditCount > 0) {
+        return NextResponse.json(
+          { error: { code: "JOB_HAS_IMMUTABLE_AUDIT", message: "No se puede eliminar: el job tiene historial de auditoría inmutable (append-only). Déjalo archivado y oculto con el filtro de pruebas.", statusCode: 409 } },
+          { status: 409 }
+        );
+      }
+    }
+    const { count: jobAuditCount } = await auditQuery;
+    if (jobAuditCount && jobAuditCount > 0) {
+      return NextResponse.json(
+        { error: { code: "JOB_HAS_IMMUTABLE_AUDIT", message: "No se puede eliminar: el job tiene historial de auditoría inmutable (append-only). Déjalo archivado y oculto con el filtro de pruebas.", statusCode: 409 } },
+        { status: 409 }
+      );
+    }
 
-      const { data: agentRuns } = await (supabase.from("agent_runs") as any)
+    // Sin auditoría: cascada con cliente de servicio (las comprobaciones de
+    // miembro, workspace y archivado ya se hicieron arriba).
+    if (runIds.length > 0) {
+      const { data: agentRuns } = await (serviceClient.from("agent_runs") as any)
         .select("id")
         .in("job_run_id", runIds);
       const agentRunIds: string[] = (agentRuns || []).map((r: any) => r.id);
       if (agentRunIds.length > 0) {
-        const { error: stepsErr } = await (supabase.from("agent_run_steps") as any)
+        const { error: stepsErr } = await (serviceClient.from("agent_run_steps") as any)
           .delete()
           .in("agent_run_id", agentRunIds);
         if (stepsErr) throw stepsErr;
-        const { error: agentErr } = await (supabase.from("agent_runs") as any)
+        const { error: agentErr } = await (serviceClient.from("agent_runs") as any)
           .delete()
           .in("id", agentRunIds);
         if (agentErr) throw agentErr;
       }
 
-      const { error: runsErr } = await (supabase.from("job_runs") as any)
+      const { error: runsErr } = await (serviceClient.from("job_runs") as any)
         .delete()
         .eq("job_id", job.id);
       if (runsErr) throw runsErr;
     }
 
-    const { error: jobErr } = await (supabase.from("jobs") as any)
+    const { error: jobErr } = await (serviceClient.from("jobs") as any)
       .delete()
       .eq("id", job.id)
       .eq("workspace_id", member.workspace_id);
