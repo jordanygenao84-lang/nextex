@@ -813,19 +813,19 @@ export default function FleetPage() {
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
                 <span className="text-[11px] text-texter-text-muted uppercase font-mono">p50</span>
                 <p className="text-xl font-bold font-mono text-emerald-400 mt-1">
-                  {formatMs(summaryP50 ?? latestMetric?.p50_ms)}
+                  {summaryP50 != null ? `${Number(summaryP50.toFixed(2))} ms` : formatMs(latestMetric?.p50_ms)}
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
                 <span className="text-[11px] text-texter-text-muted uppercase font-mono">p95</span>
                 <p className="text-xl font-bold font-mono text-amber-400 mt-1">
-                  {formatMs(summaryP95 ?? latestMetric?.p95_ms)}
+                  {summaryP95 != null ? `${Number(summaryP95.toFixed(2))} ms` : formatMs(latestMetric?.p95_ms)}
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
                 <span className="text-[11px] text-texter-text-muted uppercase font-mono">p99</span>
                 <p className="text-xl font-bold font-mono text-rose-400 mt-1">
-                  {formatMs(summaryP99 ?? latestMetric?.p99_ms)}
+                  {summaryP99 != null ? `${Number(summaryP99.toFixed(2))} ms` : formatMs(latestMetric?.p99_ms)}
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
