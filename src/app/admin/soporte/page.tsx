@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { AdminNav } from "@/components/admin/AdminNav";
@@ -75,6 +75,12 @@ export default function AdminSoportePage() {
   const [isSendingReply, setIsSendingReply] = useState(false);
   const [isUpdatingTicket, setIsUpdatingTicket] = useState(false);
 
+  // Ref con el id del ticket seleccionado. loadTickets NO puede depender de
+  // selectedTicket: cada fetch crea un objeto nuevo y eso re-disparaba el
+  // efecto en bucle (el lag de la página). El ref no cambia la identidad
+  // del callback y rompe el ciclo.
+  const selectedTicketIdRef = useRef<string | null>(null);
+
   const loadClients = useCallback(async () => {
     try {
       const res = await fetch("/api/clients");
@@ -126,10 +132,30 @@ export default function AdminSoportePage() {
       const list: SupportTicketItem[] = json.tickets || [];
       setTickets(list);
 
-      if (selectedTicket) {
-        const updatedMatch = list.find((t) => t.id === selectedTicket.id);
+      const selectedId = selectedTicketIdRef.current;
+      if (selectedId) {
+        const updatedMatch = list.find((t) => t.id === selectedId);
         if (updatedMatch) {
-          setSelectedTicket(updatedMatch);
+          // Solo actualizar si algo cambió: si devolvemos el objeto previo,
+          // React no re-renderiza ni cambia la identidad del callback.
+          setSelectedTicket((prev) => {
+            if (
+              prev &&
+              prev.id === updatedMatch.id &&
+              prev.status === updatedMatch.status &&
+              prev.priority === updatedMatch.priority &&
+              prev.updated_at === updatedMatch.updated_at &&
+              prev.subject === updatedMatch.subject
+            ) {
+              return prev;
+            }
+            return updatedMatch;
+          });
+        } else {
+          // El ticket seleccionado ya no está en la lista (filtro o cierre):
+          // limpiar la selección en vez de mostrar un detalle obsoleto.
+          selectedTicketIdRef.current = null;
+          setSelectedTicket(null);
         }
       } else if (list.length > 0) {
         loadTicketDetail(list[0].id);
@@ -139,7 +165,7 @@ export default function AdminSoportePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [filterClientId, filterStatus, router, selectedTicket]);
+  }, [filterClientId, filterStatus, router]);
 
   const loadTicketDetail = async (ticketId: string) => {
     setIsLoadingDetail(true);
@@ -149,6 +175,7 @@ export default function AdminSoportePage() {
       });
       const json = await res.json();
       if (res.ok && json.ticket) {
+        selectedTicketIdRef.current = ticketId;
         setSelectedTicket(json.ticket);
         setMessages(Array.isArray(json.messages) ? json.messages : []);
       }
