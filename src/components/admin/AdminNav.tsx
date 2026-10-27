@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
+  LayoutGrid,
   Activity,
   ShieldCheck,
   Receipt,
@@ -16,6 +17,7 @@ import {
 
 const navItems = [
   { name: "Overview", href: "/admin", icon: LayoutDashboard },
+  { name: "Webs", href: "/admin/webs", icon: LayoutGrid },
   { name: "Vigilancia", href: "/admin/vigilancia", icon: Activity },
   { name: "Protección", href: "/admin/proteccion", icon: ShieldCheck },
   { name: "Facturación", href: "/admin/facturacion", icon: Receipt },
