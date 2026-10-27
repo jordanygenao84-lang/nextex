@@ -14,6 +14,7 @@ import {
   Play,
   Pause,
   Archive,
+  Trash2,
   Clock,
   Globe,
   Layers,
@@ -443,6 +444,31 @@ export default function AutomationsPage() {
     }
   };
 
+  // Borrado permanente en dos clics, solo en archivadas (las activas o
+  // pausadas se archivan primero). El endpoint rechaza con 409 si un job
+  // todavía la referencia.
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  const handleDelete = async (autoId: string) => {
+    if (deleteConfirmId !== autoId) {
+      setDeleteConfirmId(autoId);
+      return;
+    }
+    setDeleteConfirmId(null);
+    try {
+      const res = await fetch(`/api/automations/${autoId}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        loadAutomations();
+        setFeedback({ type: "success", message: "Automatización eliminada exitosamente." });
+      } else {
+        setFeedback({ type: "error", message: data.error?.message || `No se pudo eliminar (${res.status}).` });
+      }
+    } catch {
+      setFeedback({ type: "error", message: "No se pudo eliminar la automatización." });
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "active":
@@ -708,6 +734,21 @@ export default function AutomationsPage() {
                       title="Archivar"
                     >
                       <Archive className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                  {auto.status === "archived" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(auto.id)}
+                      className="text-xs text-texter-text-dim hover:text-rose-400"
+                      title={deleteConfirmId === auto.id ? "Pulsa otra vez para confirmar el borrado permanente" : "Eliminar permanentemente"}
+                    >
+                      {deleteConfirmId === auto.id ? (
+                        <span className="text-rose-400 font-semibold">¿Seguro?</span>
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
                     </Button>
                   )}
                 </div>

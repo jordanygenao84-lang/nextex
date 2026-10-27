@@ -18,6 +18,7 @@ import {
   Clock,
   User,
   ShieldCheck,
+  Trash2,
 } from "lucide-react";
 
 interface SupportTicketItem {
@@ -274,6 +275,35 @@ export default function AdminSoportePage() {
         type: "error",
         message: err?.message || "Error al actualizar el ticket.",
       });
+    } finally {
+      setIsUpdatingTicket(false);
+    }
+  };
+
+  // Borrado permanente en dos clics, solo en tickets cerrados.
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  const handleDeleteTicket = async (ticketId: string) => {
+    if (deleteConfirmId !== ticketId) {
+      setDeleteConfirmId(ticketId);
+      return;
+    }
+    setDeleteConfirmId(null);
+    setIsUpdatingTicket(true);
+    setFeedback(null);
+    try {
+      const res = await fetch(`/api/admin/tickets/${ticketId}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setFeedback({ type: "error", message: json?.error?.message || "No se pudo eliminar el ticket." });
+        return;
+      }
+      selectedTicketIdRef.current = null;
+      setSelectedTicket(null);
+      await loadTickets();
+      setFeedback({ type: "success", message: "Ticket eliminado correctamente." });
+    } catch (err: any) {
+      setFeedback({ type: "error", message: err?.message || "Error al eliminar el ticket." });
     } finally {
       setIsUpdatingTicket(false);
     }
@@ -595,6 +625,27 @@ export default function AdminSoportePage() {
                         }
                       >
                         Reabrir ticket
+                      </Button>
+                    )}
+
+                    {selectedTicket.status === "closed" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        isLoading={isUpdatingTicket}
+                        onClick={() => handleDeleteTicket(selectedTicket.id)}
+                        className="text-texter-text-dim hover:text-rose-400 flex items-center gap-1"
+                        title={deleteConfirmId === selectedTicket.id ? "Pulsa otra vez para confirmar el borrado permanente" : "Eliminar permanentemente"}
+                      >
+                        {deleteConfirmId === selectedTicket.id ? (
+                          <span className="text-rose-400 font-semibold">¿Seguro?</span>
+                        ) : (
+                          <>
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Eliminar</span>
+                          </>
+                        )}
                       </Button>
                     )}
                   </div>

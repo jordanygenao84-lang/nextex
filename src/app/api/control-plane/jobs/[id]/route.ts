@@ -177,3 +177,114 @@ export async function POST(
     );
   }
 }
+
+/**
+ * DELETE /api/control-plane/jobs/[id]
+ * Borrado permanente SOLO de jobs archivados (un job activo nunca se borra
+ * por esta vía: primero se archiva). Cascada: auditoría de sus runs,
+ * pasos y runs de agente, runs del job y finalmente el job. La auditoría
+ * global de otros jobs queda intacta.
+ */
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: { code: "AUTH_REQUIRED", message: "Sesión requerida.", statusCode: 401 } },
+        { status: 401 }
+      );
+    }
+
+    const { data: member } = await (supabase.from("workspace_members") as any)
+      .select("workspace_id, role")
+      .eq("user_id", user.id)
+      .limit(1)
+      .maybeSingle();
+
+    if (!member?.workspace_id) {
+      return NextResponse.json(
+        { error: { code: "NO_WORKSPACE", message: "Usuario sin workspace activo.", statusCode: 403 } },
+        { status: 403 }
+      );
+    }
+
+    const { data: job } = await (supabase.from("jobs") as any)
+      .select("id, workspace_id, status")
+      .eq("id", params.id)
+      .maybeSingle();
+
+    if (!job) {
+      return NextResponse.json(
+        { error: { code: "JOB_NOT_FOUND", message: "Job no encontrado.", statusCode: 404 } },
+        { status: 404 }
+      );
+    }
+
+    if (job.workspace_id !== member.workspace_id) {
+      return NextResponse.json(
+        { error: { code: "TENANT_MISMATCH", message: "Acceso denegado a recurso de otro workspace.", statusCode: 403 } },
+        { status: 403 }
+      );
+    }
+
+    if (job.status !== "archived") {
+      return NextResponse.json(
+        { error: { code: "JOB_NOT_ARCHIVED", message: "Solo se pueden eliminar jobs archivados. Archiva primero el job.", statusCode: 409 } },
+        { status: 409 }
+      );
+    }
+
+    // Cascada hijos-primero: runs del job, su auditoría y sus runs de agente.
+    const { data: runs } = await (supabase.from("job_runs") as any)
+      .select("id")
+      .eq("job_id", job.id);
+    const runIds: string[] = (runs || []).map((r: any) => r.id);
+
+    if (runIds.length > 0) {
+      const { error: auditErr } = await (supabase.from("job_audit_log") as any)
+        .delete()
+        .in("job_run_id", runIds);
+      if (auditErr) throw auditErr;
+
+      const { data: agentRuns } = await (supabase.from("agent_runs") as any)
+        .select("id")
+        .in("job_run_id", runIds);
+      const agentRunIds: string[] = (agentRuns || []).map((r: any) => r.id);
+      if (agentRunIds.length > 0) {
+        const { error: stepsErr } = await (supabase.from("agent_run_steps") as any)
+          .delete()
+          .in("agent_run_id", agentRunIds);
+        if (stepsErr) throw stepsErr;
+        const { error: agentErr } = await (supabase.from("agent_runs") as any)
+          .delete()
+          .in("id", agentRunIds);
+        if (agentErr) throw agentErr;
+      }
+
+      const { error: runsErr } = await (supabase.from("job_runs") as any)
+        .delete()
+        .eq("job_id", job.id);
+      if (runsErr) throw runsErr;
+    }
+
+    const { error: jobErr } = await (supabase.from("jobs") as any)
+      .delete()
+      .eq("id", job.id)
+      .eq("workspace_id", member.workspace_id);
+    if (jobErr) throw jobErr;
+
+    return NextResponse.json({ success: true, message: "Job eliminado exitosamente.", deletedRuns: runIds.length });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } },
+      { status: 500 }
+    );
+  }
+}

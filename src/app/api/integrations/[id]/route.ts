@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { isSuperAdmin } from "@/lib/auth/roles";
 import { defaultIntegrationEngine } from "@/lib/integrations/engine";
 import { defaultPermissionEngine } from "@/lib/agents/governance/permissions";
 import { ConfigSanitizer } from "@/lib/integrations/validation/config-sanitizer";
@@ -90,7 +91,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
 /**
  * DELETE /api/integrations/[id]
- * Protegido: Si existen eventos históricos, rechaza la eliminación con HTTP 409 y exige archivar.
+ * Protegido: Si existen eventos históricos, rechaza la eliminación con HTTP 409 y exige archivar,
+ * SALVO ?force=true, que solo acepta un super_admin y borra en cascada eventos + endpoints
+ * antes que la integración (uso previsto: limpieza de integraciones de prueba revocadas).
  */
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -124,7 +127,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 
     if (countErr) throw countErr;
 
-    if (count && count > 0) {
+    const force = req.nextUrl.searchParams.get("force") === "true";
+    if (count && count > 0 && !force) {
       return NextResponse.json(
         {
           error: {
@@ -135,6 +139,27 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
         },
         { status: 409 }
       );
+    }
+
+    // Borrado en cascada solo con force (super_admin): eventos + endpoints
+    // son hijos de la integración; sin force, un 409 previo ya frenó el caso
+    // con eventos, y los endpoints se borran igual para no dejar huérfanos.
+    if (force) {
+      const superAdmin = await isSuperAdmin(user.id);
+      if (!superAdmin) {
+        return NextResponse.json({ error: { code: "PERMISSION_DENIED", message: "El borrado forzado es solo para superadministradores.", statusCode: 403 } }, { status: 403 });
+      }
+      // La cascada usa el cliente de servicio (el borrado forzado ya está
+      // gated a super_admin arriba) para no chocar con RLS en los hijos.
+      const serviceClient = createServiceClient();
+      const { error: eventsErr } = await (serviceClient.from("integration_events") as any)
+        .delete()
+        .eq("integration_id", params.id);
+      if (eventsErr) throw eventsErr;
+      const { error: endpointsErr } = await (serviceClient.from("integration_endpoints") as any)
+        .delete()
+        .eq("integration_id", params.id);
+      if (endpointsErr) throw endpointsErr;
     }
 
     const { error: deleteErr } = await (supabase.from("integrations") as any)

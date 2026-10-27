@@ -145,6 +145,75 @@ export async function GET(
 }
 
 /**
+ * DELETE /api/admin/tickets/[id]
+ * Borrado permanente de un ticket y su hilo de mensajes.
+ */
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const auth = await requireSuperAdmin();
+    if (!auth.ok) return auth.response;
+
+    const ticketId = params.id?.trim();
+    if (!ticketId) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "ID de ticket requerido.",
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    const serviceClient = createServiceClient();
+
+    const { error: msgErr } = await (serviceClient.from("ticket_messages") as any)
+      .delete()
+      .eq("ticket_id", ticketId);
+    if (msgErr) {
+      return NextResponse.json(
+        { error: { code: "DB_ERROR", message: msgErr.message } },
+        { status: 500 }
+      );
+    }
+
+    const { data: deleted, error: delErr } = await (serviceClient.from("support_tickets") as any)
+      .delete()
+      .eq("id", ticketId)
+      .select("id")
+      .maybeSingle();
+    if (delErr) {
+      return NextResponse.json(
+        { error: { code: "DB_ERROR", message: delErr.message } },
+        { status: 500 }
+      );
+    }
+    if (!deleted) {
+      return NextResponse.json(
+        { error: { code: "NOT_FOUND", message: "Ticket de soporte no encontrado." } },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true, message: "Ticket eliminado exitosamente." });
+  } catch (err: any) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "INTERNAL_ERROR",
+          message: err?.message || "Error al eliminar ticket de soporte.",
+        },
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/**
  * PATCH /api/admin/tickets/[id]
  * Actualiza status y/o priority de un ticket de soporte.
  */

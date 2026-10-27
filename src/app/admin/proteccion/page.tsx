@@ -203,6 +203,27 @@ export default function ProteccionPage() {
     }));
   };
 
+  // Borrado permanente de un grupo de errores en dos clics.
+  const [deleteErrorConfirmId, setDeleteErrorConfirmId] = useState<string | null>(null);
+
+  const handleDeleteErrorGroup = async (err: ErrorEventRecord) => {
+    if (deleteErrorConfirmId !== err.id) {
+      setDeleteErrorConfirmId(err.id);
+      return;
+    }
+    setDeleteErrorConfirmId(null);
+    try {
+      const params = new URLSearchParams({ fingerprint: err.fingerprint });
+      if (err.client_id) params.set("client_id", err.client_id);
+      const res = await fetch(`/api/admin/errors?${params.toString()}`, { method: "DELETE" });
+      if (res.ok) {
+        fetchErrors();
+      }
+    } catch {
+      // Error al eliminar: se mantiene el grupo visible.
+    }
+  };
+
   const handleToggleRunDetail = (id: string) => {
     setExpandedRunDetailId((prev) => ({
       ...prev,
@@ -896,8 +917,8 @@ export default function ProteccionPage() {
                           </p>
                         </div>
 
-                        {/* Botón Ver Detalle */}
-                        <div className="shrink-0 flex items-center">
+                        {/* Botón Ver Detalle + Eliminar grupo */}
+                        <div className="shrink-0 flex items-center gap-1.5">
                           <button
                             onClick={() => handleToggleDetail(err.id)}
                             className="px-2.5 py-1.5 rounded-lg bg-texter-surface-subtle hover:bg-texter-surface-hover border border-texter-border text-[11px] text-texter-text-secondary hover:text-white flex items-center gap-1.5 transition-colors"
@@ -908,6 +929,20 @@ export default function ProteccionPage() {
                               <ChevronDown className="w-3.5 h-3.5" />
                             )}
                             <span>{isExpanded ? "Ocultar detalle" : "Ver detalle"}</span>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteErrorGroup(err)}
+                            className="px-2.5 py-1.5 rounded-lg bg-texter-surface-subtle hover:bg-rose-500/10 border border-texter-border text-[11px] text-texter-text-secondary hover:text-rose-400 flex items-center gap-1.5 transition-colors"
+                            title={deleteErrorConfirmId === err.id ? "Pulsa otra vez para confirmar el borrado permanente del grupo" : "Eliminar grupo permanentemente"}
+                          >
+                            {deleteErrorConfirmId === err.id ? (
+                              <span className="text-rose-400 font-semibold">¿Seguro?</span>
+                            ) : (
+                              <>
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Eliminar</span>
+                              </>
+                            )}
                           </button>
                         </div>
                       </div>

@@ -123,3 +123,102 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
+/**
+ * DELETE /api/admin/errors?fingerprint=...&client_id=...
+ * Borra un grupo de errores completo (las filas de error_events con ese
+ * fingerprint, acotadas al cliente cuando se pasa client_id).
+ * ACCESO RESTRINGIDO: Exclusivo para superadministradores.
+ */
+export async function DELETE(req: NextRequest) {
+  try {
+    const userClient = createClient();
+    const {
+      data: { user },
+      error: userErr,
+    } = await userClient.auth.getUser();
+
+    if (userErr || !user) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "AUTH_REQUIRED",
+            message: "Sesión de usuario requerida.",
+          },
+        },
+        { status: 401 }
+      );
+    }
+
+    const superAdmin = await isSuperAdmin(user.id);
+    if (!superAdmin) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "FORBIDDEN",
+            message: "Acceso exclusivo para superadministradores.",
+          },
+        },
+        { status: 403 }
+      );
+    }
+
+    const fingerprint = req.nextUrl.searchParams.get("fingerprint")?.trim();
+    const clientId = req.nextUrl.searchParams.get("client_id")?.trim();
+    if (!fingerprint) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Fingerprint requerido.",
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    const serviceClient = createServiceClient();
+    let query = (serviceClient.from("error_events") as any)
+      .delete()
+      .eq("fingerprint", fingerprint);
+    if (clientId) query = query.eq("client_id", clientId);
+
+    const { data: deleted, error: dbErr } = await query.select("id");
+    if (dbErr) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "DB_ERROR",
+            message: dbErr.message || "Error al eliminar grupo de errores.",
+          },
+        },
+        { status: 500 }
+      );
+    }
+
+    const count = Array.isArray(deleted) ? deleted.length : 0;
+    if (count === 0) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "NOT_FOUND",
+            message: "Grupo de errores no encontrado.",
+          },
+        },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true, message: "Grupo de errores eliminado.", deleted: count });
+  } catch (err: any) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "INTERNAL_ERROR",
+          message: err?.message || "Error al eliminar grupo de errores.",
+        },
+      },
+      { status: 500 }
+    );
+  }
+}

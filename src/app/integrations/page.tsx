@@ -15,6 +15,7 @@ import {
   Play,
   Pause,
   Ban,
+  Trash2,
   Radio,
   Clock,
   ExternalLink,
@@ -40,6 +41,32 @@ export default function IntegrationsPage() {
   // Modal de Secreto Único
   const [secretModal, setSecretModal] = useState<{ plainSecret: string; endpointKey: string } | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Borrado permanente en dos clics (solo se ofrece en revocadas: las
+  // activas/pausadas se revocan primero). El endpoint exige force=true
+  // para borrar en cascada eventos + endpoints.
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDelete = async (id: string) => {
+    if (deleteConfirmId !== id) {
+      setDeleteConfirmId(id);
+      setDeleteError(null);
+      return;
+    }
+    setDeleteConfirmId(null);
+    try {
+      const res = await fetch(`/api/integrations/${id}?force=true`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDeleteError(data.error?.message || `No se pudo eliminar (${res.status}).`);
+        return;
+      }
+      loadIntegrations();
+    } catch {
+      setDeleteError("No se pudo eliminar la integración.");
+    }
+  };
 
   useEffect(() => {
     if (workspace?.id) {
@@ -256,6 +283,12 @@ export default function IntegrationsPage() {
             Ocultar pruebas (nombres con TEST o Prueba)
           </label>
         </div>
+        {deleteError && (
+          <div className="p-3 rounded-xl border bg-texter-rose/10 border-texter-rose/30 text-rose-300 text-xs flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>{deleteError}</span>
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {integrations
             .filter((integ) => !hideTests || !/test|prueba/i.test(integ.name))
@@ -294,6 +327,21 @@ export default function IntegrationsPage() {
                   {integ.status !== "revoked" && (
                     <Button variant="ghost" size="sm" onClick={() => handleStatusChange(integ.id, "revoke")} title="Revocar">
                       <Ban className="w-3.5 h-3.5 text-texter-error" />
+                    </Button>
+                  )}
+                  {integ.status === "revoked" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(integ.id)}
+                      title={deleteConfirmId === integ.id ? "Pulsa otra vez para confirmar el borrado permanente" : "Eliminar permanentemente"}
+                      className={deleteConfirmId === integ.id ? "text-rose-400 font-semibold" : ""}
+                    >
+                      {deleteConfirmId === integ.id ? (
+                        <span className="text-[11px]">¿Seguro?</span>
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5 text-texter-error" />
+                      )}
                     </Button>
                   )}
                 </div>

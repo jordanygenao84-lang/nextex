@@ -41,7 +41,7 @@ export default function JobsControlPage() {
     isOpen: boolean;
     jobId: string;
     jobName: string;
-    action: "cancel" | "retry" | "recover";
+    action: "cancel" | "retry" | "recover" | "delete";
     title: string;
     description: string;
     impact: string;
@@ -81,7 +81,7 @@ export default function JobsControlPage() {
     fetchJobs();
   }, [statusFilter]);
 
-  const openActionModal = (job: JobItem, action: "cancel" | "retry" | "recover") => {
+  const openActionModal = (job: JobItem, action: "cancel" | "retry" | "recover" | "delete") => {
     let title = "";
     let description = "";
     let impact = "";
@@ -98,6 +98,10 @@ export default function JobsControlPage() {
       title = "Recuperar Leases del Job";
       description = `Liberará y recuperará cualquier lease estancado o vencido del job '${job.name}'.`;
       impact = "Re-encolamiento atómico e incremento de fencing token.";
+    } else if (action === "delete") {
+      title = "Eliminar Job Permanentemente";
+      description = `Borrará el job archivado '${job.name}' junto con todos sus runs y la auditoría de esos runs. Esta acción no se puede deshacer.`;
+      impact = "Borrado del job, sus job_runs, sus agent_runs y sus filas de job_audit_log.";
     }
 
     setModalState({
@@ -116,11 +120,14 @@ export default function JobsControlPage() {
       setIsExecutingAction(true);
       setError(null);
 
-      const res = await fetch(`/api/control-plane/jobs/${modalState.jobId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: modalState.action }),
-      });
+      const res =
+        modalState.action === "delete"
+          ? await fetch(`/api/control-plane/jobs/${modalState.jobId}`, { method: "DELETE" })
+          : await fetch(`/api/control-plane/jobs/${modalState.jobId}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: modalState.action }),
+            });
 
       const resJson = await res.json();
       if (!res.ok) {
@@ -278,6 +285,15 @@ export default function JobsControlPage() {
                               Retry
                             </Button>
                           </div>
+                        ) : j.status === "archived" ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openActionModal(j, "delete")}
+                            className="text-[11px] text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 px-2 py-1 h-auto"
+                          >
+                            Eliminar
+                          </Button>
                         ) : (
                           <span className="text-texter-text-muted text-[11px]">—</span>
                         )}
@@ -303,7 +319,7 @@ export default function JobsControlPage() {
         impact={modalState.impact}
         actionLabel="Confirmar Operación"
         isLoading={isExecutingAction}
-        variant={modalState.action === "cancel" ? "danger" : "warning"}
+        variant={modalState.action === "cancel" || modalState.action === "delete" ? "danger" : "warning"}
       />
     </DashboardShell>
   );
