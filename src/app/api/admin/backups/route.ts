@@ -96,18 +96,32 @@ export async function GET(req: NextRequest) {
 
     const runsList = Array.isArray(recentRuns) ? recentRuns : [];
 
-    // 4. Armar resumen por cliente
-    const clientList = (clients || []).map((client: any) => {
-      const config = configMap.get(client.id) || null;
-      const latestRun = runsList.find((r: any) => r.client_id === client.id) || null;
+    // 4. Armar resumen por cliente. La última corrida se consulta POR CLIENTE:
+    // el listado global tiene límite 50 y un cliente con muchas corridas
+    // recientes (p. ej. NEXCREDIT fallando cada minuto) dejaba fuera las
+    // corridas más viejas de los demás y su badge quedaba en "Sin respaldos
+    // aún" aunque tuviera respaldos ok.
+    const clientList = await Promise.all(
+      (clients || []).map(async (client: any) => {
+        const config = configMap.get(client.id) || null;
+        const { data: latestRun } = await (serviceClient.from("backup_runs") as any)
+          .select(
+            `id, client_id, kind, status, location, size_bytes, detail, created_at,
+             client:clients (id, display_name)`
+          )
+          .eq("client_id", client.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      return {
-        id: client.id,
-        display_name: client.display_name,
-        config,
-        latest_run: latestRun,
-      };
-    });
+        return {
+          id: client.id,
+          display_name: client.display_name,
+          config,
+          latest_run: latestRun || null,
+        };
+      })
+    );
 
     return NextResponse.json({
       clients: clientList,

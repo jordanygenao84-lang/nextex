@@ -530,7 +530,7 @@ export default function AdminWebsPage() {
                       <span>
                         {w.summary.domains_count} dominio(s) ·{" "}
                         {w.summary.open_tickets} ticket(s) abierto(s) ·{" "}
-                        {w.summary.active_keys} llave(s)
+                        {w.summary.active_keys} llave(s) activa(s)
                       </span>
                       <span className="font-mono flex items-center gap-1 text-[10px]">
                         <Clock className="w-3 h-3" />

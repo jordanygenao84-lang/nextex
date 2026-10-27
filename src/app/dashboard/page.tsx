@@ -1,13 +1,13 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { JobsTable } from "@/components/dashboard/JobsTable";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { AgentStatusList } from "@/components/dashboard/AgentStatusList";
 import { QuickActions } from "@/components/dashboard/QuickActions";
-import { MOCK_METRICS } from "@/lib/mock-data";
+import type { MetricItem } from "@/lib/mock-data";
 import { useAuth } from "@/context/AuthContext";
 import { Badge } from "@/components/ui/Badge";
 import { Sparkles, Building, ShieldCheck, ArrowRight } from "lucide-react";
@@ -24,6 +24,35 @@ export default function DashboardPage() {
   // Saludo según la hora
   const currentHour = new Date().getHours();
   const greeting = currentHour < 12 ? "Buenos días" : currentHour < 19 ? "Buenas tardes" : "Buenas noches";
+
+  // Métricas reales desde /api/admin/overview (antes eran MOCK_METRICS
+  // fijos: 1.42M tokens, 3,892 tareas, etc.). Si la consulta falla, las
+  // tarjetas quedan en "—": nunca se vuelve a mostrar un número inventado.
+  const [metrics, setMetrics] = useState<MetricItem[]>([
+    { id: "m-tokens", label: "Tokens procesados", value: "—", change: "", isPositive: true, timeframe: "mes actual", iconName: "Cpu" },
+    { id: "m-clients", label: "Clientes activos", value: "—", change: "", isPositive: true, timeframe: "en plataforma", iconName: "Workflow" },
+    { id: "m-convs", label: "Conversaciones hoy", value: "—", change: "", isPositive: true, timeframe: "hoy", iconName: "CheckCircle2" },
+    { id: "m-invoices", label: "Facturas pendientes", value: "—", change: "", isPositive: true, timeframe: "por cobrar", iconName: "Zap" },
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/overview")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d || cancelled) return;
+        setMetrics([
+          { id: "m-tokens", label: "Tokens procesados", value: String(d.tokens_this_month ?? 0), change: "", isPositive: true, timeframe: "mes actual", iconName: "Cpu" },
+          { id: "m-clients", label: "Clientes activos", value: `${d.active_clients ?? 0}/${d.total_clients ?? 0}`, change: "", isPositive: true, timeframe: "en plataforma", iconName: "Workflow" },
+          { id: "m-convs", label: "Conversaciones hoy", value: String(d.conversations_today ?? 0), change: "", isPositive: true, timeframe: "hoy", iconName: "CheckCircle2" },
+          { id: "m-invoices", label: "Facturas pendientes", value: `$${Number(d.pending_invoices_amount ?? 0).toFixed(2)}`, change: "", isPositive: true, timeframe: `${d.pending_invoices_count ?? 0} por cobrar`, iconName: "Zap" },
+        ]);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <DashboardShell
@@ -69,7 +98,7 @@ export default function DashboardPage() {
 
         {/* Top Metric Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {MOCK_METRICS.map((metric) => (
+          {metrics.map((metric) => (
             <MetricCard key={metric.id} item={metric} />
           ))}
         </div>

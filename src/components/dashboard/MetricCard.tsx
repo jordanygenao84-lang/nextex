@@ -18,21 +18,23 @@ export const MetricCard: React.FC<{ item: MetricItem }> = ({ item }) => {
         <div className="p-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border">
           {iconMap[item.iconName] || <Cpu className="w-5 h-5 text-texter-indigo" />}
         </div>
-        <div
-          className={cn(
-            "flex items-center gap-1 text-xs font-mono font-medium px-2 py-0.5 rounded-full border",
-            item.isPositive
-              ? "bg-texter-emerald/10 text-emerald-400 border-emerald-500/20"
-              : "bg-texter-rose/10 text-rose-400 border-rose-500/20"
-          )}
-        >
-          {item.isPositive ? (
-            <ArrowUpRight className="w-3 h-3" />
-          ) : (
-            <ArrowDownRight className="w-3 h-3" />
-          )}
-          <span>{item.change}</span>
-        </div>
+        {item.change ? (
+          <div
+            className={cn(
+              "flex items-center gap-1 text-xs font-mono font-medium px-2 py-0.5 rounded-full border",
+              item.isPositive
+                ? "bg-texter-emerald/10 text-emerald-400 border-emerald-500/20"
+                : "bg-texter-rose/10 text-rose-400 border-rose-500/20"
+            )}
+          >
+            {item.isPositive ? (
+              <ArrowUpRight className="w-3 h-3" />
+            ) : (
+              <ArrowDownRight className="w-3 h-3" />
+            )}
+            <span>{item.change}</span>
+          </div>
+        ) : null}
       </div>
 
       <div className="mt-4 space-y-1">
