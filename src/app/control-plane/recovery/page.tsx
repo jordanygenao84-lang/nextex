@@ -170,7 +170,11 @@ export default function RecoveryControlPage() {
             </div>
 
             <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-              {workersCount === 0 ? (
+              {isLoading ? (
+                <p className="text-texter-text-muted text-[11px] py-4 text-center">
+                  Cargando estado de workers…
+                </p>
+              ) : workersCount === 0 ? (
                 <p className="text-texter-text-muted text-[11px] py-4 text-center">
                   Sin workers registrados para evaluar: las ejecuciones usan
                   identificadores efímeros por run y no hay workers

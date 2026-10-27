@@ -149,7 +149,9 @@ export default function JobsControlPage() {
             <Cpu className="w-5 h-5 text-texter-indigo" />
             <h2 className="text-white font-semibold text-lg">Catálogo de Jobs</h2>
             <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-texter-surface border border-texter-border text-texter-text-muted">
-              {jobs.length} registros
+              {hideTests
+                ? `${jobs.filter((j) => !/test|prueba/i.test(j.name)).length} de ${jobs.length} registros`
+                : `${jobs.length} registros`}
             </span>
           </div>
 

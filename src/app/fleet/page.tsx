@@ -416,6 +416,15 @@ export default function FleetPage() {
 
   const latestMetric = jobMetrics.length > 0 ? jobMetrics[jobMetrics.length - 1] : null;
 
+  // El resumen final guarda los percentiles como p50_ms/p95_ms/p99_ms (no
+  // p50/p95/p99): leer el nombre real primero para no caer al último punto
+  // en vivo mientras la etiqueta dice "agregado final" (bug verificado
+  // 2026-10-27: P50 107 vs 113.12 del JSON por leer el campo equivocado).
+  const summaryP50 = selectedJob?.summary?.p50_ms ?? selectedJob?.summary?.p50 ?? null;
+  const summaryP95 = selectedJob?.summary?.p95_ms ?? selectedJob?.summary?.p95 ?? null;
+  const summaryP99 = selectedJob?.summary?.p99_ms ?? selectedJob?.summary?.p99 ?? null;
+  const summaryErrors = selectedJob?.summary?.total_errors ?? null;
+
   return (
     <DashboardShell
       title="Flota de Pruebas de Carga (Load Fleet)"
@@ -780,9 +789,11 @@ export default function FleetPage() {
                 muestran el ÚLTIMO punto en vivo. Antes mezclaba ambos sin
                 decirlo y los números no coincidían con el resumen. */}
             <div className="text-[11px] text-texter-text-dim font-mono -mb-1">
-              {selectedJob.summary
+              {selectedJob.summary && summaryP50 != null
                 ? "Agregado final de la corrida (coincide con el resumen JSON de abajo)"
-                : "Último punto de telemetría en vivo"}
+                : selectedJob.summary
+                  ? "Resumen final (los percentiles son el último punto en vivo)"
+                  : "Último punto de telemetría en vivo"}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
@@ -802,25 +813,25 @@ export default function FleetPage() {
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
                 <span className="text-[11px] text-texter-text-muted uppercase font-mono">p50</span>
                 <p className="text-xl font-bold font-mono text-emerald-400 mt-1">
-                  {formatMs(selectedJob.summary?.p50 ?? latestMetric?.p50_ms)}
+                  {formatMs(summaryP50 ?? latestMetric?.p50_ms)}
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
                 <span className="text-[11px] text-texter-text-muted uppercase font-mono">p95</span>
                 <p className="text-xl font-bold font-mono text-amber-400 mt-1">
-                  {formatMs(selectedJob.summary?.p95 ?? latestMetric?.p95_ms)}
+                  {formatMs(summaryP95 ?? latestMetric?.p95_ms)}
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
                 <span className="text-[11px] text-texter-text-muted uppercase font-mono">p99</span>
                 <p className="text-xl font-bold font-mono text-rose-400 mt-1">
-                  {formatMs(selectedJob.summary?.p99 ?? latestMetric?.p99_ms)}
+                  {formatMs(summaryP99 ?? latestMetric?.p99_ms)}
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
                 <span className="text-[11px] text-texter-text-muted uppercase font-mono">Errores</span>
                 <p className="text-xl font-bold font-mono text-texter-rose mt-1">
-                  {latestMetric?.errors ?? 0}
+                  {summaryErrors ?? latestMetric?.errors ?? 0}
                 </p>
               </div>
             </div>
