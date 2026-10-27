@@ -335,7 +335,7 @@ export default function TraceDetailPage() {
                 {/* Atributos sanitizados */}
                 <div className="space-y-1.5 pt-2 border-t border-texter-border/50">
                   <span className="text-texter-text-dim block">Atributos Sanitizados (Capa 1/2):</span>
-                  {(selectedSpan.attributes?.source || selectedSpan.attributes?.actor_type) && (
+                  {Boolean(selectedSpan.attributes?.source || selectedSpan.attributes?.actor_type) && (
                     <p className="text-[11px] text-texter-text-dim leading-relaxed">
                       Leyenda: "source" es quién originó la acción y
                       "actor_type" quién la ejecuta; que una cancelación
