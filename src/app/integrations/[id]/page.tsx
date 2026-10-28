@@ -36,6 +36,10 @@ export default function IntegrationDetailPage({ params }: { params: { id: string
   // Modal para rotación de secreto única
   const [rotatedSecret, setRotatedSecret] = useState<{ plainSecret: string; endpointName: string } | null>(null);
   const [isRotating, setIsRotating] = useState<string | null>(null);
+  // Confirmación en dos clics dentro de la página (no window.confirm: los
+  // diálogos nativos se descartan solos en navegadores gestionados y la
+  // rotación parecía no hacer nada).
+  const [rotateConfirmId, setRotateConfirmId] = useState<string | null>(null);
   const [modalCopied, setModalCopied] = useState(false);
 
   useEffect(() => {
@@ -93,9 +97,11 @@ export default function IntegrationDetailPage({ params }: { params: { id: string
   };
 
   const handleRotateSecret = async (endpointId: string, endpointName: string) => {
-    if (!confirm(`¿Está seguro de rotar la credencial de "${endpointName}"? El secreto actual pasará a secundario con un período de gracia de 24 horas.`)) {
+    if (rotateConfirmId !== endpointId) {
+      setRotateConfirmId(endpointId);
       return;
     }
+    setRotateConfirmId(null);
 
     setIsRotating(endpointId);
     try {
@@ -256,11 +262,17 @@ export default function IntegrationDetailPage({ params }: { params: { id: string
                         size="sm"
                         onClick={() => handleRotateSecret(ep.id, ep.name)}
                         disabled={isRotating === ep.id || integration?.status === "revoked"}
-                        title={integration?.status === "revoked" ? "La integración está revocada" : undefined}
+                        title={
+                          integration?.status === "revoked"
+                            ? "La integración está revocada"
+                            : rotateConfirmId === ep.id
+                              ? "Pulsa otra vez para confirmar: el secreto actual pasará a secundario con 24 h de gracia"
+                              : undefined
+                        }
                         className="text-texter-warning border-texter-warning/30 hover:bg-texter-warning/10 text-xs"
                       >
                         <KeyRound className="w-3.5 h-3.5 mr-1" />
-                        {isRotating === ep.id ? "Rotando..." : "Rotar Secreto"}
+                        {isRotating === ep.id ? "Rotando..." : rotateConfirmId === ep.id ? "¿Rotar? Pulsa otra vez" : "Rotar Secreto"}
                       </Button>
                       <Badge variant={integration?.status === "revoked" ? "default" : ep.status === "active" ? "success" : "default"} size="sm">
                         {integration?.status === "revoked" ? "inactivo (revocada)" : ep.status}

@@ -21,6 +21,18 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const [models, setModels] = useState<ModelMetadata[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Cerrar con Escape: antes no había ningún handler y el desplegable
+  // quedaba abierto. El botón además sube a z-50 al abrir para que el
+  // fondo de cierre (z-40) no lo tape y el segundo clic lo cierre.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isOpen]);
+
   useEffect(() => {
     async function fetchModels() {
       try {
@@ -55,7 +67,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const currentModel = models.find((m) => m.id === selectedModelId) || models[0];
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative ${className} ${isOpen ? "z-50" : ""}`}>
       {/* Selector Trigger Button */}
       <button
         type="button"

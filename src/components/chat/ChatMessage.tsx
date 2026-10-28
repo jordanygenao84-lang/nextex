@@ -14,16 +14,26 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export const ChatMessage: React.FC<{ message: ChatMessageType }> = ({
-  message,
-}) => {
+export const ChatMessage: React.FC<{
+  message: ChatMessageType;
+  onRegenerate?: () => void;
+}> = ({ message, onRegenerate }) => {
   const [copied, setCopied] = useState(false);
+  const [shared, setShared] = useState(false);
   const isAssistant = message.sender === "assistant";
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Compartir copia el contenido al portapapeles con confirmación visible.
+  // Antes el botón no tenía onClick y no hacía nada.
+  const handleShare = () => {
+    navigator.clipboard.writeText(message.content);
+    setShared(true);
+    setTimeout(() => setShared(false), 2000);
   };
 
   // Helper to render simple code block styling if content contains ```
@@ -148,13 +158,24 @@ export const ChatMessage: React.FC<{ message: ChatMessageType }> = ({
               )}
               <span>{copied ? "Copiado" : "Copiar"}</span>
             </button>
-            <button className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:text-white hover:bg-texter-surface-hover transition-colors">
+            <button
+              onClick={onRegenerate}
+              disabled={!onRegenerate}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:text-white hover:bg-texter-surface-hover transition-colors disabled:opacity-40"
+            >
               <RotateCw className="w-3.5 h-3.5" />
               <span>Regenerar</span>
             </button>
-            <button className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:text-white hover:bg-texter-surface-hover transition-colors">
-              <Share2 className="w-3.5 h-3.5" />
-              <span>Compartir</span>
+            <button
+              onClick={handleShare}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:text-white hover:bg-texter-surface-hover transition-colors"
+            >
+              {shared ? (
+                <Check className="w-3.5 h-3.5 text-texter-emerald" />
+              ) : (
+                <Share2 className="w-3.5 h-3.5" />
+              )}
+              <span>{shared ? "¡Copiado para compartir!" : "Compartir"}</span>
             </button>
           </div>
         )}

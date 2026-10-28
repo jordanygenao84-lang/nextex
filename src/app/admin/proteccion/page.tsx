@@ -60,6 +60,10 @@ export default function ProteccionPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Confirmación en dos clics dentro de la página (no window.confirm: los
+  // diálogos nativos se descartan solos en navegadores gestionados y el
+  // borrado parecía no hacer nada). Mismo patrón que el borrado de grupos.
+  const [deleteCredConfirmId, setDeleteCredConfirmId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Estados para Errores de las webs (NIV1-4)
@@ -440,10 +444,11 @@ export default function ProteccionPage() {
   };
 
   const handleDelete = async (cred: CredentialRecord) => {
-    const confirmed = window.confirm(
-      `¿Estás seguro de que deseas eliminar la credencial "${cred.name}"?\nEsta acción no se puede deshacer.`
-    );
-    if (!confirmed) return;
+    if (deleteCredConfirmId !== cred.id) {
+      setDeleteCredConfirmId(cred.id);
+      return;
+    }
+    setDeleteCredConfirmId(null);
 
     setDeletingId(cred.id);
     try {
@@ -814,11 +819,21 @@ export default function ProteccionPage() {
                               <button
                                 onClick={() => handleDelete(cred)}
                                 disabled={isDeleting}
-                                className="p-1.5 rounded-lg bg-texter-rose/10 hover:bg-texter-rose/20 text-rose-400 hover:text-rose-300 border border-rose-500/20 transition-colors disabled:opacity-50"
-                                title="Eliminar credencial"
+                                className={`p-1.5 rounded-lg border transition-colors disabled:opacity-50 ${
+                                  deleteCredConfirmId === cred.id
+                                    ? "bg-texter-rose/25 text-white border-rose-500/50 px-2.5 text-[11px] font-semibold"
+                                    : "bg-texter-rose/10 hover:bg-texter-rose/20 text-rose-400 hover:text-rose-300 border-rose-500/20"
+                                }`}
+                                title={
+                                  deleteCredConfirmId === cred.id
+                                    ? "Pulsa otra vez para confirmar el borrado permanente"
+                                    : "Eliminar credencial"
+                                }
                               >
                                 {isDeleting ? (
                                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : deleteCredConfirmId === cred.id ? (
+                                  <span>¿Seguro?</span>
                                 ) : (
                                   <Trash2 className="w-3.5 h-3.5" />
                                 )}

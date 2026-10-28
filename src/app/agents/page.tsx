@@ -880,6 +880,42 @@ export default function AgentsPage() {
                             <pre className="p-2 rounded bg-black/40 text-[10px] text-amber-300 overflow-x-auto">
                               {JSON.stringify(s.input, null, 2)}
                             </pre>
+                            {(() => {
+                              const pendingApproval = approvals.find(
+                                (a) => a.run_id === currentRun?.id && a.status === "pending"
+                              );
+                              if (pendingApproval) {
+                                return (
+                                  <div className="flex items-center gap-2 pt-1">
+                                    <button
+                                      onClick={() => handleResolveApproval(pendingApproval.id, "reject")}
+                                      disabled={isApproving}
+                                      className="px-3 py-1.5 rounded-lg bg-texter-rose/15 hover:bg-texter-rose/25 text-rose-300 border border-rose-500/30 text-[11px] font-semibold transition-colors disabled:opacity-50"
+                                    >
+                                      Rechazar
+                                    </button>
+                                    <button
+                                      onClick={() => handleResolveApproval(pendingApproval.id, "approve")}
+                                      disabled={isApproving}
+                                      className="px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold transition-colors disabled:opacity-50"
+                                    >
+                                      Aprobar y Ejecutar
+                                    </button>
+                                  </div>
+                                );
+                              }
+                              return (
+                                <button
+                                  onClick={() => {
+                                    setCurrentRun(null);
+                                    setActiveTab("approvals");
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 border border-amber-500/30 text-[11px] font-semibold transition-colors"
+                                >
+                                  Ver en la bandeja de aprobaciones
+                                </button>
+                              );
+                            })()}
                           </div>
                         )}
 

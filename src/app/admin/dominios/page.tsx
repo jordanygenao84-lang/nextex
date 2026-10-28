@@ -46,6 +46,10 @@ export default function AdminDominiosPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [checkingId, setCheckingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Confirmación en dos clics dentro de la página (no window.confirm: los
+  // diálogos nativos se descartan solos en navegadores gestionados y el
+  // borrado parecía no hacer nada).
+  const [deleteDomConfirmId, setDeleteDomConfirmId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Modal Crear / Editar Dominio
@@ -249,13 +253,11 @@ export default function AdminDominiosPage() {
   };
 
   const handleDeleteDomain = async (dom: DomainRecord) => {
-    if (
-      !window.confirm(
-        `¿Estás seguro de que deseas eliminar el dominio "${dom.domain}"?`
-      )
-    ) {
+    if (deleteDomConfirmId !== dom.id) {
+      setDeleteDomConfirmId(dom.id);
       return;
     }
+    setDeleteDomConfirmId(null);
 
     setDeletingId(dom.id);
     try {
@@ -580,11 +582,21 @@ export default function AdminDominiosPage() {
                             <button
                               onClick={() => handleDeleteDomain(dom)}
                               disabled={isDeleting}
-                              className="p-1.5 rounded-lg bg-texter-rose/10 hover:bg-texter-rose/20 text-rose-400 hover:text-rose-300 border border-rose-500/20 transition-colors disabled:opacity-50"
-                              title="Eliminar dominio"
+                              className={`p-1.5 rounded-lg border transition-colors disabled:opacity-50 ${
+                                deleteDomConfirmId === dom.id
+                                  ? "bg-texter-rose/25 text-white border-rose-500/50 px-2.5 text-[11px] font-semibold"
+                                  : "bg-texter-rose/10 hover:bg-texter-rose/20 text-rose-400 hover:text-rose-300 border-rose-500/20"
+                              }`}
+                              title={
+                                deleteDomConfirmId === dom.id
+                                  ? "Pulsa otra vez para confirmar el borrado permanente"
+                                  : "Eliminar dominio"
+                              }
                             >
                               {isDeleting ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : deleteDomConfirmId === dom.id ? (
+                                <span>¿Seguro?</span>
                               ) : (
                                 <Trash2 className="w-3.5 h-3.5" />
                               )}

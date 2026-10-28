@@ -386,7 +386,7 @@ export async function executeScheduledBackups(
 
   try {
     const { data: configs, error: cfgErr } = await (client.from("backup_configs") as any)
-      .select("client_id, enabled")
+      .select("client_id, enabled, supabase_url, service_key_encrypted, github_repo")
       .eq("enabled", true);
 
     if (cfgErr || !Array.isArray(configs) || configs.length === 0) {
@@ -408,6 +408,21 @@ export async function executeScheduledBackups(
 
       if (!runErr && Array.isArray(recentRuns) && recentRuns.length > 0) {
         result.skipped++;
+        continue;
+      }
+
+      // Sin llave de servicio ni repo, la corrida fallaría con certeza sin
+      // exportar nada: no se ejecuta cada minuto en bucle. En cuanto JC
+      // pegue la llave en la configuración, el próximo tick la ejecuta.
+      const hasSupabaseUrl = Boolean(cfg.supabase_url && cfg.supabase_url.trim());
+      const hasServiceKey = Boolean(cfg.service_key_encrypted);
+      const hasRepo = Boolean(cfg.github_repo && cfg.github_repo.trim());
+      if (hasSupabaseUrl && !hasServiceKey && !hasRepo) {
+        result.skipped++;
+        result.results.push({
+          client_id: cfg.client_id,
+          status: "skipped_missing_service_key",
+        });
         continue;
       }
 

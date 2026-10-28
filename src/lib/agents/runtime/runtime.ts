@@ -6,6 +6,7 @@
  * serialización atómica anti-replay / anti-tampering y Subsistema de Memoria Cognitiva (Fase 4.5).
  */
 
+import { randomUUID } from "crypto";
 import { defaultAIGateway } from "@/lib/omniengine/gateway/gateway";
 import { defaultQuotaManager } from "@/lib/omniengine/quotas/quota-manager";
 import { defaultPermissionEngine } from "./permission";
@@ -342,7 +343,10 @@ export class AgentRuntime {
         ? `${formattedMemories}\n\n${dto.input}`
         : dto.input;
 
-      const stepId1 = `step-${run.id}-${currentStepNumber}`;
+      // Los IDs de pasos son UUID: la tabla agent_run_steps.id es uuid y un
+      // texto "step-..." rechazaba el insert en silencio, dejando runs en
+      // espera sin paso ni solicitud de aprobación persistidos.
+      const stepId1 = randomUUID();
       const aiStep: AgentRunStep = {
         id: stepId1,
         run_id: run.id,
@@ -430,7 +434,7 @@ export class AgentRuntime {
 
         // 12. GOBERNANZA HITL: Si requiere aprobación, suspender y crear ApprovalRequest
         if (authzDecision.decision === "approval_required") {
-          const approvalStepId = `step-${run.id}-${currentStepNumber}`;
+          const approvalStepId = randomUUID();
 
           // Generación de firma criptográfica inmutable RFC 8785
           const payloadHash = computeApprovalPayloadHash(
@@ -469,8 +473,10 @@ export class AgentRuntime {
           run.updated_at = new Date().toISOString();
 
           if (supabase) {
-            // Persistir paso en agent_run_steps
-            await (supabase.from("agent_run_steps") as any).insert({
+            // Persistir paso en agent_run_steps. Un fallo aquí NO puede
+            // tragarse en silencio: sin paso persistido el run quedaría en
+            // espera para siempre sin solicitud aprobable.
+            const { error: approvalStepErr } = await (supabase.from("agent_run_steps") as any).insert({
               id: approvalStep.id,
               run_id: approvalStep.run_id,
               workspace_id: approvalStep.workspace_id,
@@ -481,6 +487,14 @@ export class AgentRuntime {
               input: approvalStep.input,
               started_at: approvalStep.started_at,
             });
+            if (approvalStepErr) {
+              throw new AgentError({
+                code: AgentErrorCodes.INTERNAL_AGENT_ERROR,
+                message: `No se pudo persistir el paso de aprobación: ${approvalStepErr.message}`,
+                statusCode: 500,
+                runId: run.id,
+              });
+            }
 
             // Persistir entidad formal en approval_requests (Fase 4.4)
             const formalApproval = defaultApprovalGovernance.createApprovalRequest(
@@ -494,7 +508,7 @@ export class AgentRuntime {
               toolCall.params
             );
 
-            await (supabase.from("approval_requests") as any).insert({
+            const { error: formalApprovalErr } = await (supabase.from("approval_requests") as any).insert({
               id: formalApproval.id,
               workspace_id: formalApproval.workspace_id,
               run_id: formalApproval.run_id,
@@ -508,6 +522,14 @@ export class AgentRuntime {
               status: formalApproval.status,
               expires_at: formalApproval.expires_at,
             });
+            if (formalApprovalErr) {
+              throw new AgentError({
+                code: AgentErrorCodes.INTERNAL_AGENT_ERROR,
+                message: `No se pudo persistir la solicitud de aprobación: ${formalApprovalErr.message}`,
+                statusCode: 500,
+                runId: run.id,
+              });
+            }
 
             await (supabase.from("agent_runs") as any)
               .update({
@@ -524,7 +546,7 @@ export class AgentRuntime {
         }
 
         // 13. SI LA HERRAMIENTA ESTÁ AUTORIZADA DIRECTAMENTE (ALLOW)
-        const toolStepId = `step-${run.id}-${currentStepNumber}`;
+        const toolStepId = randomUUID();
         const effectiveFencingToken = dto.fencing_token ?? (run.fencing_token || 0);
         const toolStep: AgentRunStep = {
           id: toolStepId,
@@ -1240,7 +1262,7 @@ export class AgentRuntime {
         }
 
         if (authzDecision.decision === "approval_required") {
-          const approvalStepId = `step-${runRecord.id}-${nextStepNumber}`;
+          const approvalStepId = randomUUID();
           const payloadHash = computeApprovalPayloadHash(runRecord.id, approvalStepId, tool.id, tool.version, toolCall.params);
           const approvalStep: AgentRunStep = {
             id: approvalStepId,
@@ -1264,7 +1286,7 @@ export class AgentRuntime {
           };
 
           steps.push(approvalStep);
-          await (supabase.from("agent_run_steps") as any).insert({
+          const { error: approvalStepErr2 } = await (supabase.from("agent_run_steps") as any).insert({
             id: approvalStep.id,
             run_id: approvalStep.run_id,
             workspace_id: approvalStep.workspace_id,
@@ -1275,6 +1297,14 @@ export class AgentRuntime {
             input: approvalStep.input,
             started_at: approvalStep.started_at,
           });
+          if (approvalStepErr2) {
+            throw new AgentError({
+              code: AgentErrorCodes.INTERNAL_AGENT_ERROR,
+              message: `No se pudo persistir el paso de aprobación: ${approvalStepErr2.message}`,
+              statusCode: 500,
+              runId: runRecord.id,
+            });
+          }
 
           const formalApproval = defaultApprovalGovernance.createApprovalRequest(
             runRecord.workspace_id,
@@ -1287,7 +1317,7 @@ export class AgentRuntime {
             toolCall.params
           );
 
-          await (supabase.from("approval_requests") as any).insert({
+          const { error: formalApprovalErr2 } = await (supabase.from("approval_requests") as any).insert({
             id: formalApproval.id,
             workspace_id: formalApproval.workspace_id,
             run_id: formalApproval.run_id,
@@ -1301,6 +1331,14 @@ export class AgentRuntime {
             status: formalApproval.status,
             expires_at: formalApproval.expires_at,
           });
+          if (formalApprovalErr2) {
+            throw new AgentError({
+              code: AgentErrorCodes.INTERNAL_AGENT_ERROR,
+              message: `No se pudo persistir la solicitud de aprobación: ${formalApprovalErr2.message}`,
+              statusCode: 500,
+              runId: runRecord.id,
+            });
+          }
 
           const waitingOutput = `[HUMAN-IN-THE-LOOP]: El agente solicita aprobación para ejecutar la herramienta '${tool.name}@${tool.version}' (Riesgo: ${tool.riskLevel.toUpperCase()}).`;
           await (supabase.from("agent_runs") as any)
@@ -1317,7 +1355,7 @@ export class AgentRuntime {
         }
 
         // Si fue allowed: ejecutar herramienta con barrera de cercado
-        const toolStepId = `step-${runRecord.id}-${nextStepNumber}`;
+        const toolStepId = randomUUID();
         const toolStep: AgentRunStep = {
           id: toolStepId,
           run_id: runRecord.id,

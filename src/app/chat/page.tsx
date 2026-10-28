@@ -253,9 +253,25 @@ export default function ChatPage() {
                 </p>
               </div>
             )}
-            {messages.map((message) => (
-              <ChatMessage key={message.id} message={message} />
-            ))}
+            {messages.map((message, index) => {
+              // Regenerar reenvía el último mensaje del usuario anterior a
+              // esta respuesta del asistente. Sin usuario previo no hay nada
+              // que regenerar y el botón queda deshabilitado.
+              const prevUser = [...messages.slice(0, index)]
+                .reverse()
+                .find((m) => m.sender === "user");
+              return (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  onRegenerate={
+                    message.sender === "assistant" && prevUser && !isGenerating
+                      ? () => handleSendMessage(prevUser.content)
+                      : undefined
+                  }
+                />
+              );
+            })}
 
             {isGenerating && (
               <div className="flex items-center gap-3 p-4 rounded-2xl bg-texter-surface border border-texter-border/60 animate-pulse">

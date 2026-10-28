@@ -18,13 +18,19 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const { data: member } = await (supabase.from("workspace_members") as any)
+    // Resolver TODOS los workspaces del usuario. Antes se tomaba un único
+    // miembro con limit(1) sin orden: con más de un workspace el resultado
+    // era arbitrario y la bandeja podía mostrar 0 aunque hubiera
+    // aprobaciones pendientes en otro workspace (mismo patrón que el fix
+    // de /api/control-plane/stats).
+    const { data: members } = await (supabase.from("workspace_members") as any)
       .select("workspace_id, role")
-      .eq("user_id", user.id)
-      .limit(1)
-      .maybeSingle();
+      .eq("user_id", user.id);
 
-    if (!member?.workspace_id) {
+    const memberList: Array<{ workspace_id: string; role: string }> = members || [];
+    const workspaceIds = memberList.map((m) => m.workspace_id).filter(Boolean);
+
+    if (workspaceIds.length === 0) {
       return NextResponse.json(
         { error: { code: "NO_WORKSPACE", message: "Usuario sin workspace activo.", statusCode: 403 } },
         { status: 403 }
@@ -35,7 +41,7 @@ export async function GET(req: NextRequest) {
 
     let query = (supabase.from("approval_requests") as any)
       .select("*, agent_runs(id, job_run_id, agent_id), agent_run_steps(id, step_number, tool_id)")
-      .eq("workspace_id", member.workspace_id);
+      .in("workspace_id", workspaceIds);
 
     if (status) query = query.eq("status", status);
 
@@ -45,10 +51,16 @@ export async function GET(req: NextRequest) {
 
     if (error) throw error;
 
+    const approvalList: any[] = approvals || [];
+    const firstWorkspaceRole =
+      memberList.find((m) => m.workspace_id === approvalList[0]?.workspace_id)?.role ||
+      memberList[0]?.role;
+
     return NextResponse.json({
-      approvals: approvals || [],
+      approvals: approvalList,
       currentUserId: user.id,
-      currentUserRole: member.role,
+      currentUserRole: firstWorkspaceRole,
+      workspacesCount: workspaceIds.length,
     });
   } catch (err: any) {
     return NextResponse.json(
@@ -69,19 +81,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: { code: "AUTH_REQUIRED", message: "Sesión requerida.", statusCode: 401 } },
         { status: 401 }
-      );
-    }
-
-    const { data: member } = await (supabase.from("workspace_members") as any)
-      .select("workspace_id, role")
-      .eq("user_id", user.id)
-      .limit(1)
-      .maybeSingle();
-
-    if (!member?.workspace_id) {
-      return NextResponse.json(
-        { error: { code: "NO_WORKSPACE", message: "Usuario sin workspace activo.", statusCode: 403 } },
-        { status: 403 }
       );
     }
 
@@ -107,8 +106,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Aislamiento Multi-Tenant
-    if (approval.workspace_id !== member.workspace_id) {
+    // Aislamiento Multi-Tenant: la membresía debe ser la del workspace de
+    // la solicitud (no un limit(1) arbitrario entre varios workspaces).
+    const { data: members } = await (supabase.from("workspace_members") as any)
+      .select("workspace_id, role")
+      .eq("user_id", user.id);
+
+    const member = (members || []).find((m: any) => m.workspace_id === approval.workspace_id);
+
+    if (!member) {
       return NextResponse.json(
         { error: { code: "TENANT_MISMATCH", message: "Acceso denegado a solicitud de otro workspace.", statusCode: 403 } },
         { status: 403 }

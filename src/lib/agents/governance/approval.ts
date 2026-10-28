@@ -4,6 +4,7 @@
  * y tubería de revalidación Just-In-Time (JIT) antes de la ejecución física.
  */
 
+import { randomUUID } from "crypto";
 import { computeApprovalPayloadHash } from "../tools/hash";
 import { defaultPermissionEngine, PermissionEngine } from "./permissions";
 import { defaultPolicyEngine, PolicyEngine } from "./policies";
@@ -73,7 +74,9 @@ export class ApprovalGovernance {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // TTL 24 horas
 
     return {
-      id: `appr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      // La tabla approval_requests.id es uuid: un texto "appr-..." rechazaba
+      // el insert y la bandeja quedaba vacía aunque el run esperara aprobación.
+      id: randomUUID(),
       workspace_id: workspaceId,
       run_id: runId,
       step_id: stepId,
