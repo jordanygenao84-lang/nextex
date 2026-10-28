@@ -81,8 +81,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(
         {
           error: {
-            code: "DB_ERROR",
-            message: dbErr.message || "Error al obtener registro de errores.",
+            code: "DB_ERROR", message: "Error interno del servidor.",
           },
         },
         { status: 500 }
@@ -114,9 +113,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       {
         error: {
-          code: "INTERNAL_ERROR",
-          message:
-            err?.message || "Error al procesar solicitud de errores de webs.",
+          code: "INTERNAL_ERROR", message: "Error interno del servidor.",
         },
       },
       { status: 500 }
@@ -188,8 +185,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json(
         {
           error: {
-            code: "DB_ERROR",
-            message: dbErr.message || "Error al eliminar grupo de errores.",
+            code: "DB_ERROR", message: "Error interno del servidor.",
           },
         },
         { status: 500 }

@@ -44,7 +44,7 @@ export async function DELETE(
 
     if (findErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: findErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
@@ -68,7 +68,7 @@ export async function DELETE(
 
       if (updateErr) {
         return NextResponse.json(
-          { error: { code: "DB_ERROR", message: updateErr.message } },
+          { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
           { status: 500 }
         );
       }
@@ -84,7 +84,7 @@ export async function DELETE(
 
     if (deleteErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: deleteErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

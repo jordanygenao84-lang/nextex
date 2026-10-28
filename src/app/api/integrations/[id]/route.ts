@@ -22,7 +22,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     }
 
     const { data: integration, error } = await (supabase.from("integrations") as any)
-      .select("*, integration_endpoints(*)")
+      .select("*, integration_endpoints(id, integration_id, workspace_id, name, endpoint_key, event_types, verification_method, status, replay_window_seconds, max_payload_bytes, secondary_secret_expires_at, created_at, updated_at)")
       .eq("id", params.id)
       .single();
 

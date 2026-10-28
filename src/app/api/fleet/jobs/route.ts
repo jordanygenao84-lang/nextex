@@ -155,7 +155,7 @@ export async function POST(req: NextRequest) {
 
     if (insertError || !newJob) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: insertError?.message || "No se pudo encolar el trabajo." } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

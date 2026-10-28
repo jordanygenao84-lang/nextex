@@ -76,7 +76,7 @@ export async function POST(
 
     if (updateErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: updateErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

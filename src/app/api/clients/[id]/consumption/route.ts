@@ -56,7 +56,7 @@ export async function GET(
 
     if (usageErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: usageErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

@@ -77,7 +77,7 @@ export async function POST(
 
     if (deleteErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: deleteErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
@@ -128,7 +128,7 @@ export async function POST(
 
     if (insertErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: insertErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

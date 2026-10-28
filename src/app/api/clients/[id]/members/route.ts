@@ -47,7 +47,7 @@ export async function GET(
 
     if (memErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: memErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

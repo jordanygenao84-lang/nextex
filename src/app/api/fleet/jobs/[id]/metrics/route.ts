@@ -51,7 +51,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .single();
 
     if (insertError) {
-      return NextResponse.json({ error: { code: "DB_ERROR", message: insertError.message } }, { status: 500 });
+      return NextResponse.json({ error: { code: "DB_ERROR", message: "Error interno del servidor." } }, { status: 500 });
     }
 
     await (supabase.from("fleet_agents") as any)

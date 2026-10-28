@@ -114,7 +114,7 @@ export async function GET(req: NextRequest) {
 
     if (dbErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: dbErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
@@ -212,8 +212,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error: {
-            code: "DB_ERROR",
-            message: insertErr?.message || "No se pudo crear la entrada de conocimiento.",
+            code: "DB_ERROR", message: "Error interno del servidor.",
           },
         },
         { status: 500 }
@@ -316,7 +315,7 @@ export async function PATCH(req: NextRequest) {
 
     if (updateErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: updateErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
@@ -386,7 +385,7 @@ export async function DELETE(req: NextRequest) {
 
     if (delErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: delErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

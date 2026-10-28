@@ -186,7 +186,7 @@ export async function POST(req: NextRequest) {
 
     if (wsError || !workspace) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: wsError?.message || "Error al crear workspace para el cliente." } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
@@ -217,7 +217,7 @@ export async function POST(req: NextRequest) {
     if (clientError || !client) {
       await (serviceClient.from("workspaces") as any).delete().eq("id", workspace.id);
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: clientError?.message || "Error al registrar cliente." } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

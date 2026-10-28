@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
       .limit(20);
 
     if (searchError) {
-      return NextResponse.json({ error: { code: "DB_ERROR", message: searchError.message } }, { status: 500 });
+      return NextResponse.json({ error: { code: "DB_ERROR", message: "Error interno del servidor." } }, { status: 500 });
     }
 
     const eligible = (candidates || []).filter(

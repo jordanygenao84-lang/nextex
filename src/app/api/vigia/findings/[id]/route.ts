@@ -103,7 +103,7 @@ export async function PATCH(
 
     if (fetchErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: fetchErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
@@ -147,7 +147,7 @@ export async function PATCH(
 
     if (updateErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: updateErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

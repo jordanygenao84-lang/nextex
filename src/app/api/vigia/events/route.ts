@@ -106,8 +106,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error: {
-            code: "DB_ERROR",
-            message: insertErr.message || "Error al registrar evento de seguridad.",
+            code: "DB_ERROR", message: "Error interno del servidor.",
           },
         },
         { status: 500 }

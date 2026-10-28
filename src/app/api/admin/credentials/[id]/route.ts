@@ -172,7 +172,7 @@ export async function PATCH(
 
     if (updateErr || !updated) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: updateErr?.message || "Error al actualizar credencial." } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
@@ -262,7 +262,7 @@ export async function DELETE(
 
     if (delErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: delErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

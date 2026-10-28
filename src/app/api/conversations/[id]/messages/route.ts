@@ -79,7 +79,7 @@ export async function POST(
 
     if (insertErr || !newMsg) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: insertErr?.message || "Error al guardar mensaje." } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

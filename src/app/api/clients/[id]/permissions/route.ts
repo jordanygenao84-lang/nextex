@@ -57,7 +57,7 @@ export async function GET(
 
     if (rowsErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: rowsErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
@@ -166,7 +166,7 @@ export async function PATCH(
 
     if (upsertErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: upsertErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

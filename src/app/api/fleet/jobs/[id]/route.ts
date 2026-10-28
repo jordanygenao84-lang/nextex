@@ -44,7 +44,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       .limit(200);
 
     if (metricsError) {
-      return NextResponse.json({ error: { code: "DB_ERROR", message: metricsError.message } }, { status: 500 });
+      return NextResponse.json({ error: { code: "DB_ERROR", message: "Error interno del servidor." } }, { status: 500 });
     }
 
     const metricsAsc = (metricsDesc || []).reverse();

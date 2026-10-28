@@ -90,7 +90,7 @@ export async function POST(
 
     if (ticketErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: ticketErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
@@ -125,8 +125,7 @@ export async function POST(
       return NextResponse.json(
         {
           error: {
-            code: "DB_ERROR",
-            message: msgErr?.message || "No se pudo registrar la respuesta.",
+            code: "DB_ERROR", message: "Error interno del servidor.",
           },
         },
         { status: 500 }

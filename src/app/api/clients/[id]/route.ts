@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { resolveAuthorizedClient } from "@/lib/auth/roles";
+import { resolveAuthorizedClient, isSuperAdmin } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -159,7 +159,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     if (updateError || !updatedClient) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: updateError?.message || "Error al actualizar cliente." } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
@@ -203,7 +203,37 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       );
     }
 
+    // Borrar un cliente destruye su workspace entero por cascade: solo el
+    // dueño del workspace o super_admin (mismo criterio que invites).
+    // Los demás miembros reciben 404 para no revelar el recurso.
     const serviceClient = createServiceClient();
+    const superAdmin = await isSuperAdmin(user.id);
+    if (!superAdmin) {
+      const { data: wsRecord } = await (serviceClient.from("workspaces") as any)
+        .select("owner_id")
+        .eq("id", client.workspace_id)
+        .maybeSingle();
+
+      const isDirectOwner = wsRecord?.owner_id === user.id;
+
+      let isOwnerMember = false;
+      if (!isDirectOwner) {
+        const { data: member } = await (serviceClient.from("workspace_members") as any)
+          .select("role")
+          .eq("workspace_id", client.workspace_id)
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        isOwnerMember = member?.role === "owner";
+      }
+
+      if (!isDirectOwner && !isOwnerMember) {
+        return NextResponse.json(
+          { error: { code: "NOT_FOUND", message: "Cliente no encontrado." } },
+          { status: 404 }
+        );
+      }
+    }
 
     // Verificar si tiene jobs con ejecuciones en running o queued
     const { data: wsJobs } = await (serviceClient.from("jobs") as any)
@@ -238,7 +268,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 
     if (delError) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: delError.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

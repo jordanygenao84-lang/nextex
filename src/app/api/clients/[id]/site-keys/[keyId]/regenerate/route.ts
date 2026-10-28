@@ -79,7 +79,7 @@ export async function POST(
 
     if (updateErr || !updatedKey) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: updateErr?.message || "Error al regenerar site key." } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

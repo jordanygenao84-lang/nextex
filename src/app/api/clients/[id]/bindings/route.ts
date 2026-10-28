@@ -142,7 +142,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
       if (reactivateErr) {
         return NextResponse.json(
-          { error: { code: "DB_ERROR", message: reactivateErr.message } },
+          { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
           { status: 500 }
         );
       }
@@ -164,7 +164,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     if (insertErr || !newBinding) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: insertErr?.message || "Error al registrar ID binding." } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

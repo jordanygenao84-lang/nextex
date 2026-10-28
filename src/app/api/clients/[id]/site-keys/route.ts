@@ -112,7 +112,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     if (insertErr || !newKey) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: insertErr?.message || "Error al crear site key." } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

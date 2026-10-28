@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { resolveAuthorizedClient } from "@/lib/auth/roles";
+import { validateUrlAndResolveDnsForSsrf } from "@/lib/agents/tools/builtins/http_ssrf";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const MAX_REDIRECTS = 3;
 
     while (true) {
+      // MEDIO 2026-10-28: validar SSRF + DNS antes de CADA fetch, incluido
+      // cada destino de redirección (un miembro puede editar website_url y
+      // un redirect puede apuntar a un destino privado). Sin validar, el
+      // servidor hacía fetch a cualquier URL elegida.
+      try {
+        await validateUrlAndResolveDnsForSsrf(currentUrl);
+      } catch {
+        return NextResponse.json({ ok: false, error: "URL de destino no permitida." });
+      }
+
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 10000);
 

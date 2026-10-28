@@ -96,7 +96,7 @@ export async function GET(
 
     if (ticketErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: ticketErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
@@ -122,7 +122,7 @@ export async function GET(
 
     if (msgErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: msgErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
@@ -176,7 +176,7 @@ export async function DELETE(
       .eq("ticket_id", ticketId);
     if (msgErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: msgErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
@@ -188,7 +188,7 @@ export async function DELETE(
       .maybeSingle();
     if (delErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: delErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
@@ -298,7 +298,7 @@ export async function PATCH(
 
     if (updateErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: updateErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

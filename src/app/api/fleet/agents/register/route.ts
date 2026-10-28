@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
 
     if (error || !agent) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: error?.message || "No se pudo registrar el agente." } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
 
     if (saveErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: saveErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

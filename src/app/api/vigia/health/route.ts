@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
 
     if (clientsErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: clientsErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

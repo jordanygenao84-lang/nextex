@@ -110,7 +110,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     if (intErr) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: intErr.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
@@ -268,7 +268,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
       if (updateErr) {
         return NextResponse.json(
-          { error: { code: "DB_ERROR", message: updateErr.message } },
+          { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
           { status: 500 }
         );
       }
@@ -287,7 +287,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
       if (insertErr) {
         return NextResponse.json(
-          { error: { code: "DB_ERROR", message: insertErr.message } },
+          { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
           { status: 500 }
         );
       }

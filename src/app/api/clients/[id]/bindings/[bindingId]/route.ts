@@ -71,7 +71,7 @@ export async function PATCH(
 
     if (updateErr || !updatedBinding) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: updateErr?.message || "Error al actualizar binding." } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }

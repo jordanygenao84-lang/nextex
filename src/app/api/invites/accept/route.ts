@@ -110,7 +110,7 @@ export async function GET(req: NextRequest) {
 
       if (insertMemberErr) {
         return NextResponse.json(
-          { error: { code: "DB_ERROR", message: insertMemberErr.message || "Error al registrar membresía en el workspace." } },
+          { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
           { status: 500 }
         );
       }

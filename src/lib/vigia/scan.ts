@@ -1,5 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { sendVigiaAlert } from "@/lib/vigia/notify";
+import { validateUrlAndResolveDnsForSsrf } from "@/lib/agents/tools/builtins/http_ssrf";
 
 /**
  * NEXTEХ VIGÍA — Motor de Escaneo Periódico de Seguridad (VIG-5 & VIG-6)
@@ -114,6 +115,26 @@ export async function scanClientSecurity(
   }
 
   const baseUrl = normalizeUrl(client.website_url);
+
+  // MEDIO 2026-10-28: el escaneo hacía fetch a la URL del cliente sin
+  // ninguna guarda SSRF (un miembro puede editar website_url). Validar
+  // antes de cualquier fetch: si el destino es privado/reservado o no
+  // resuelve a IPs públicas, el escaneo se omite con motivo. Esto cubre
+  // la revisión de cabeceras, las sondas (derivan de baseUrl) y la
+  // revisión SSL posterior. Igual que ya hace health.ts.
+  try {
+    await validateUrlAndResolveDnsForSsrf(baseUrl);
+  } catch (validationErr: any) {
+    return {
+      client_id: client.id,
+      display_name: client.display_name,
+      skipped: true,
+      reason: `URL no válida o privada (SSRF): ${validationErr?.message || "destino no permitido"}`,
+      new_findings: 0,
+      closed_findings: 0,
+    };
+  }
+
   const detectedFindings = new Map<string, DetectedFinding>();
 
   // -------------------------------------------------------------

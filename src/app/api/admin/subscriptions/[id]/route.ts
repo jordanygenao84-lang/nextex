@@ -234,8 +234,7 @@ export async function PATCH(
       return NextResponse.json(
         {
           error: {
-            code: "DB_ERROR",
-            message: updateErr?.message || "Error al actualizar suscripción.",
+            code: "DB_ERROR", message: "Error interno del servidor.",
           },
         },
         { status: 500 }

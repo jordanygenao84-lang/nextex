@@ -221,7 +221,7 @@ export async function POST(
 
     if (insertErr || !invite) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: insertErr?.message || "Error al crear la invitación." } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
