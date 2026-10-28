@@ -32,17 +32,44 @@ export const Logo: React.FC<LogoProps> = ({
     lg: "text-xs",
   };
 
-  // Monogram / Symbol
+  // Monogram / Symbol — N constelación (logo Opción 3, elegido por JC 2026-10-28)
   const Symbol = (
-    <div
-      className={cn(
-        "rounded-xl bg-gradient-to-tr from-texter-indigo to-texter-cyan flex items-center justify-center font-mono font-black text-white shrink-0 shadow-texter-glow-indigo relative select-none",
-        iconSizes[size]
-      )}
+    <svg
+      viewBox="0 0 64 64"
+      fill="none"
+      className={cn("shrink-0 select-none", iconSizes[size])}
+      style={{ filter: "drop-shadow(0 0 6px rgba(6,182,212,0.45))" }}
+      aria-hidden="true"
     >
-      <span className="tracking-tighter">NX</span>
-      <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-texter-cyan border border-texter-bg animate-pulse" />
-    </div>
+      <defs>
+        <linearGradient id="nxConstellation" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#6366F1" />
+          <stop offset="100%" stopColor="#06B6D4" />
+        </linearGradient>
+      </defs>
+      <g stroke="url(#nxConstellation)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 12V32V52" />
+        <path d="M50 12V32V52" />
+        <path d="M14 12L32 32L50 52" />
+        <path d="M14 12L24 22L32 32" />
+        <path d="M24 22L14 32" />
+        <path d="M14 32L32 32" />
+        <path d="M32 32L50 32" />
+        <path d="M32 32L40 42L50 52" />
+        <path d="M50 12L32 32" />
+      </g>
+      <g fill="#67E8F9">
+        <circle cx="14" cy="12" r="2.2" />
+        <circle cx="14" cy="32" r="2.2" />
+        <circle cx="14" cy="52" r="2.2" />
+        <circle cx="50" cy="12" r="2.2" />
+        <circle cx="50" cy="32" r="2.2" />
+        <circle cx="50" cy="52" r="2.2" />
+        <circle cx="32" cy="32" r="2.2" />
+        <circle cx="24" cy="22" r="2.2" />
+        <circle cx="40" cy="42" r="2.2" />
+      </g>
+    </svg>
   );
 
   if (variant === "monogram") {
@@ -65,7 +92,7 @@ export const Logo: React.FC<LogoProps> = ({
       {Symbol}
       <div className="flex flex-col">
         <span className={cn("font-black tracking-wider text-white font-mono flex items-center gap-1.5 leading-none", textSizes[size])}>
-          NEXTEХ
+          NEXTEX
           <span className="w-1.5 h-1.5 rounded-full bg-texter-cyan animate-pulse" />
         </span>
         {showTagline && (
