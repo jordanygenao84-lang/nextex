@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { resolveAuthorizedClient, isSuperAdmin } from "@/lib/auth/roles";
+import { AuditManager } from "@/lib/control-plane";
 
 export const dynamic = "force-dynamic";
 
@@ -271,6 +272,37 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
         { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
+    }
+
+    // Auditoría del borrado (best-effort): el evento NO se registra bajo el
+    // workspace borrado — su historial se va con él por ON DELETE CASCADE y
+    // la vista de auditoría está acotada al workspace del usuario — sino bajo
+    // el primer workspace del usuario que borra, para que quede visible en su
+    // auditoría. Sin esto, borrar un cliente no dejaba ningún rastro.
+    try {
+      const { data: deleterMember } = await (serviceClient.from("workspace_members") as any)
+        .select("workspace_id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+      if (deleterMember?.workspace_id) {
+        const audit = new AuditManager({
+          workspaceId: deleterMember.workspace_id,
+          supabaseClient: createServiceClient(),
+        });
+        await audit.recordEvent({
+          workspaceId: deleterMember.workspace_id,
+          actorId: user.id,
+          actorType: "user",
+          action: "client.deleted",
+          resourceType: "workspace",
+          resourceId: client.workspace_id,
+          decision: "allow",
+          reason: `Cliente eliminado: ${(client as any).display_name || clientId} (workspace ${client.workspace_id})`,
+        });
+      }
+    } catch {
+      // Auditoría best-effort: el borrado ya se completó.
     }
 
     return NextResponse.json({ ok: true });

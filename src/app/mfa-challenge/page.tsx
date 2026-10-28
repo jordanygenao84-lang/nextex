@@ -101,7 +101,11 @@ export default function MfaChallengePage() {
               Verificación en dos pasos
             </h1>
             <p className="text-xs text-texter-text-muted">
-              Tu cuenta tiene el segundo factor activado. Escribe el código de tu app autenticadora.
+              {needsChallenge === true
+                ? "Tu cuenta tiene el segundo factor activado. Escribe el código de tu app autenticadora."
+                : needsChallenge === false
+                  ? "No necesitas completar un reto ahora mismo."
+                  : "Comprobando tu sesión…"}
             </p>
           </div>
 
