@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { GovernanceManager, AuditManager, RecoveryManager } from "@/lib/control-plane";
 
 export const dynamic = "force-dynamic";
@@ -141,12 +141,36 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // FIX 2026-10-28 (traza recovery FAILED AUTHORIZATION_DENIED): el ciclo
+    // usa los RPC mark_worker_stale y recover_worker_jobs, otorgados SOLO a
+    // service_role. Con el cliente de usuario, cada ciclo manual fallaba
+    // con 42501 y la ruta lo tapaba devolviendo success:true con 0
+    // recuperados. El ciclo corre con service client (la autorización ya
+    // se validó arriba con workers.recover) y el resultado se reporta con
+    // honestidad: si el ciclo falla, HTTP 500 y success:false, no un
+    // "éxito" con 0.
     const rm = new RecoveryManager({
       workspaceId: member.workspace_id,
-      supabaseClient: supabase,
+      supabaseClient: createServiceClient(),
     });
 
     const recoveryResult = await rm.runRecoveryCycle({ batchSize: 50 });
+
+    if (!recoveryResult.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          decision: "allow",
+          error: {
+            code: "RECOVERY_FAILED",
+            message: "El ciclo de recuperación no pudo completarse.",
+            statusCode: 500,
+          },
+          result: recoveryResult,
+        },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
