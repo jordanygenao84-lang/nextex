@@ -3,7 +3,6 @@
 import React, { useState } from "react";
 import {
   ArrowUp,
-  Paperclip,
   Globe,
   Database,
   Terminal,
@@ -116,14 +115,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
         {/* Right action controls */}
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="p-2 text-texter-text-muted hover:text-white rounded-xl hover:bg-texter-surface-hover border border-texter-border transition-colors"
-            title="Adjuntar documento o dataset"
-          >
-            <Paperclip className="w-4 h-4" />
-          </button>
-
+          {/* Botón de adjuntar oculto: estaba muerto en código (sin onClick
+              ni manejo de archivos) y confundía. Recuperarlo cuando se
+              construya la subida con validación y storage. */}
           <Button
             type="submit"
             size="sm"
