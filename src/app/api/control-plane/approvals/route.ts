@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { GovernanceManager, AuditManager } from "@/lib/control-plane";
 
 export const dynamic = "force-dynamic";
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const audit = new AuditManager({ workspaceId: member.workspace_id, supabaseClient: supabase });
+    const audit = new AuditManager({ workspaceId: member.workspace_id, supabaseClient: createServiceClient() });
     const governance = new GovernanceManager({
       workspaceId: member.workspace_id,
       supabaseClient: supabase,

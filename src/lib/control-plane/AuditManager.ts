@@ -219,7 +219,11 @@ export class AuditManager {
       this.idempotencyIndex.set(`${workspaceId}:${idempotencyKey}`, eventId);
     }
 
-    // Persistir en Supabase si el cliente está disponible
+    // Persistir en Supabase si el cliente está disponible.
+    // NOTA 2026-10-28: la política cp_audit_insert_service y los grants
+    // solo permiten INSERT a service_role; con cliente de usuario el
+    // insert falla en silencio por RLS y el evento nunca aparece en el
+    // panel. Quien construya el AuditManager debe pasar service client.
     if (this.supabaseClient) {
       try {
         await (this.supabaseClient.from("control_plane_audit_log") as any).insert({

@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const audit = new AuditManager({ workspaceId: member.workspace_id, supabaseClient: supabase });
+    const audit = new AuditManager({ workspaceId: member.workspace_id, supabaseClient: createServiceClient() });
     const governance = new GovernanceManager({
       workspaceId: member.workspace_id,
       supabaseClient: supabase,

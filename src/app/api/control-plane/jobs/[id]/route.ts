@@ -130,7 +130,7 @@ export async function POST(
     const body = await req.json();
     const { action, reason } = body;
 
-    const audit = new AuditManager({ workspaceId: member.workspace_id, supabaseClient: supabase });
+    const audit = new AuditManager({ workspaceId: member.workspace_id, supabaseClient: createServiceClient() });
     const governance = new GovernanceManager({
       workspaceId: member.workspace_id,
       supabaseClient: supabase,

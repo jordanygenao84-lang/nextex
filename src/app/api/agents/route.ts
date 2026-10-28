@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { AuditManager } from "@/lib/control-plane";
 import { AgentErrorCodes } from "@/lib/agents/types/errors";
 import { CreateAgentDTO } from "@/lib/agents/types";
@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
     // Control Plane (la ruta no registraba eventos). Nunca rompe la
     // creación si la auditoría falla.
     try {
-      const audit = new AuditManager({ workspaceId: targetWorkspaceId, supabaseClient: supabase });
+      const audit = new AuditManager({ workspaceId: targetWorkspaceId, supabaseClient: createServiceClient() });
       await audit.recordEvent({
         workspaceId: targetWorkspaceId,
         actorId: user.id,

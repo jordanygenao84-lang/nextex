@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { AuditManager } from "@/lib/control-plane";
 import { AgentErrorCodes } from "@/lib/agents/types/errors";
 import { UpdateAgentDTO } from "@/lib/agents/types";
@@ -150,7 +150,7 @@ export async function DELETE(
     // Auditoría del archivado (mismo hueco que la creación).
     try {
       if (archived?.workspace_id) {
-        const audit = new AuditManager({ workspaceId: archived.workspace_id, supabaseClient: supabase });
+        const audit = new AuditManager({ workspaceId: archived.workspace_id, supabaseClient: createServiceClient() });
         await audit.recordEvent({
           workspaceId: archived.workspace_id,
           actorId: user.id,
