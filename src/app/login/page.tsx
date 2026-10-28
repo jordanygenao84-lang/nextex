@@ -82,6 +82,15 @@ function LoginForm() {
       }
 
       if (data?.session) {
+        // MFA opt-in (SEC-002): si el usuario tiene un factor TOTP
+        // verificado, la sesión tras contraseña es aal1 y debe completar
+        // el reto antes de entrar al panel.
+        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (aal?.nextLevel === "aal2" && aal?.currentLevel !== "aal2") {
+          router.push(`/mfa-challenge?redirect=${encodeURIComponent(redirectPath)}`);
+          router.refresh();
+          return;
+        }
         router.push(redirectPath);
         router.refresh();
       }

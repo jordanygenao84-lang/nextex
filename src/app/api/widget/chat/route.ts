@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { createServiceClient } from "@/lib/supabase/server";
+import { checkWidgetRateLimit } from "@/lib/widget/rateLimit";
 import { defaultAIGateway } from "@/lib/omniengine/gateway/gateway";
 import { getCachedResponse, setCachedResponse } from "@/lib/efficiency/cache";
 import { logTokenUsage } from "@/lib/efficiency/usage";
@@ -16,26 +17,6 @@ const corsHeaders = {
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders });
-}
-
-// Rate Limiter en memoria: max 30 mensajes por minuto por (embed_key + IP)
-const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
-
-function checkRateLimit(key: string): boolean {
-  const now = Date.now();
-  const entry = rateLimitStore.get(key);
-
-  if (!entry || now > entry.resetAt) {
-    rateLimitStore.set(key, { count: 1, resetAt: now + 60000 });
-    return true;
-  }
-
-  if (entry.count >= 30) {
-    return false;
-  }
-
-  entry.count++;
-  return true;
 }
 
 /**
@@ -80,14 +61,14 @@ export async function POST(req: NextRequest) {
       fallbackSessionId = session_id.trim();
     }
 
-    // 2. Control de Rate Limit (max 30 msgs/min por embed_key + IP)
+    // 2. Control de Rate Limit persistente (max 30 msgs/min por embed_key + IP)
     const clientIp =
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
       req.headers.get("x-real-ip") ||
       "anon";
     const rateKey = `${cleanEmbedKey}:${clientIp}`;
 
-    if (!checkRateLimit(rateKey)) {
+    if (!(await checkWidgetRateLimit(rateKey))) {
       return NextResponse.json(
         {
           error: "Demasiadas solicitudes. Por favor espera un momento.",

@@ -127,6 +127,22 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
+  // MFA opt-in (SEC-002): si el usuario tiene un factor TOTP verificado
+  // (nextLevel aal2) pero su sesión actual es aal1, exigir el reto TOTP
+  // antes de entrar a rutas protegidas. Sin factores, nextLevel es aal1
+  // y no hay redirección. La página /mfa-challenge no está protegida, así
+  // que no hay bucle. Ante un error del chequeo se permite el paso
+  // (fail-open ante errores transitorios, igual que el chequeo de perfil):
+  // un error no es una sesión aal1 confirmada.
+  if (user && isProtectedPath) {
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aal?.nextLevel === "aal2" && aal?.currentLevel !== "aal2") {
+      const challengeUrl = new URL("/mfa-challenge", request.url);
+      challengeUrl.searchParams.set("redirect", pathname);
+      return NextResponse.redirect(challengeUrl);
+    }
+  }
+
   // Redirigir a dashboard si usuario autenticado intenta entrar a login/register
   if (isAuthPath && user) {
     return NextResponse.redirect(new URL("/dashboard", request.url));

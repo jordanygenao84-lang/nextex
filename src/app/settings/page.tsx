@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { CANONICAL_PERMISSIONS_CATALOG, DEFAULT_ROLE_PERMISSIONS } from "@/lib/agents/governance/permissions";
+import MfaSection from "@/components/settings/MfaSection";
 
 export default function SettingsPage() {
   const { user, profile, workspace, refreshProfile } = useAuth();
@@ -571,6 +572,9 @@ export default function SettingsPage() {
             </Link>
           </div>
         </Card>
+
+        {/* Segundo factor TOTP (opt-in) */}
+        <MfaSection />
 
         {/* Institutional Attribution Card */}
         <div className="p-4 rounded-xl bg-texter-surface-subtle/40 border border-texter-border flex items-center justify-between text-xs text-texter-text-dim font-mono">
