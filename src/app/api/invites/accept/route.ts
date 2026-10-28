@@ -8,8 +8,10 @@ export const dynamic = "force-dynamic";
  * Acepta una invitación de acceso a un workspace para el usuario autenticado.
  * - 401 si no está autenticado.
  * - 404 si el token no existe.
- * - 409 si ya fue aceptado.
+ * - 409 si ya fue aceptada.
  * - 410 si el token ha expirado.
+ * - 403 si la invitación fue enviada a otro correo (la invitación es
+ *   personal: solo quien recibió el correo puede aceptarla).
  * - Inserta o actualiza en workspace_members con el rol otorgado.
  * - Marca accepted_at = now().
  */
@@ -68,6 +70,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(
         { error: { code: "EXPIRED", message: "La invitación ha expirado." } },
         { status: 410 }
+      );
+    }
+
+    // 3b. La invitación es personal: solo el correo invitado puede
+    // aceptarla. Sin esto, cualquier miembro con el token podría tomar
+    // una invitación de dueño ajena y escalar su rol.
+    const inviteEmail = (invite.email || "").trim().toLowerCase();
+    const userEmail = (user.email || "").trim().toLowerCase();
+    if (!inviteEmail || inviteEmail !== userEmail) {
+      return NextResponse.json(
+        { error: { code: "FORBIDDEN", message: "Esta invitación fue enviada a otro correo." } },
+        { status: 403 }
       );
     }
 

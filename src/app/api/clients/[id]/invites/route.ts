@@ -55,6 +55,37 @@ export async function GET(
     const workspaceId = client.workspace_id;
     const serviceClient = createServiceClient();
 
+    // 2b. Listar tokens es tan sensible como invitar: solo el dueño del
+    // workspace o super_admin (mismo criterio que el POST). Los demás
+    // miembros reciben 404 para no revelar la existencia del recurso.
+    const superAdmin = await isSuperAdmin(user.id);
+    if (!superAdmin) {
+      const { data: wsRecord } = await (serviceClient.from("workspaces") as any)
+        .select("owner_id")
+        .eq("id", workspaceId)
+        .maybeSingle();
+
+      const isDirectOwner = wsRecord?.owner_id === user.id;
+
+      let isOwnerMember = false;
+      if (!isDirectOwner) {
+        const { data: member } = await (serviceClient.from("workspace_members") as any)
+          .select("role")
+          .eq("workspace_id", workspaceId)
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        isOwnerMember = member?.role === "owner";
+      }
+
+      if (!isDirectOwner && !isOwnerMember) {
+        return NextResponse.json(
+          { error: { code: "NOT_FOUND", message: "Cliente o workspace no encontrado." } },
+          { status: 404 }
+        );
+      }
+    }
+
     // 3. Consultar invitaciones pendientes (no aceptadas y vigentes)
     const nowIso = new Date().toISOString();
     const { data: invites, error } = await (serviceClient.from("workspace_invites") as any)

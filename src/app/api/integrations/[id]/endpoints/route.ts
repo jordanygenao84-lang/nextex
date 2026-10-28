@@ -27,8 +27,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: { code: "PERMISSION_DENIED", message: canRead.reason, statusCode: 403 } }, { status: 403 });
     }
 
+    // Columnas explícitas: NUNCA devolver material cifrado (encrypted_*,
+    // secondary_encrypted_*, secret_reference). La UI solo usa id, nombre,
+    // endpoint_key (para la URL pública), estado y metadatos operativos.
     const { data: endpoints, error } = await (supabase.from("integration_endpoints") as any)
-      .select("*")
+      .select("id, integration_id, workspace_id, name, endpoint_key, event_types, verification_method, status, replay_window_seconds, max_payload_bytes, secondary_secret_expires_at, created_at, updated_at")
       .eq("integration_id", params.id)
       .order("created_at", { ascending: false });
 
