@@ -390,8 +390,10 @@ export class GovernanceManager {
       };
     };
 
-    // 1. Anti-Self-Approval: El creador del run no puede aprobarse a sí mismo (H32)
-    if (approverId === requesterId) {
+    // 1. Anti-Self-Approval: El creador del run no puede aprobarse a sí mismo (H32),
+    // salvo el dueño del workspace (decisión JC 2026-10-27: operador único; la
+    // autoaprobación queda registrada en auditoría con requesterId y approverId).
+    if (approverId === requesterId && approverRole !== "owner") {
       return await makeApprovalDecision(
         "blocked",
         "Auto-aprobación prohibida: el solicitante del run no puede aprobar su propia operación",
