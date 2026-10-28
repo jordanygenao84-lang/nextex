@@ -50,6 +50,38 @@ export default function ChatPage() {
     };
 
     setMessages((prev) => [...prev, userMsg, initialAssistantMsg]);
+    await runGeneration([...messages, userMsg], assistantMsgId);
+  };
+
+  // Regenerar reemplaza la respuesta en su sitio: recorta la conversación
+  // hasta el mensaje del usuario y genera una respuesta nueva ahí, en vez
+  // de añadir un turno duplicado (usuario + respuesta) al final.
+  const handleRegenerate = async (assistantId: string) => {
+    const idx = messages.findIndex((m) => m.id === assistantId);
+    if (idx === -1) return;
+    const kept = messages.slice(0, idx);
+    const prevUser = [...kept].reverse().find((m) => m.sender === "user");
+    if (!prevUser) return;
+    setErrorMessage(null);
+    const assistantMsgId = `msg-${Date.now()}`;
+    const initialAssistantMsg: ChatMessageType = {
+      id: assistantMsgId,
+      sender: "assistant",
+      timestamp: "Ahora",
+      model: selectedModelId,
+      content: "",
+    };
+    setMessages([...kept, initialAssistantMsg]);
+    await runGeneration(kept, assistantMsgId);
+  };
+
+  // Generación compartida por enviar y regenerar: el historial ya incluye
+  // el mensaje del usuario al final; solo se rellena el mensaje del
+  // asistente indicado.
+  const runGeneration = async (
+    historyMessages: ChatMessageType[],
+    assistantMsgId: string
+  ) => {
     setIsGenerating(true);
 
     const controller = new AbortController();
@@ -57,7 +89,7 @@ export default function ChatPage() {
 
     try {
       // Formatear historial para el AI Gateway
-      const payloadMessages = [...messages, userMsg].map((m) => ({
+      const payloadMessages = historyMessages.map((m) => ({
         role: m.sender === "user" ? "user" : "assistant",
         content: m.content,
       }));
@@ -254,9 +286,9 @@ export default function ChatPage() {
               </div>
             )}
             {messages.map((message, index) => {
-              // Regenerar reenvía el último mensaje del usuario anterior a
-              // esta respuesta del asistente. Sin usuario previo no hay nada
-              // que regenerar y el botón queda deshabilitado.
+              // Regenerar reemplaza esta respuesta en su sitio. Sin
+              // usuario previo no hay nada que regenerar y el botón
+              // queda deshabilitado.
               const prevUser = [...messages.slice(0, index)]
                 .reverse()
                 .find((m) => m.sender === "user");
@@ -266,7 +298,7 @@ export default function ChatPage() {
                   message={message}
                   onRegenerate={
                     message.sender === "assistant" && prevUser && !isGenerating
-                      ? () => handleSendMessage(prevUser.content)
+                      ? () => handleRegenerate(message.id)
                       : undefined
                   }
                 />
