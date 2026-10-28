@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/Button";
 
 interface StatsData {
   workspaceId: string;
+  workspacesCount?: number;
   userRole: string;
   workers: {
     total: number;
@@ -118,8 +119,17 @@ export default function ControlPlaneDashboardPage() {
                 </span>
               </div>
               <p className="text-xs text-texter-text-muted mt-0.5">
-                Workspace ID: <span className="font-mono text-texter-cyan">{stats?.workspaceId || "—"}</span> | Rol:{" "}
-                <span className="font-mono uppercase text-texter-indigo">{stats?.userRole || "—"}</span>
+                {isLoading && !stats ? (
+                  "Cargando estadísticas…"
+                ) : (
+                  <>
+                    Workspace ID: <span className="font-mono text-texter-cyan">{stats?.workspaceId || "—"}</span> | Rol:{" "}
+                    <span className="font-mono uppercase text-texter-indigo">{stats?.userRole || "—"}</span>
+                    {(stats?.workspacesCount || 0) > 1 && (
+                      <span className="text-texter-text-dim"> · Agregado de {stats?.workspacesCount} workspaces</span>
+                    )}
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -144,6 +154,11 @@ export default function ControlPlaneDashboardPage() {
         )}
 
         {/* 6 Paneles Operacionales Principales */}
+        {isLoading && !stats ? (
+          <div className="p-8 text-center text-sm text-texter-text-muted border border-dashed border-texter-border rounded-2xl">
+            Cargando estadísticas del Control Plane…
+          </div>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {/* 1. WORKERS */}
           <div className="bg-texter-surface border border-texter-border rounded-2xl p-5 space-y-4 hover:border-texter-border/80 transition-all">
@@ -347,6 +362,7 @@ export default function ControlPlaneDashboardPage() {
             </div>
           </div>
         </div>
+        )}
       </div>
     </DashboardShell>
   );

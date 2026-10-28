@@ -2398,9 +2398,9 @@ export default function ClientsPage() {
               >
                 <Link2 className="w-3.5 h-3.5" />
                 <span>Conexiones</span>
-                {siteKeys.filter((k) => k.is_active).length > 0 && (
-                  <Badge variant="success" size="sm" className="ml-1 text-[10px] px-1.5 py-0 font-mono">
-                    {siteKeys.filter((k) => k.is_active).length}
+                {siteKeys.length > 0 && (
+                  <Badge variant="success" size="sm" className="ml-1 text-[10px] px-1.5 py-0 font-mono" title={`${siteKeys.filter((k) => k.is_active).length} activa(s) de ${siteKeys.length} en total`}>
+                    {siteKeys.length}
                   </Badge>
                 )}
               </button>
@@ -3111,6 +3111,96 @@ export default function ClientsPage() {
               </div>
             )}
 
+            {/* PESTAÑA 3: INTEGRACIONES (BLUEPRINTS-3) — antes no existía
+                bloque de contenido para esta pestaña y quedaba en blanco. */}
+            {activeDetailTab === "integrations" && (
+              <div className="space-y-8">
+                <div className="space-y-3">
+                  <div className="border-b border-texter-border pb-2.5">
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Workflow className="w-4 h-4 text-texter-indigo" />
+                      Integraciones instaladas
+                    </h4>
+                    <p className="text-xs text-texter-text-muted">
+                      Canales conectados para este cliente. Desinstalar detiene la atención de eventos de ese canal.
+                    </p>
+                  </div>
+                  {integrationsError && (
+                    <div className="p-3 rounded-xl bg-texter-rose/10 border border-texter-rose/30 text-xs text-rose-300">
+                      {integrationsError}
+                    </div>
+                  )}
+                  {isLoadingIntegrations ? (
+                    <p className="text-xs text-texter-text-dim">Cargando integraciones…</p>
+                  ) : clientIntegrations.length === 0 ? (
+                    <p className="text-xs text-texter-text-dim border border-dashed border-texter-border rounded-xl p-4">
+                      Este cliente no tiene integraciones instaladas. Instala una del catálogo abajo.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3">
+                      {clientIntegrations.map((ci) => (
+                        <div key={ci.id} className="flex items-center justify-between gap-3 rounded-xl bg-texter-surface border border-texter-border p-4">
+                          <div>
+                            <p className="text-sm font-semibold text-white">{ci.label}</p>
+                            <p className="text-xs text-texter-text-muted font-mono">
+                              {ci.blueprint_name} · {ci.is_active ? "Activa" : "Inactiva"} · {new Date(ci.created_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setUninstallingIntegration(ci)}
+                            className="text-xs text-rose-400 hover:text-rose-300"
+                          >
+                            Desinstalar
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <div className="border-b border-texter-border pb-2.5">
+                    <h4 className="text-sm font-bold text-white">Catálogo disponible</h4>
+                    <p className="text-xs text-texter-text-muted">
+                      Instala un canal para este cliente. Se pedirán solo las credenciales que ese canal requiere.
+                    </p>
+                  </div>
+                  {blueprints.length === 0 && !isLoadingIntegrations ? (
+                    <p className="text-xs text-texter-text-dim border border-dashed border-texter-border rounded-xl p-4">
+                      No hay blueprints disponibles en este momento.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3">
+                      {blueprints.map((bp) => (
+                        <div key={bp.slug} className="flex items-center justify-between gap-3 rounded-xl bg-texter-surface border border-texter-border p-4">
+                          <div>
+                            <p className="text-sm font-semibold text-white">{bp.name}</p>
+                            <p className="text-xs text-texter-text-muted">{bp.description}</p>
+                            <p className="text-[11px] font-mono text-texter-text-dim">{bp.category}</p>
+                          </div>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => {
+                              setInstallingBlueprint(bp);
+                              setInstallLabel("");
+                              setInstallCredentials({});
+                              setInstallError(null);
+                            }}
+                            className="text-xs"
+                          >
+                            Instalar
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* PESTAÑA 4: CONEXIONES (CONEX-3) */}
             {activeDetailTab === "connections" && (
               <div className="space-y-8">
@@ -3125,6 +3215,11 @@ export default function ClientsPage() {
                       <p className="text-xs text-texter-text-muted">
                         Credenciales de autenticación para que la web del cliente invoque el backend de nextex
                       </p>
+                      {siteKeys.length > 0 && (
+                        <p className="text-[11px] font-mono text-texter-text-dim">
+                          {siteKeys.filter((k) => k.is_active).length} activa(s) de {siteKeys.length} en total (el distintivo cuenta todas, no solo las activas)
+                        </p>
+                      )}
                     </div>
                     <Button
                       variant="primary"

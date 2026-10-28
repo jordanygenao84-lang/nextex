@@ -552,11 +552,13 @@ export class WorkerRuntime {
     const errorCode = err?.code || cpError.code;
     const errorMessage = err?.message || cpError.message;
 
-    // Errores estrictamente NO reintentables
+    // Errores estrictamente NO reintentables (un modelo sin clave no se
+    // arregla reintentando: antes se reintentaba hasta dead_letter).
     const nonRetryableCodes = [
       "AUTHORIZATION",
       "FENCING",
       "QUARANTINE",
+      "MODEL_NOT_CONFIGURED",
       AgentErrorCodes.AGENT_PERMISSION_DENIED,
       AgentErrorCodes.AGENT_EXECUTION_BLOCKED,
       AgentErrorCodes.TOOL_NOT_ALLOWED,

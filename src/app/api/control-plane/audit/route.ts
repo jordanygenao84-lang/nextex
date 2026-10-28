@@ -76,13 +76,15 @@ export async function GET(req: NextRequest) {
       .limit(limit);
 
     // job_audit_log no tiene correlation_id/trace_id/resource_type: solo se
-    // mezcla cuando esos filtros no están activos; el filtro de decisión
-    // aplica porque estos eventos se exponen como "allow".
+    // mezcla cuando esos filtros no están activos. Los eventos de jobs se
+    // exponen con decisión "system" (no son decisiones de gobernanza ALLOW):
+    // sin filtro aparecen todos; con filtro ALLOW solo gobernanza; con
+    // filtro SYSTEM solo eventos de jobs.
     const includeJobAudit =
       !correlationId &&
       !traceId &&
       !resourceType &&
-      (!decision || decision.toLowerCase() === "allow");
+      (!decision || decision.toLowerCase() === "system");
 
     let jobEvents: any[] = [];
     if (includeJobAudit) {
@@ -102,7 +104,10 @@ export async function GET(req: NextRequest) {
         action: e.action,
         resource_type: "job_run",
         resource_id: e.job_run_id || e.id,
-        decision: "allow",
+        // SYSTEM, no ALLOW: un dead_letter o un claim no es una decisión
+        // de gobernanza aprobada. correlation_id solo si el detalle lo trae.
+        decision: "system",
+        correlation_id: (e.details && (e.details as any).correlation_id) || null,
         metadata: sanitizeAuditMetadata(e.details || {}),
         created_at: e.created_at,
       }));

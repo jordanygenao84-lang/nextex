@@ -191,7 +191,7 @@ export default function IntegrationDetailPage({ params }: { params: { id: string
             <p className="text-xs text-texter-text-muted">
               Proveedor: <span className="font-mono text-white">{integration?.provider}</span>
               {integration?.status === "revoked" && (
-                <span className="text-texter-text-dim"> · Los endpoints de esta integración están inactivos aunque su registro individual diga "active".</span>
+                <span className="text-texter-text-dim"> · Al revocar la integración, todos sus endpoints quedan inactivos.</span>
               )}
             </p>
           </div>
@@ -235,6 +235,11 @@ export default function IntegrationDetailPage({ params }: { params: { id: string
             Endpoints Inbound Autorizados
           </h2>
 
+          {endpoints.length === 0 && (
+            <p className="text-xs text-texter-text-dim border border-dashed border-texter-border rounded-xl p-4">
+              No hay endpoints inbound autorizados para esta integración.
+            </p>
+          )}
           <div className="grid grid-cols-1 gap-3">
             {endpoints.map((ep) => {
               const inboundUrl = `https://nextex-seven.vercel.app/api/inbound/${ep.endpoint_key}`;
@@ -257,8 +262,8 @@ export default function IntegrationDetailPage({ params }: { params: { id: string
                         <KeyRound className="w-3.5 h-3.5 mr-1" />
                         {isRotating === ep.id ? "Rotando..." : "Rotar Secreto"}
                       </Button>
-                      <Badge variant={ep.status === "active" ? "success" : "default"} size="sm">
-                        {ep.status}
+                      <Badge variant={integration?.status === "revoked" ? "default" : ep.status === "active" ? "success" : "default"} size="sm">
+                        {integration?.status === "revoked" ? "inactivo (revocada)" : ep.status}
                       </Badge>
                     </div>
                   </div>

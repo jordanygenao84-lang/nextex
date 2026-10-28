@@ -624,10 +624,10 @@ export default function FleetPage() {
                   onChange={(e) => setSelectedAgentId(e.target.value)}
                   className="w-full p-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white outline-none font-mono"
                 >
-                  <option value="">Automático (Primer agente libre)</option>
+                  <option value="">Automático (primer agente libre y online)</option>
                   {agents.map((a) => (
                     <option key={a.id} value={a.id}>
-                      {a.name} ({a.capabilities?.max_vus || 5000} VUs) {a.status === "online" ? "• Online" : ""}
+                      {a.name} ({a.capabilities?.max_vus || 5000} VUs) {a.status === "online" ? "• Online" : "• Offline (no elegible en automático)"}
                     </option>
                   ))}
                 </select>
@@ -801,7 +801,7 @@ export default function FleetPage() {
                 <p className="text-xl font-bold font-mono text-white mt-1">
                   {jobMetrics.length > 0
                     ? Math.max(...jobMetrics.map((m) => m.vus ?? 0), selectedJob.vus ?? 0)
-                    : selectedJob.vus ?? 0}
+                    : (selectedJob.vus ?? "—")}
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-texter-surface-subtle border border-texter-border">
@@ -867,7 +867,9 @@ export default function FleetPage() {
                     {jobMetrics.length === 0 && (
                       <tr>
                         <td colSpan={5} className="p-4 text-center text-texter-text-dim">
-                          Aún no se han recibido métricas para este trabajo.
+                          {selectedJob.summary
+                            ? "Telemetría en vivo no conservada para esta corrida; ver el resumen final abajo."
+                            : "Aún no se han recibido métricas para este trabajo."}
                         </td>
                       </tr>
                     )}

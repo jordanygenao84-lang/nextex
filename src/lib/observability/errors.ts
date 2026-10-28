@@ -63,6 +63,20 @@ export class ObservabilityErrorClassifier {
       };
     }
 
+    // 4b. Modelo no configurado (ANTES de la regla de proveedores: el
+    // mensaje menciona al proveedor ("ANTHROPIC_API_KEY") y sin esta
+    // regla se clasificaba como fallo transitorio del proveedor).
+    if (
+      code === "MODEL_NOT_CONFIGURED" ||
+      /MODEL_NOT_CONFIGURED|no está configurado|not configured/i.test(message)
+    ) {
+      return {
+        errorCode: "MODEL_NOT_CONFIGURED",
+        errorCategory: "CONFIGURATION",
+        errorMessageSafe: "Modelo no configurado en el servidor (falta su clave)",
+      };
+    }
+
     // 5. Proveedores Externos (IA / Webhooks / APIs)
     if (/provider|anthropic|openai|google|gemini|bad gateway|502|503/i.test(message)) {
       return {

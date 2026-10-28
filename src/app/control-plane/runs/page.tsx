@@ -185,6 +185,7 @@ export default function RunsControlPage() {
                 <option value="waiting_approval" className="bg-texter-surface text-amber-400">waiting_approval</option>
                 <option value="completed" className="bg-texter-surface text-emerald-400">completed</option>
                 <option value="failed" className="bg-texter-surface text-rose-400">failed</option>
+                <option value="dead_letter" className="bg-texter-surface text-purple-400">dead_letter (Descartado)</option>
                 <option value="cancelled" className="bg-texter-surface text-gray-400">cancelled</option>
               </select>
             </div>

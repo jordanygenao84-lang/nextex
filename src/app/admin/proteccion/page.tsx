@@ -880,9 +880,9 @@ export default function ProteccionPage() {
             {errors.length === 0 ? (
               <div className="p-12 text-center text-xs text-texter-text-muted space-y-2">
                 <div className="text-3xl mb-1">🎉</div>
-                <p className="text-sm font-semibold text-white">Sin errores reportados 🎉</p>
+                <p className="text-sm font-semibold text-white">Sin errores reportados por las webs satélite 🎉</p>
                 <p className="text-texter-text-dim max-w-sm mx-auto">
-                  Las webs satélite están operando con normalidad y no han reportado fallos recientemente.
+                  Este contador cubre solo excepciones reportadas por los satélites; no incluye el estado del motor de respaldos (ver Respaldos abajo).
                 </p>
               </div>
             ) : (

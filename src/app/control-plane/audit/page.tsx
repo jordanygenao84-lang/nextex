@@ -137,6 +137,7 @@ export default function AuditControlPage() {
           >
             <option value="">Todas las Decisiones</option>
             <option value="allow">ALLOW</option>
+            <option value="system">SYSTEM (eventos de jobs)</option>
             <option value="deny">DENY</option>
             <option value="requires_approval">REQUIRES_APPROVAL</option>
             <option value="blocked">BLOCKED</option>
@@ -194,7 +195,7 @@ export default function AuditControlPage() {
                         <DecisionBadge decision={e.decision} />
                       </td>
                       <td className="py-3 px-4 text-texter-text-muted">
-                        {e.actor_type} ({e.actor_id.slice(0, 8)})
+                        <span title={e.actor_id}>{e.actor_type} (…{e.actor_id.slice(-8)})</span>
                       </td>
                       <td className="py-3 px-4 text-texter-indigo">
                         {e.correlation_id ? e.correlation_id.slice(0, 10) : "—"}
@@ -218,6 +219,9 @@ export default function AuditControlPage() {
               </tbody>
             </table>
           </div>
+          <p className="text-[11px] text-texter-text-dim font-mono px-1">
+            Nota: los eventos de jobs (decisión SYSTEM) no traen correlation_id porque job_audit_log no registra ese campo; para rastrearlos usa el ID del run en la columna de recurso. La decisión SYSTEM no es una aprobación: indica un evento del sistema, no una decisión de gobernanza.
+          </p>
         </div>
       </div>
 

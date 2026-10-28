@@ -518,7 +518,7 @@ export default function JobsPage() {
                       <td className="p-3 capitalize">{r.priority}</td>
                       <td className="p-3">{r.attempt} / {r.max_attempts}</td>
                       <td className="p-3 font-mono text-texter-text-dim">
-                        {r.worker_id ? `${r.worker_id.substring(0, 10)}... (T:${r.fencing_token})` : "—"}
+                        {r.worker_id ? <span title={r.worker_id}>…{r.worker_id.slice(-8)} (T:{r.fencing_token})</span> : "—"}
                       </td>
                       <td className="p-3 font-mono">{r.total_tokens}</td>
                       <td className="p-3 text-texter-text-muted">{new Date(r.created_at).toLocaleTimeString()}</td>

@@ -164,7 +164,7 @@ export const JobsTable: React.FC = () => {
     },
     {
       id: "failed",
-      label: "Fallidos",
+      label: "Fallidos (incl. Descartados)",
       count: runs.filter((j) => groupOf(j.status) === "failed").length,
     },
     {

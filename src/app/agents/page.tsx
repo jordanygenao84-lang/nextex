@@ -637,6 +637,11 @@ export default function AgentsPage() {
                 );
               })}
             </div>
+            {!isLoading && filteredAgents.length === 0 && (
+              <p className="text-xs text-texter-text-dim border border-dashed border-texter-border rounded-xl p-4 text-center">
+                No hay agentes que coincidan con los filtros seleccionados.
+              </p>
+            )}
           </div>
         )}
       </div>

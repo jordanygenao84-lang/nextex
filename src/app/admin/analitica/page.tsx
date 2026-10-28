@@ -401,7 +401,7 @@ export default function AdminAnaliticaPage() {
                         Consumo Tokens (30d)
                       </th>
                       <th className="py-3 px-4 font-semibold">
-                        Uptime VIGÍA (7d)
+                        Uptime VIGÍA (7d, checks registrados)
                       </th>
                       <th className="py-3 px-4 font-semibold">
                         Ventas / Pedidos / Visitas (30d)
@@ -509,13 +509,13 @@ export default function AdminAnaliticaPage() {
                             {hasBm ? (
                               <div className="flex items-center gap-2 flex-wrap font-mono text-[11px]">
                                 <span className="px-2 py-0.5 rounded bg-texter-indigo/15 text-indigo-300 border border-indigo-500/30">
-                                  Pedidos: <strong>{row.business?.reported?.orders ?? true ? bmMetrics.orders : "—"}</strong>
+                                  Pedidos: <strong>{row.business?.reported?.orders ? bmMetrics.orders : "—"}</strong>
                                 </span>
                                 <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                                  Ventas: <strong>{row.business?.reported?.sales ?? true ? bmMetrics.sales : "—"}</strong>
+                                  Ventas: <strong>{row.business?.reported?.sales ? bmMetrics.sales : "—"}</strong>
                                 </span>
                                 <span className="px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                                  Visitas: <strong>{row.business?.reported?.visits ?? true ? bmMetrics.visits : "—"}</strong>
+                                  Visitas: <strong>{row.business?.reported?.visits ? bmMetrics.visits : "—"}</strong>
                                 </span>
                                 {bmMetrics.revenue > 0 && (
                                   <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
@@ -543,6 +543,9 @@ export default function AdminAnaliticaPage() {
                 </table>
               </div>
             )}
+            <p className="text-[11px] text-texter-text-dim font-mono px-1">
+              Notas: “—” significa que el satélite no reportó esa métrica en 30 días. El % de uptime se calcula sobre los checks guardados en 7 días (el sondeo no guarda necesariamente un check por minuto por cliente, por eso los denominadores varían).
+            </p>
           </div>
         </div>
 

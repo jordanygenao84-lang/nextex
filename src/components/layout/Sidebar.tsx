@@ -154,7 +154,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const secondaryNav = [
     {
       name: "Seguridad & RLS",
-      href: "/control-plane",
+      href: "/settings",
       icon: ShieldCheck,
     },
     {

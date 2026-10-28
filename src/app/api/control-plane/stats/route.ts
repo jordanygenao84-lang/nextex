@@ -17,15 +17,18 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Resolver workspace_id del usuario
-    const { data: member } = await (supabase.from("workspace_members") as any)
+    // Resolver TODOS los workspaces del usuario. Antes se tomaba un único
+    // miembro con limit(1) sin orden: con más de un workspace el resultado
+    // era arbitrario y el Overview podía mostrar el workspace vacío (todos
+    // los agregados en 0) aunque los runs vivieran en el otro. Ahora se
+    // agregan todos los workspaces del usuario.
+    const { data: members } = await (supabase.from("workspace_members") as any)
       .select("workspace_id, role")
-      .eq("user_id", user.id)
-      .limit(1)
-      .maybeSingle();
+      .eq("user_id", user.id);
 
-    const workspaceId = member?.workspace_id;
-    if (!workspaceId) {
+    const memberList: Array<{ workspace_id: string; role: string }> = members || [];
+    const workspaceIds = memberList.map((m) => m.workspace_id).filter(Boolean);
+    if (workspaceIds.length === 0) {
       return NextResponse.json(
         { error: { code: "NO_WORKSPACE", message: "Usuario sin workspace activo.", statusCode: 403 } },
         { status: 403 }
@@ -35,7 +38,7 @@ export async function GET(req: NextRequest) {
     // 1. Estadísticas de Workers
     const { data: workers } = await (supabase.from("workers") as any)
       .select("id, status")
-      .eq("workspace_id", workspaceId);
+      .in("workspace_id", workspaceIds);
 
     const workerList = workers || [];
     const workerStats = {
@@ -50,8 +53,8 @@ export async function GET(req: NextRequest) {
 
     // 2. Estadísticas de Jobs / Runs
     const { data: runs } = await (supabase.from("job_runs") as any)
-      .select("id, status")
-      .eq("workspace_id", workspaceId);
+      .select("id, status, workspace_id, fencing_token")
+      .in("workspace_id", workspaceIds);
 
     const runList = runs || [];
     const jobStats = {
@@ -69,7 +72,7 @@ export async function GET(req: NextRequest) {
     // 3. Estadísticas de Recuperación & Leases
     const { data: leases } = await (supabase.from("worker_leases") as any)
       .select("id, status, expires_at")
-      .eq("workspace_id", workspaceId);
+      .in("workspace_id", workspaceIds);
 
     const leaseList = leases || [];
     const now = Date.now();
@@ -87,7 +90,7 @@ export async function GET(req: NextRequest) {
     // 4. Estadísticas de Gobernanza & Auditoría
     const { data: auditEvents } = await (supabase.from("control_plane_audit_log") as any)
       .select("id, decision, action, created_at")
-      .eq("workspace_id", workspaceId)
+      .in("workspace_id", workspaceIds)
       .order("created_at", { ascending: false })
       .limit(100);
 
@@ -109,9 +112,26 @@ export async function GET(req: NextRequest) {
       failed_cancellation: 0,
     };
 
+    // Workspace a mostrar: el que concentra más runs (determinista); si
+    // no hay runs, el primero. El rol es el del usuario en ese workspace.
+    const runsByWorkspace = new Map<string, number>();
+    for (const r of runList) {
+      runsByWorkspace.set(r.workspace_id, (runsByWorkspace.get(r.workspace_id) || 0) + 1);
+    }
+    let workspaceId = workspaceIds[0];
+    let maxRuns = -1;
+    runsByWorkspace.forEach((count, wid) => {
+      if (count > maxRuns) {
+        maxRuns = count;
+        workspaceId = wid;
+      }
+    });
+    const displayMember = memberList.find((m) => m.workspace_id === workspaceId) || memberList[0];
+
     return NextResponse.json({
       workspaceId,
-      userRole: member.role,
+      workspacesCount: workspaceIds.length,
+      userRole: displayMember?.role,
       workers: workerStats,
       jobs: jobStats,
       recovery: recoveryStats,

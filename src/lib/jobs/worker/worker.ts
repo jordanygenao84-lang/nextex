@@ -318,12 +318,14 @@ export class EpisodicWorker {
           const errorMessage = err?.message || "Fallo en la ejecución del job.";
 
           // Errores no reintentables: denegaciones de política, permisos, esquema inválido
+          // y errores de configuración (un modelo sin clave no se arregla reintentando).
           const nonRetryableCodes = [
             AgentErrorCodes.AGENT_PERMISSION_DENIED,
             AgentErrorCodes.AGENT_EXECUTION_BLOCKED,
             AgentErrorCodes.TOOL_NOT_ALLOWED,
             AgentErrorCodes.TOOL_SCHEMA_INVALID,
             "AUTHORIZATION_REVOKED",
+            "MODEL_NOT_CONFIGURED",
           ];
 
           const isRetryable = !nonRetryableCodes.includes(errorCode as any);

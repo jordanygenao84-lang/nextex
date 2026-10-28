@@ -168,6 +168,9 @@ export default function ObservabilityDashboardPage() {
             <p className="text-[11px] text-texter-text-dim font-mono">
               In: {((stats?.totalTokensInput || 0) / 1000).toFixed(1)}k • Out: {((stats?.totalTokensOutput || 0) / 1000).toFixed(1)}k
             </p>
+            <p className="text-[11px] text-texter-text-dim font-mono">
+              Alcance: últimos 500 spans del workspace (sin ventana de tiempo; no es el mes en curso)
+            </p>
           </Card>
         </div>
 
