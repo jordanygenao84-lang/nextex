@@ -32,6 +32,24 @@ import {
   Trash2,
 } from "lucide-react";
 
+// Herramientas del registry (src/lib/agents/tools/registry.ts) que un
+// agente puede tener autorizadas. El modal de crear las ofrece como
+// casillas; por defecto van las 3 que antes se fijaban en código.
+const AVAILABLE_AGENT_TOOLS = [
+  { id: "web_fetch", name: "Lector Web" },
+  { id: "http_get", name: "Lector HTTP" },
+  { id: "http_post", name: "Escritor HTTP" },
+  { id: "calculator", name: "Calculadora de Precisión" },
+  { id: "database_read", name: "Lector de Datos del Workspace" },
+  { id: "database_write", name: "Escritura de Registros" },
+  { id: "web_search", name: "Búsqueda Web Segura" },
+  { id: "email", name: "Canal Email" },
+  { id: "whatsapp", name: "Canal WhatsApp" },
+  { id: "sms", name: "Canal SMS" },
+] as const;
+
+const DEFAULT_AGENT_TOOL_IDS: string[] = ["calculator", "database_read", "database_write"];
+
 export default function AgentsPage() {
   const { user, workspace } = useAuth();
   const [userRole, setUserRole] = useState<string>("member");
@@ -115,6 +133,7 @@ export default function AgentsPage() {
   const [maxSteps, setMaxSteps] = useState(10);
   const [maxTokens, setMaxTokens] = useState(8000);
   const [timeoutSeconds, setTimeoutSeconds] = useState(60);
+  const [selectedToolIds, setSelectedToolIds] = useState<string[]>([...DEFAULT_AGENT_TOOL_IDS]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Estados para ejecución de un run
@@ -195,7 +214,7 @@ export default function AgentsPage() {
           max_steps: maxSteps,
           max_tokens: maxTokens,
           timeout_seconds: timeoutSeconds,
-          tool_ids: ["calculator", "database_read", "database_write"],
+          tool_ids: selectedToolIds,
         }),
       });
 
@@ -206,6 +225,7 @@ export default function AgentsPage() {
         setName("");
         setDescription("");
         setSystemInstructions("");
+        setSelectedToolIds([...DEFAULT_AGENT_TOOL_IDS]);
       }
     } catch (err) {
       console.error("Error al crear agente:", err);
@@ -649,7 +669,7 @@ export default function AgentsPage() {
       {/* MODAL CREAR AGENTE */}
       {isCreateOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-xl rounded-2xl bg-texter-surface border border-texter-border shadow-2xl overflow-hidden p-6 space-y-5">
+          <div className="w-full max-w-xl rounded-2xl bg-texter-surface border border-texter-border shadow-2xl overflow-hidden p-6 space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-texter-border">
               <div className="flex items-center gap-2">
                 <Bot className="w-5 h-5 text-texter-indigo" />
@@ -741,6 +761,36 @@ export default function AgentsPage() {
                   min={5}
                   max={300}
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-texter-text-secondary">
+                  Herramientas autorizadas
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {AVAILABLE_AGENT_TOOLS.map((tool) => (
+                    <label
+                      key={tool.id}
+                      className="flex items-center gap-2 rounded-xl bg-texter-surface-subtle border border-texter-border px-3 py-2 text-xs text-white cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedToolIds.includes(tool.id)}
+                        onChange={(e) => {
+                          setSelectedToolIds((prev) =>
+                            e.target.checked
+                              ? [...prev, tool.id]
+                              : prev.filter((id) => id !== tool.id)
+                          );
+                        }}
+                      />
+                      <span>{tool.name}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-[11px] text-texter-text-dim">
+                  Por defecto: Calculadora, Lector y Escritura de Datos. Sin herramientas marcadas, el agente se crea sin herramientas.
+                </p>
               </div>
 
               <div className="pt-3 border-t border-texter-border flex items-center justify-end gap-2">

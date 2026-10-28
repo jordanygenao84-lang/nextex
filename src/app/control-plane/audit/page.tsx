@@ -73,7 +73,7 @@ export default function AuditControlPage() {
 
   useEffect(() => {
     fetchAuditEvents();
-  }, [decisionFilter]);
+  }, [actionFilter, correlationFilter, decisionFilter]);
 
   return (
     <DashboardShell

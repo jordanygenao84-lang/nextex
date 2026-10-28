@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   X,
   Pencil,
+  Trash2,
 } from "lucide-react";
 
 export default function JobsPage() {
@@ -32,6 +33,7 @@ export default function JobsPage() {
   const [runningJobId, setRunningJobId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [confirmingDeleteJobId, setConfirmingDeleteJobId] = useState<string | null>(null);
 
   // Crear Job Modal
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -255,6 +257,24 @@ export default function JobsPage() {
     }
   };
 
+  // Borrado permanente con doble clic (solo jobs archivados; la API
+  // rechaza cualquier otro estado con 409).
+  const handleDeleteJob = async (jobId: string) => {
+    try {
+      const res = await fetch(`/api/jobs/${jobId}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setActionError(json.error?.message || "No se pudo eliminar el job.");
+        return;
+      }
+      setConfirmingDeleteJobId(null);
+      loadJobs();
+      setActionSuccess("Job eliminado permanentemente.");
+    } catch {
+      setActionError("No se pudo eliminar el job.");
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "active":
@@ -454,6 +474,40 @@ export default function JobsPage() {
                   >
                     <Archive className="w-3.5 h-3.5" />
                   </Button>
+                  {job.status === "archived" && (
+                    confirmingDeleteJobId === job.id ? (
+                      <span className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteJob(job.id)}
+                          className="text-xs text-rose-400 hover:text-rose-300"
+                          title="Confirmar eliminación permanente"
+                        >
+                          Confirmar
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setConfirmingDeleteJobId(null)}
+                          className="text-xs text-texter-text-dim hover:text-white"
+                          title="Cancelar"
+                        >
+                          Cancelar
+                        </Button>
+                      </span>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setConfirmingDeleteJobId(job.id)}
+                        className="text-xs text-texter-text-dim hover:text-rose-400"
+                        title="Eliminar permanentemente"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    )
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2">

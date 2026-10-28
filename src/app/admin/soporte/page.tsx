@@ -65,6 +65,7 @@ export default function AdminSoportePage() {
   // Filtros
   const [filterClientId, setFilterClientId] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("");
+  const [filterPriority, setFilterPriority] = useState<string>("");
 
   // Detalle de ticket seleccionado
   const [selectedTicket, setSelectedTicket] = useState<SupportTicketItem | null>(
@@ -107,6 +108,7 @@ export default function AdminSoportePage() {
       const params = new URLSearchParams();
       if (filterClientId) params.set("client_id", filterClientId);
       if (filterStatus) params.set("status", filterStatus);
+      if (filterPriority) params.set("priority", filterPriority);
 
       const qs = params.toString();
       const res = await fetch(`/api/admin/tickets${qs ? `?${qs}` : ""}`, {
@@ -166,7 +168,7 @@ export default function AdminSoportePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [filterClientId, filterStatus, router]);
+  }, [filterClientId, filterStatus, filterPriority, router]);
 
   const loadTicketDetail = async (ticketId: string) => {
     setIsLoadingDetail(true);
@@ -486,6 +488,22 @@ export default function AdminSoportePage() {
                 <option value="open">open (Abiertos)</option>
                 <option value="in_progress">in_progress (En curso)</option>
                 <option value="closed">closed (Cerrados)</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-mono uppercase text-texter-text-muted">
+                Filtrar por Prioridad
+              </label>
+              <select
+                value={filterPriority}
+                onChange={(e) => setFilterPriority(e.target.value)}
+                className="w-full p-2 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white outline-none"
+              >
+                <option value="">Todas las prioridades</option>
+                <option value="low">low (Baja)</option>
+                <option value="normal">normal (Normal)</option>
+                <option value="high">high (Alta)</option>
               </select>
             </div>
 

@@ -70,6 +70,11 @@ export async function GET(req: NextRequest) {
       query = query.eq("status", status);
     }
 
+    const priority = req.nextUrl.searchParams.get("priority")?.trim();
+    if (priority && ["low", "normal", "high"].includes(priority)) {
+      query = query.eq("priority", priority);
+    }
+
     const { data: tickets, error: dbErr } = await query;
 
     if (dbErr) {

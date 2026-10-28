@@ -75,3 +75,49 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } }, { status: 500 });
   }
 }
+
+/**
+ * DELETE /api/jobs/[id] — borrado permanente, SOLO para jobs archivados.
+ * Los runs se eliminan en cascada (FK job_runs.job_id ON DELETE CASCADE).
+ * Un job activo nunca se puede borrar por esta vía (el job de referencia
+ * protegido está ACTIVE, así que queda fuera por diseño).
+ */
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: { code: "AUTH_REQUIRED", message: "Sesión requerida.", statusCode: 401 } }, { status: 401 });
+    }
+
+    const { data: currentJob } = await (supabase.from("jobs") as any)
+      .select("workspace_id, status")
+      .eq("id", params.id)
+      .single();
+
+    if (!currentJob) {
+      return NextResponse.json({ error: { code: "JOB_NOT_FOUND", message: "Job no encontrado.", statusCode: 404 } }, { status: 404 });
+    }
+
+    const canDelete = await defaultPermissionEngine.can(user.id, currentJob.workspace_id, "jobs.delete", { supabaseClient: supabase });
+    if (!canDelete.allowed) {
+      return NextResponse.json({ error: { code: "PERMISSION_DENIED", message: canDelete.reason, statusCode: 403 } }, { status: 403 });
+    }
+
+    if (currentJob.status !== "archived") {
+      return NextResponse.json({ error: { code: "JOB_NOT_ARCHIVED", message: "Solo se pueden eliminar permanentemente jobs archivados.", statusCode: 409 } }, { status: 409 });
+    }
+
+    const { error: delErr } = await (supabase.from("jobs") as any).delete().eq("id", params.id);
+    if (delErr) {
+      return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true, deletedId: params.id });
+  } catch (err: any) {
+    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } }, { status: 500 });
+  }
+}

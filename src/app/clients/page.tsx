@@ -3516,8 +3516,19 @@ export default function ClientsPage() {
                               <span className="text-texter-cyan">{w.embed_key}</span>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(w.embed_key);
+                                onClick={async () => {
+                                  const text = w.embed_key;
+                                  try {
+                                    await navigator.clipboard.writeText(text);
+                                  } catch {
+                                    // Respaldo cuando la API del portapapeles está bloqueada.
+                                    const ta = document.createElement("textarea");
+                                    ta.value = text;
+                                    document.body.appendChild(ta);
+                                    ta.select();
+                                    document.execCommand("copy");
+                                    document.body.removeChild(ta);
+                                  }
                                   setCopiedSnippetId("key_" + w.id);
                                   setTimeout(() => setCopiedSnippetId(null), 2500);
                                 }}
@@ -3530,6 +3541,9 @@ export default function ClientsPage() {
                                   <Copy className="w-3 h-3" />
                                 )}
                               </button>
+                              {copiedSnippetId === "key_" + w.id && (
+                                <span className="text-emerald-400 text-[11px] font-medium">¡Copiado!</span>
+                              )}
                             </div>
                           </div>
 
