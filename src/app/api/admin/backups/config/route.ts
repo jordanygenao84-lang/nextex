@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
       {
         error: {
           code: "INTERNAL_ERROR",
-          message: err?.message || "Error al guardar configuración de respaldo.",
+          message: "Error interno del servidor.",
         },
       },
       { status: 500 }

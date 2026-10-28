@@ -61,7 +61,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ ok: true, metric }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al registrar métricas." } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor." } },
       { status: 500 }
     );
   }

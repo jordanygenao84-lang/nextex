@@ -358,7 +358,7 @@ export async function POST(req: NextRequest) {
       {
         error: {
           code: "INTERNAL_ERROR",
-          message: err?.message || "Error al crear suscripción.",
+          message: "Error interno del servidor.",
         },
       },
       { status: 500 }

@@ -78,7 +78,7 @@ export async function GET(
     return NextResponse.json(matrix);
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al obtener matriz de permisos." } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor." } },
       { status: 500 }
     );
   }
@@ -174,7 +174,7 @@ export async function PATCH(
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al actualizar permiso." } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor." } },
       { status: 500 }
     );
   }

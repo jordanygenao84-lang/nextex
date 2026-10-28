@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
       {
         error: {
           code: "INTERNAL_ERROR",
-          message: err?.message || "Error al obtener el listado de facturas.",
+          message: "Error interno del servidor.",
         },
       },
       { status: 500 }

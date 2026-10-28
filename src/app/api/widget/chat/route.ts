@@ -139,6 +139,37 @@ export async function POST(req: NextRequest) {
     const businessName = widget.client.display_name || "la empresa";
     const allowedSources = Array.isArray(widget.allowed_sources) ? widget.allowed_sources : ["web"];
 
+    // MEDIO 2026-10-28: allowed_sources ya no es solo decorativo. Las
+    // entradas con forma de dominio son reglas de origen: si el widget
+    // tiene al menos una, solo se aceptan peticiones cuyo Origin/Referer
+    // coincida (exacto o *.dominio). Los tokens de canal ("web") no son
+    // reglas y se ignoran. Sin reglas de dominio, el comportamiento es el
+    // de antes (cualquier sitio puede embeberlo), porque la embed_key es
+    // pública por diseño. El control real es este chequeo en servidor, no
+    // la cabecera CORS: un POST de otro sitio igual llegaría, pero aquí
+    // se rechaza antes de consumir tokens o crear conversación.
+    const domainRules = (allowedSources as unknown[])
+      .map((s: unknown) => String(s || "").trim().toLowerCase().replace(/^https?:\/\//, "").split("/")[0])
+      .filter((s: string) => s && s !== "web" && s.includes("."));
+    if (domainRules.length > 0) {
+      const originHeader = req.headers.get("origin") || req.headers.get("referer") || "";
+      let requestHost = "";
+      try {
+        requestHost = new URL(originHeader).hostname.toLowerCase();
+      } catch {
+        requestHost = "";
+      }
+      const originAllowed = domainRules.some(
+        (rule: string) => requestHost === rule || (rule.startsWith("*.") && requestHost.endsWith(rule.slice(1)))
+      );
+      if (!originAllowed) {
+        return NextResponse.json(
+          { error: "Origen no permitido para este widget" },
+          { status: 403 }
+        );
+      }
+    }
+
     // NIV2-2: Corte de servicio si la suscripción del cliente está 'suspended' o 'cancelled'
     // (Cliente sin suscripción = servicio activo siempre; sin logs por mensaje bloqueado)
     const isServiceActive = await isClientServiceActive(clientId, serviceClient);

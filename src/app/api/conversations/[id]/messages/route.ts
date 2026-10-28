@@ -95,7 +95,7 @@ export async function POST(
     return NextResponse.json(newMsg, { status: 201 });
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al enviar mensaje del asesor." } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor." } },
       { status: 500 }
     );
   }

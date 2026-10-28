@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
       {
         error: {
           code: "INTERNAL_ERROR",
-          message: err?.message || "Error al listar despliegues.",
+          message: "Error interno del servidor.",
         },
       },
       { status: 500 }
@@ -227,7 +227,7 @@ export async function POST(req: NextRequest) {
       {
         error: {
           code: "INTERNAL_ERROR",
-          message: err?.message || "Error al registrar despliegue.",
+          message: "Error interno del servidor.",
         },
       },
       { status: 500 }
@@ -328,7 +328,7 @@ export async function PATCH(req: NextRequest) {
       {
         error: {
           code: "INTERNAL_ERROR",
-          message: err?.message || "Error al actualizar despliegue.",
+          message: "Error interno del servidor.",
         },
       },
       { status: 500 }

@@ -97,7 +97,7 @@ export async function GET(
 
     if (error) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: error.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
@@ -118,7 +118,7 @@ export async function GET(
     return NextResponse.json(result);
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al listar invitaciones." } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor." } },
       { status: 500 }
     );
   }
@@ -242,7 +242,7 @@ export async function POST(
     );
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al procesar la invitación." } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor." } },
       { status: 500 }
     );
   }

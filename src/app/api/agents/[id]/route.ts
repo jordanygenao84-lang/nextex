@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { AuditManager } from "@/lib/control-plane";
 import { AgentErrorCodes } from "@/lib/agents/types/errors";
 import { UpdateAgentDTO } from "@/lib/agents/types";
 
@@ -137,12 +138,33 @@ export async function DELETE(
     }
 
     // Por defecto, archivar el agente de forma segura
-    const { error } = await (supabase
+    const { data: archived, error } = await (supabase
       .from("agents") as any)
       .update({ status: "archived" })
-      .eq("id", params.id);
+      .eq("id", params.id)
+      .select("id, workspace_id, name")
+      .single();
 
     if (error) throw error;
+
+    // Auditoría del archivado (mismo hueco que la creación).
+    try {
+      if (archived?.workspace_id) {
+        const audit = new AuditManager({ workspaceId: archived.workspace_id, supabaseClient: supabase });
+        await audit.recordEvent({
+          workspaceId: archived.workspace_id,
+          actorId: user.id,
+          actorType: "user",
+          action: "agent.archived",
+          resourceType: "agent",
+          resourceId: archived.id,
+          decision: "allow",
+          reason: `Agente archivado: ${archived.name || archived.id}`,
+        });
+      }
+    } catch {
+      // Auditoría best-effort.
+    }
 
     return NextResponse.json({ success: true, message: "Agente archivado correctamente." });
   } catch (err: any) {

@@ -46,7 +46,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 
     return NextResponse.json({ success: true, message: "Automatización eliminada exitosamente." });
   } catch (err: any) {
-    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } }, { status: 500 });
+    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } }, { status: 500 });
   }
 }
 
@@ -82,6 +82,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (error) throw error;
     return NextResponse.json({ automation: updated });
   } catch (err: any) {
-    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } }, { status: 500 });
+    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } }, { status: 500 });
   }
 }

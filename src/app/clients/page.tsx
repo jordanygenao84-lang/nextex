@@ -354,7 +354,22 @@ export default function ClientsPage() {
   const [widgetGreeting, setWidgetGreeting] = useState("¡Hola! ¿En qué podemos ayudarte hoy?");
   const [widgetPrimaryColor, setWidgetPrimaryColor] = useState("#4f46e5");
   const [widgetPosition, setWidgetPosition] = useState<"bottom-right" | "bottom-left">("bottom-right");
+  // MEDIO 2026-10-28: dominios permitidos del widget. Se guardan dentro de
+  // allowed_sources junto a los canales ("web"); el servidor trata como
+  // regla de origen toda entrada con forma de dominio y solo acepta
+  // peticiones desde esos orígenes. Vacío = sin restricción (comportamiento
+  // anterior, porque la embed_key es pública por diseño).
+  const parseWidgetDomains = (text: string): string[] => {
+    const seen = new Set<string>();
+    for (const raw of text.split(/[\s,;]+/)) {
+      const cleaned = raw.trim().toLowerCase().replace(/^https?:\/\//, "").split("/")[0].replace(/\.$/, "");
+      if (cleaned && cleaned !== "web" && cleaned.includes(".")) seen.add(cleaned);
+    }
+    return Array.from(seen);
+  };
+
   const [widgetAllowedSources, setWidgetAllowedSources] = useState<string[]>(["web"]);
+  const [widgetAllowedDomains, setWidgetAllowedDomains] = useState("");
   const [isCreatingWidget, setIsCreatingWidget] = useState(false);
   const [createWidgetError, setCreateWidgetError] = useState<string | null>(null);
 
@@ -370,6 +385,7 @@ export default function ClientsPage() {
   const [editWidgetPrimaryColor, setEditWidgetPrimaryColor] = useState("#4f46e5");
   const [editWidgetPosition, setEditWidgetPosition] = useState<"bottom-right" | "bottom-left">("bottom-right");
   const [editWidgetAllowedSources, setEditWidgetAllowedSources] = useState<string[]>(["web"]);
+  const [editWidgetAllowedDomains, setEditWidgetAllowedDomains] = useState("");
   const [isUpdatingWidget, setIsUpdatingWidget] = useState(false);
   const [editWidgetError, setEditWidgetError] = useState<string | null>(null);
 
@@ -1385,7 +1401,7 @@ export default function ClientsPage() {
             primary_color: widgetPrimaryColor,
             position: widgetPosition,
           },
-          allowed_sources: widgetAllowedSources,
+          allowed_sources: [...widgetAllowedSources, ...parseWidgetDomains(widgetAllowedDomains)],
         }),
       });
 
@@ -1403,6 +1419,7 @@ export default function ClientsPage() {
       setWidgetPrimaryColor("#4f46e5");
       setWidgetPosition("bottom-right");
       setWidgetAllowedSources(["web"]);
+      setWidgetAllowedDomains("");
       setFeedback({ type: "success", message: `Widget "${data.name}" creado exitosamente.` });
     } catch (err: any) {
       setCreateWidgetError(err?.message || "Error inesperado al crear widget.");
@@ -1442,7 +1459,10 @@ export default function ClientsPage() {
     setEditWidgetGreeting(w.greeting || "¡Hola! ¿En qué podemos ayudarte hoy?");
     setEditWidgetPrimaryColor(w.theme?.primary_color || w.theme?.primaryColor || "#4f46e5");
     setEditWidgetPosition((w.theme?.position as any) || "bottom-right");
-    setEditWidgetAllowedSources(Array.isArray(w.allowed_sources) ? w.allowed_sources : ["web"]);
+    // Al editar, los dominios van al campo de texto y los canales al checkbox.
+    const existingSources = Array.isArray(w.allowed_sources) ? w.allowed_sources : ["web"];
+    setEditWidgetAllowedSources(existingSources.filter((s) => !parseWidgetDomains(String(s)).length));
+    setEditWidgetAllowedDomains(parseWidgetDomains(existingSources.join(" ")).join(", "));
     setEditWidgetError(null);
   };
 
@@ -1465,7 +1485,7 @@ export default function ClientsPage() {
             primaryColor: editWidgetPrimaryColor,
             position: editWidgetPosition,
           },
-          allowed_sources: editWidgetAllowedSources,
+          allowed_sources: [...editWidgetAllowedSources, ...parseWidgetDomains(editWidgetAllowedDomains)],
         }),
       });
 
@@ -5405,6 +5425,19 @@ export default function ClientsPage() {
                     Contenido Web del Negocio (Web Crawling & QA)
                   </label>
                 </div>
+                <div className="pt-1">
+                  <label className="text-xs font-medium text-texter-text-secondary">Dominios permitidos (opcional)</label>
+                  <input
+                    type="text"
+                    value={widgetAllowedDomains}
+                    onChange={(e) => setWidgetAllowedDomains(e.target.value)}
+                    placeholder="minegocio.com, tienda.minegocio.com"
+                    className="w-full mt-1 p-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white outline-none font-mono"
+                  />
+                  <p className="text-[11px] text-texter-text-muted mt-1">
+                    Vacío = el widget funciona en cualquier sitio. Con dominios, solo esos sitios pueden usarlo.
+                  </p>
+                </div>
               </div>
 
               <div className="pt-2 flex justify-end gap-2 border-t border-texter-border">
@@ -5512,6 +5545,19 @@ export default function ClientsPage() {
                   <label htmlFor="editSrcWeb" className="text-xs text-white cursor-pointer">
                     Contenido Web del Negocio (Web Crawling & QA)
                   </label>
+                </div>
+                <div className="pt-1">
+                  <label className="text-xs font-medium text-texter-text-secondary">Dominios permitidos (opcional)</label>
+                  <input
+                    type="text"
+                    value={editWidgetAllowedDomains}
+                    onChange={(e) => setEditWidgetAllowedDomains(e.target.value)}
+                    placeholder="minegocio.com, tienda.minegocio.com"
+                    className="w-full mt-1 p-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border text-xs text-white outline-none font-mono"
+                  />
+                  <p className="text-[11px] text-texter-text-muted mt-1">
+                    Vacío = el widget funciona en cualquier sitio. Con dominios, solo esos sitios pueden usarlo.
+                  </p>
                 </div>
               </div>
 

@@ -69,6 +69,14 @@ export function validateUrlForSsrf(rawUrl: string): URL {
     throw new Error("protocolo no permitido");
   }
 
+  // MEDIO 2026-10-28: sin lista de puertos, un agente podía apuntar a
+  // puertos internos (bases de datos, paneles) en hosts públicos. Solo el
+  // puerto por defecto del protocolo.
+  const defaultPort = protocol === "http:" ? "80" : "443";
+  if (parsed.port && parsed.port !== defaultPort) {
+    throw new Error("puerto no permitido");
+  }
+
   const hostname = parsed.hostname.toLowerCase().trim();
 
   if (hostname === "localhost" || hostname.endsWith(".localhost")) {
@@ -203,6 +211,14 @@ export async function executeSafeHttpRequest(
     const timer = setTimeout(() => controller.abort(), safeTimeoutMs);
 
     try {
+      // MEDIO 2026-10-28 (mitigación TOCTOU): la validación DNS y el fetch
+      // resuelven por separado, así que un DNS fast-flux podría cambiar
+      // la IP entre ambas. Se revalida justo antes de cada fetch: el
+      // atacante debe ganar la carrera dos veces seguidas, no una. La
+      // eliminación total exigiría fijar la IP a nivel de conexión
+      // (lookup propio en http/https), un rewrite mayor que queda como
+      // paso siguiente, no como parte de esta tanda.
+      await validateUrlAndResolveDnsForSsrf(currentUrl);
       const res = await fetch(currentUrl, {
         method,
         headers: requestHeaders,

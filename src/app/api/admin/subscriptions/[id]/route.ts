@@ -254,7 +254,7 @@ export async function PATCH(
       {
         error: {
           code: "INTERNAL_ERROR",
-          message: err?.message || "Error al actualizar suscripción.",
+          message: "Error interno del servidor.",
         },
       },
       { status: 500 }

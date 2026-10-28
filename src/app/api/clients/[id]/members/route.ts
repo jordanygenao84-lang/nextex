@@ -81,7 +81,7 @@ export async function GET(
     return NextResponse.json(membersWithEmail);
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al listar miembros del workspace." } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor." } },
       { status: 500 }
     );
   }

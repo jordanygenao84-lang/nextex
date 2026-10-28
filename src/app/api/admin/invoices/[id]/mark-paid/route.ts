@@ -96,7 +96,7 @@ export async function POST(
       {
         error: {
           code: "INTERNAL_ERROR",
-          message: err?.message || "Error al marcar la factura como pagada.",
+          message: "Error interno del servidor.",
         },
       },
       { status: 500 }

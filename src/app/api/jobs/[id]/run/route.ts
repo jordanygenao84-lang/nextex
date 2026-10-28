@@ -30,6 +30,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const run = await defaultJobEngine.triggerManualRun(params.id, job.workspace_id, user.id, serviceClient);
     return NextResponse.json({ run }, { status: 201 });
   } catch (err: any) {
-    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } }, { status: 500 });
+    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } }, { status: 500 });
   }
 }

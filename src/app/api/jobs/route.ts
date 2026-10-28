@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     if (error) throw error;
     return NextResponse.json({ jobs: jobs || [] });
   } catch (err: any) {
-    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } }, { status: 500 });
+    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } }, { status: 500 });
   }
 }
 
@@ -92,6 +92,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ job }, { status: 201 });
   } catch (err: any) {
-    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } }, { status: 500 });
+    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } }, { status: 500 });
   }
 }

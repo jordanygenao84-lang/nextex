@@ -30,7 +30,14 @@ export async function GET(req: NextRequest) {
 
   const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN;
 
-  if (mode === "subscribe" && expectedToken && token === expectedToken) {
+  // BAJO 2026-10-28: comparación en tiempo constante (antes ===).
+  const tokenMatches =
+    !!token &&
+    !!expectedToken &&
+    token.length === expectedToken.length &&
+    timingSafeEqual(Buffer.from(token), Buffer.from(expectedToken));
+
+  if (mode === "subscribe" && expectedToken && tokenMatches) {
     return new NextResponse(challenge || "", {
       status: 200,
       headers: { "Content-Type": "text/plain" },

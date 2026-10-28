@@ -64,6 +64,6 @@ export async function POST(
       message: "Credencial rotada exitosamente. Se ha establecido un período de gracia de 24 horas para el secreto anterior.",
     });
   } catch (err: any) {
-    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } }, { status: 500 });
+    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } }, { status: 500 });
   }
 }

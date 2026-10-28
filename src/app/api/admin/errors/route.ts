@@ -215,7 +215,7 @@ export async function DELETE(req: NextRequest) {
       {
         error: {
           code: "INTERNAL_ERROR",
-          message: err?.message || "Error al eliminar grupo de errores.",
+          message: "Error interno del servidor.",
         },
       },
       { status: 500 }

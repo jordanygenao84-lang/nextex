@@ -54,13 +54,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .maybeSingle();
 
     if (error) {
-      return NextResponse.json({ error: { code: "DB_ERROR", message: error.message } }, { status: 500 });
+      return NextResponse.json({ error: { code: "DB_ERROR", message: "Error interno del servidor." } }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true, job: cancelledJob });
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al cancelar trabajo." } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor." } },
       { status: 500 }
     );
   }

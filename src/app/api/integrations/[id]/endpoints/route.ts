@@ -38,7 +38,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     if (error) throw error;
     return NextResponse.json({ endpoints: endpoints || [] });
   } catch (err: any) {
-    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } }, { status: 500 });
+    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } }, { status: 500 });
   }
 }
 
@@ -88,6 +88,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // plainSecret se entrega exclusivamente aquí para visualización única en frontend
     return NextResponse.json({ endpoint: result.endpoint, plainSecret: result.plainSecret }, { status: 201 });
   } catch (err: any) {
-    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } }, { status: 500 });
+    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } }, { status: 500 });
   }
 }

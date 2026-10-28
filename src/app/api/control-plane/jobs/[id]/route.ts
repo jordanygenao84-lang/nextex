@@ -79,7 +79,7 @@ export async function GET(
     });
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } },
       { status: 500 }
     );
   }
@@ -172,7 +172,7 @@ export async function POST(
     return NextResponse.json({ success: true, message: `Acción '${action}' ejecutada con éxito.` });
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } },
       { status: 500 }
     );
   }
@@ -309,7 +309,7 @@ export async function DELETE(
     return NextResponse.json({ success: true, message: "Job eliminado exitosamente.", deletedRuns: runIds.length });
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } },
       { status: 500 }
     );
   }

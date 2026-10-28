@@ -92,7 +92,7 @@ export async function DELETE(
     return NextResponse.json({ ok: true, action: "deleted" }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al procesar site key." } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor." } },
       { status: 500 }
     );
   }

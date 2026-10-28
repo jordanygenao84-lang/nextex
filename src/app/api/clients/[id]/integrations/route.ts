@@ -138,7 +138,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json(result);
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al listar integraciones." } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor." } },
       { status: 500 }
     );
   }
@@ -305,7 +305,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     );
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al instalar integración." } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor." } },
       { status: 500 }
     );
   }

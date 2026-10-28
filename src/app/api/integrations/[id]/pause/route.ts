@@ -27,6 +27,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const updated = await defaultIntegrationEngine.setIntegrationStatus(params.id, integ.workspace_id, "paused", supabase);
     return NextResponse.json({ integration: updated });
   } catch (err: any) {
-    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } }, { status: 500 });
+    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } }, { status: 500 });
   }
 }

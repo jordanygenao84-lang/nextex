@@ -129,7 +129,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } },
       { status: 500 }
     );
   }

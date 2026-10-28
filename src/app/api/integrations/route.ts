@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     if (error) throw error;
     return NextResponse.json({ integrations: integrations || [] });
   } catch (err: any) {
-    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } }, { status: 500 });
+    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } }, { status: 500 });
   }
 }
 
@@ -100,6 +100,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ integration }, { status: 201 });
   } catch (err: any) {
-    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } }, { status: 500 });
+    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } }, { status: 500 });
   }
 }

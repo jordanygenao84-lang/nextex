@@ -40,7 +40,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     if (error) {
       return NextResponse.json(
-        { error: { code: "DB_ERROR", message: error.message } },
+        { error: { code: "DB_ERROR", message: "Error interno del servidor." } },
         { status: 500 }
       );
     }
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json(bindings || []);
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al listar ID bindings." } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor." } },
       { status: 500 }
     );
   }
@@ -172,7 +172,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json(newBinding, { status: 201 });
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al registrar ID binding." } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor." } },
       { status: 500 }
     );
   }

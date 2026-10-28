@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (err: any) {
     return NextResponse.json(
-      { error: "INTERNAL_ERROR", message: err?.message || "Error al consultar usuario." },
+      { error: "INTERNAL_ERROR", message: "Error interno del servidor." },
       { status: 500 }
     );
   }

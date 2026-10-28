@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     const { data: jobs, error } = await query;
 
     if (error) {
-      return NextResponse.json({ error: { code: "DB_ERROR", message: error.message } }, { status: 500 });
+      return NextResponse.json({ error: { code: "DB_ERROR", message: "Error interno del servidor." } }, { status: 500 });
     }
 
     const formattedJobs = (jobs || []).map((j: any) => ({
@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ jobs: formattedJobs });
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al listar trabajos." } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor." } },
       { status: 500 }
     );
   }
@@ -163,7 +163,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ job: newJob }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al crear trabajo de prueba." } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor." } },
       { status: 500 }
     );
   }

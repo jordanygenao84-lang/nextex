@@ -162,7 +162,7 @@ export async function POST(req: NextRequest) {
       {
         error: {
           code: "INTERNAL_ERROR",
-          message: err?.message || "Error interno al reportar ticket de soporte.",
+          message: "Error interno del servidor.",
         },
       },
       { status: 500 }

@@ -211,7 +211,7 @@ export async function PATCH(
       {
         error: {
           code: "INTERNAL_ERROR",
-          message: err?.message || "Error al actualizar dominio.",
+          message: "Error interno del servidor.",
         },
       },
       { status: 500 }
@@ -283,7 +283,7 @@ export async function DELETE(
       {
         error: {
           code: "INTERNAL_ERROR",
-          message: err?.message || "Error al eliminar dominio.",
+          message: "Error interno del servidor.",
         },
       },
       { status: 500 }

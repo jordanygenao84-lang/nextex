@@ -136,7 +136,7 @@ export async function GET(
       {
         error: {
           code: "INTERNAL_ERROR",
-          message: err?.message || "Error al obtener detalle del ticket.",
+          message: "Error interno del servidor.",
         },
       },
       { status: 500 }
@@ -205,7 +205,7 @@ export async function DELETE(
       {
         error: {
           code: "INTERNAL_ERROR",
-          message: err?.message || "Error al eliminar ticket de soporte.",
+          message: "Error interno del servidor.",
         },
       },
       { status: 500 }
@@ -321,7 +321,7 @@ export async function PATCH(
       {
         error: {
           code: "INTERNAL_ERROR",
-          message: err?.message || "Error al actualizar ticket de soporte.",
+          message: "Error interno del servidor.",
         },
       },
       { status: 500 }

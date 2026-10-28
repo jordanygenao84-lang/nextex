@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { AuditManager } from "@/lib/control-plane";
 import { AgentErrorCodes } from "@/lib/agents/types/errors";
 import { CreateAgentDTO } from "@/lib/agents/types";
 
@@ -140,6 +141,26 @@ export async function POST(req: NextRequest) {
       }));
 
       await (supabase.from("agent_tools") as any).insert(toolsToInsert);
+    }
+
+    // 3. Auditoría: el ciclo de vida de agentes no se veía en el panel de
+    // Control Plane (la ruta no registraba eventos). Nunca rompe la
+    // creación si la auditoría falla.
+    try {
+      const audit = new AuditManager({ workspaceId: targetWorkspaceId, supabaseClient: supabase });
+      await audit.recordEvent({
+        workspaceId: targetWorkspaceId,
+        actorId: user.id,
+        actorType: "user",
+        action: "agent.created",
+        resourceType: "agent",
+        resourceId: agent.id,
+        decision: "allow",
+        reason: `Agente creado: ${agent.name}`,
+        metadata: { model_id: agent.model_id, status: agent.status },
+      });
+    } catch {
+      // Auditoría best-effort: no bloquea la creación.
     }
 
     return NextResponse.json({ agent }, { status: 201 });

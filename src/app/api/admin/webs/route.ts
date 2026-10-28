@@ -166,7 +166,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ webs, total: webs.length });
   } catch (err: any) {
     return NextResponse.json(
-      { error: { code: "INTERNAL_ERROR", message: err?.message || "Error al listar webs." } },
+      { error: { code: "INTERNAL_ERROR", message: "Error interno del servidor." } },
       { status: 500 }
     );
   }

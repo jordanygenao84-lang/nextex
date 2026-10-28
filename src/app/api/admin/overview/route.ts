@@ -155,7 +155,7 @@ export async function GET(req: NextRequest) {
       {
         error: {
           code: "INTERNAL_ERROR",
-          message: err?.message || "Error al obtener métricas del administrador.",
+          message: "Error interno del servidor.",
         },
       },
       { status: 500 }

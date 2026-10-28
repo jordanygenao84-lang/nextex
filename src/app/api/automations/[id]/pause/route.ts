@@ -27,6 +27,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const updated = await defaultJobEngine.setAutomationStatus(params.id, auto.workspace_id, "paused", supabase);
     return NextResponse.json({ automation: updated });
   } catch (err: any) {
-    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: err?.message, statusCode: 500 } }, { status: 500 });
+    return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Error interno del servidor.", statusCode: 500 } }, { status: 500 });
   }
 }

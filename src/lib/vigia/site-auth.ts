@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "crypto";
 import { createServiceClient } from "@/lib/supabase/server";
 import { SecretVault } from "@/lib/integrations/crypto/secret-vault";
 
@@ -62,7 +63,11 @@ export async function resolveClientFromSiteKey(
         aad
       );
 
-      if (decrypted === token) {
+      // BAJO 2026-10-28: comparación en tiempo constante (antes ===).
+      if (
+        decrypted.length === token.length &&
+        timingSafeEqual(Buffer.from(decrypted), Buffer.from(token))
+      ) {
         // Actualizar último uso sin bloquear
         (serviceClient.from("client_site_keys") as any)
           .update({ last_used_at: new Date().toISOString() })
