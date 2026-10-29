@@ -347,40 +347,32 @@ export async function GET(req: NextRequest) {
 
     try {
       // Paginación obligatoria: PostgREST devuelve 1000 filas por defecto y
-      // los chequeos son por minuto (~17k en 7 días). Sin paginar, las
-      // primeras 1000 filas eran casi todas de un solo cliente y el otro
-      // salía "Sin chequeos" aunque sí tenía chequeos recientes.
-      const healthRows: any[] = [];
-      const PAGE = 1000;
-      for (let page = 0; page < 50; page++) {
-        const { data: chunk, error: pgErr } = await (
-          serviceClient.from("site_health_checks") as any
-        )
-          .select("client_id, status, checked_at")
-          .gte("checked_at", sevenDaysAgoIso)
-          .order("checked_at", { ascending: true })
-          .range(page * PAGE, page * PAGE + PAGE - 1);
-        if (pgErr) throw pgErr;
-        if (!chunk || chunk.length === 0) break;
-        healthRows.push(...chunk);
-        if (chunk.length < PAGE) break;
-      }
-
+      // Conteo en BD en vez de traer las filas: los chequeos son por minuto
+      // (~17k en 7 días) y paginarlos en serie costaba ~10 s en la página.
+      // Dos conteos por cliente (total y ok) en paralelo dan el mismo
+      // resultado que el agregado anterior, sin mover filas.
       const healthMap = new Map<string, { ok: number; total: number }>();
-      for (const c of clientsList) {
-        healthMap.set(c.id, { ok: 0, total: 0 });
-      }
-
-      for (const row of healthRows || []) {
-        if (!row.client_id) continue;
-        if (!healthMap.has(row.client_id)) {
-          healthMap.set(row.client_id, { ok: 0, total: 0 });
-        }
-        const entry = healthMap.get(row.client_id)!;
-        entry.total += 1;
-        if (row.status === "ok") {
-          entry.ok += 1;
-        }
+      const healthCounts = await Promise.all(
+        clientsList.map(async (c) => {
+          const [totalRes, okRes] = await Promise.all([
+            (serviceClient.from("site_health_checks") as any)
+              .select("id", { count: "exact", head: true })
+              .eq("client_id", c.id)
+              .gte("checked_at", sevenDaysAgoIso),
+            (serviceClient.from("site_health_checks") as any)
+              .select("id", { count: "exact", head: true })
+              .eq("client_id", c.id)
+              .eq("status", "ok")
+              .gte("checked_at", sevenDaysAgoIso),
+          ]);
+          if (totalRes.error || okRes.error) {
+            throw totalRes.error || okRes.error;
+          }
+          return { id: c.id, ok: okRes.count || 0, total: totalRes.count || 0 };
+        })
+      );
+      for (const h of healthCounts) {
+        healthMap.set(h.id, { ok: h.ok, total: h.total });
       }
 
       health_by_client = Array.from(healthMap.entries()).map(

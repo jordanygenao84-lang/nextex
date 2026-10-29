@@ -215,6 +215,20 @@ export class ObservabilityTracer {
       return;
     }
 
+    // Guarda: observability_spans.workspace_id es UUID con FK a workspaces.
+    // Varios llamadores usan "global" o el cero-UUID cuando no hay workspace;
+    // esos valores NO se pueden persistir (UUID inválido o FK inexistente) y
+    // el fallo se tragaba en silencio por el fail-safe, dejando la página de
+    // Observabilidad en 0 sin explicación. Se conserva en memoria y se avisa
+    // en el log del servidor, sin romper la operación.
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!UUID_RE.test(span.workspace_id || "")) {
+      console.warn(
+        `[observability] span no persistido: workspace_id inválido (${span.component}/${span.operation})`
+      );
+      return;
+    }
+
     try {
       // Intentar inserción vía RPC atómica o tabla directa
       const { error } = await this.supabaseClient.rpc("record_observability_spans_batch", {

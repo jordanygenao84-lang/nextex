@@ -72,7 +72,11 @@ export class ObservabilityErrorClassifier {
     ) {
       return {
         errorCode: "MODEL_NOT_CONFIGURED",
-        errorCategory: "CONFIGURATION",
+        // NOTA: el CHECK de observability_spans.error_category NO incluye
+        // "CONFIGURATION"; usarlo rechazaba el insert y el fail-safe lo
+        // tragaba en silencio, perdiendo el span. SYSTEM es el cubo
+        // permitido; el detalle se conserva en errorCode.
+        errorCategory: "SYSTEM",
         errorMessageSafe: "Modelo no configurado en el servidor (falta su clave)",
       };
     }

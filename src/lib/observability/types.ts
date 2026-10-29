@@ -24,8 +24,7 @@ export type ErrorCategory =
   | "TIMEOUT"
   | "RATE_LIMIT"
   | "GOVERNANCE"
-  | "BUSINESS"
-  | "CONFIGURATION";
+  | "BUSINESS";
 
 export interface SpanAttributes {
   [key: string]: unknown;
