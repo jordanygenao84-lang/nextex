@@ -102,7 +102,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
           title={title}
           subtitle={subtitle}
         />
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 pb-24 lg:pb-8 max-w-7xl w-full mx-auto">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 pb-32 lg:pb-8 max-w-7xl w-full mx-auto">
           {children}
         </main>
       </div>
@@ -115,7 +115,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
         />
       )}
       {moreOpen && (
-        <div className="fixed inset-x-0 bottom-16 z-40 lg:hidden max-h-[60vh] overflow-y-auto rounded-t-2xl bg-texter-surface border-t border-x border-texter-border shadow-2xl">
+        <div className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 lg:hidden max-h-[60vh] overflow-y-auto rounded-2xl bg-texter-surface border border-texter-border shadow-2xl">
           <div className="flex items-center justify-between px-4 py-3 border-b border-texter-border sticky top-0 bg-texter-surface">
             <span className="text-xs font-semibold text-white font-mono uppercase tracking-wider">
               Más destinos
@@ -155,7 +155,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
           </div>
         </div>
       )}
-      <nav className="fixed inset-x-0 bottom-0 z-40 lg:hidden grid grid-cols-4 bg-texter-surface/95 backdrop-blur border-t border-texter-border pb-[env(safe-area-inset-bottom)]">
+      <nav className="fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-40 lg:hidden grid grid-cols-4 bg-texter-surface/95 backdrop-blur border border-texter-border rounded-2xl shadow-2xl">
         {barItem("/dashboard", "Dashboard", LayoutDashboard, pathname === "/dashboard")}
         {barItem("/chat", "Chat", MessageSquareCode, pathname === "/chat")}
         {barItem("/clients", "Clientes", Users, pathname === "/clients" || pathname.startsWith("/clients/"))}
