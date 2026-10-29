@@ -8,7 +8,7 @@ import { ChatInput } from "@/components/chat/ChatInput";
 import { ModelSelector } from "@/components/chat/ModelSelector";
 import { useAuth } from "@/context/AuthContext";
 import { ChatMessage as ChatMessageType } from "@/lib/mock-data";
-import { Bot, AlertCircle, XCircle } from "lucide-react";
+import { Bot, AlertCircle, XCircle, X } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 
 export default function ChatPage() {
@@ -183,7 +183,7 @@ export default function ChatPage() {
             msg.id === assistantMsgId
               ? {
                   ...msg,
-                  content: `⚠️ ${errMsg}`,
+                  content: errMsg,
                 }
               : msg
           )
@@ -214,7 +214,7 @@ export default function ChatPage() {
       title="Espacio de Trabajo con Agentes IA"
       subtitle="Orquestación autónoma, ejecución de tareas y trazabilidad de pipelines"
     >
-      <div className="h-[calc(100vh-8.5rem)] flex rounded-2xl border border-texter-border bg-texter-surface overflow-hidden shadow-2xl">
+      <div className="h-[calc(100vh-8.5rem)] flex rounded-2xl border border-texter-border bg-texter-surface overflow-hidden shadow-2xl nextex-grid-bg">
         {/* Chat History Sidebar */}
         <div className="hidden md:block h-full">
           <ChatSidebar
@@ -266,9 +266,10 @@ export default function ChatPage() {
               <button
                 type="button"
                 onClick={() => setErrorMessage(null)}
-                className="text-texter-text-muted hover:text-white text-xs font-mono"
+                className="text-texter-text-muted hover:text-white"
+                aria-label="Cerrar aviso"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
           )}

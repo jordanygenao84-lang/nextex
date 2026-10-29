@@ -13,7 +13,8 @@ const iconMap: Record<string, React.ReactNode> = {
 
 export const MetricCard: React.FC<{ item: MetricItem }> = ({ item }) => {
   return (
-    <Card variant="elevated" padding="md" glow="none" className="group hover:border-texter-border-hover">
+    <Card variant="elevated" padding="md" glow="none" className="group hover:border-texter-border-hover nextex-crystal overflow-hidden">
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-texter-indigo to-texter-cyan" />
       <div className="flex items-start justify-between">
         <div className="p-2.5 rounded-xl bg-texter-surface-subtle border border-texter-border">
           {iconMap[item.iconName] || <Cpu className="w-5 h-5 text-texter-indigo" />}
@@ -40,7 +41,7 @@ export const MetricCard: React.FC<{ item: MetricItem }> = ({ item }) => {
       <div className="mt-4 space-y-1">
         <p className="text-xs text-texter-text-muted font-medium">{item.label}</p>
         <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-black font-mono tracking-tight text-white">
+          <span className="text-3xl font-black font-mono tracking-tight nextex-gradient-text">
             {item.value}
           </span>
           <span className="text-[11px] text-texter-text-dim">{item.timeframe}</span>

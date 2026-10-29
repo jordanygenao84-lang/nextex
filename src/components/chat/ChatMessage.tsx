@@ -8,11 +8,9 @@ import {
   Check,
   RotateCw,
   Sparkles,
-  User,
   Share2,
   FileCode,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 export const ChatMessage: React.FC<{
   message: ChatMessageType;
@@ -89,25 +87,29 @@ export const ChatMessage: React.FC<{
     );
   };
 
+  // Normal AI-chat layout: user messages right-aligned in a gradient
+  // bubble; assistant messages left with avatar and a crystal card.
+  // Copy / Regenerate / Share logic is untouched.
+  if (!isAssistant) {
+    return (
+      <div className="flex justify-end py-1 px-2 sm:px-4">
+        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-gradient-to-r from-texter-indigo to-texter-cyan px-4 py-3 text-white shadow-texter-glow-indigo">
+          <div className="text-sm leading-relaxed">
+            {renderFormattedContent(message.content)}
+          </div>
+          <div className="text-right text-[11px] font-mono text-white/70 mt-1">
+            {message.timestamp}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      className={cn(
-        "flex gap-3 sm:gap-4 py-4 px-2 sm:px-4 rounded-2xl transition-colors",
-        isAssistant
-          ? "bg-texter-surface/40 border border-texter-border/40"
-          : "bg-transparent"
-      )}
-    >
+    <div className="flex gap-3 sm:gap-4 py-4 px-2 sm:px-4">
       {/* Avatar */}
-      <div
-        className={cn(
-          "w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 border shadow-sm",
-          isAssistant
-            ? "bg-gradient-to-tr from-texter-indigo to-texter-cyan border-indigo-400/30 text-white"
-            : "bg-texter-surface-elevated border-texter-border text-texter-text-secondary"
-        )}
-      >
-        {isAssistant ? <Sparkles className="w-4 h-4" /> : <User className="w-4 h-4" />}
+      <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 border shadow-sm bg-gradient-to-tr from-texter-indigo to-texter-cyan border-indigo-400/30 text-white">
+        <Sparkles className="w-4 h-4" />
       </div>
 
       {/* Main message bubble */}
@@ -116,9 +118,9 @@ export const ChatMessage: React.FC<{
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-white font-mono">
-              {isAssistant ? "NEXTEХ Agent" : "Tú"}
+              NEXTEХ Agent
             </span>
-            {isAssistant && message.model && (
+            {message.model && (
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-texter-surface-subtle border border-texter-border text-texter-cyan">
                 {message.model}
               </span>
@@ -140,45 +142,43 @@ export const ChatMessage: React.FC<{
         )}
 
         {/* Message Content */}
-        <div className="text-texter-text-primary">
+        <div className="text-texter-text-primary rounded-2xl rounded-tl-md nextex-crystal px-4 py-3">
           {renderFormattedContent(message.content)}
         </div>
 
         {/* Action bar for assistant messages */}
-        {isAssistant && (
-          <div className="flex items-center gap-2 pt-2 text-texter-text-muted text-xs border-t border-texter-border/30 mt-3">
-            <button
-              onClick={handleCopy}
-              className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:text-white hover:bg-texter-surface-hover transition-colors"
-            >
-              {copied ? (
-                <Check className="w-3.5 h-3.5 text-texter-emerald" />
-              ) : (
-                <Copy className="w-3.5 h-3.5" />
-              )}
-              <span>{copied ? "Copiado" : "Copiar"}</span>
-            </button>
-            <button
-              onClick={onRegenerate}
-              disabled={!onRegenerate}
-              className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:text-white hover:bg-texter-surface-hover transition-colors disabled:opacity-40"
-            >
-              <RotateCw className="w-3.5 h-3.5" />
-              <span>Regenerar</span>
-            </button>
-            <button
-              onClick={handleShare}
-              className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:text-white hover:bg-texter-surface-hover transition-colors"
-            >
-              {shared ? (
-                <Check className="w-3.5 h-3.5 text-texter-emerald" />
-              ) : (
-                <Share2 className="w-3.5 h-3.5" />
-              )}
-              <span>{shared ? "¡Copiado para compartir!" : "Compartir"}</span>
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2 pt-2 text-texter-text-muted text-xs border-t border-texter-border/30 mt-3">
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:text-white hover:bg-texter-surface-hover transition-colors"
+          >
+            {copied ? (
+              <Check className="w-3.5 h-3.5 text-texter-emerald" />
+            ) : (
+              <Copy className="w-3.5 h-3.5" />
+            )}
+            <span>{copied ? "Copiado" : "Copiar"}</span>
+          </button>
+          <button
+            onClick={onRegenerate}
+            disabled={!onRegenerate}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:text-white hover:bg-texter-surface-hover transition-colors disabled:opacity-40"
+          >
+            <RotateCw className="w-3.5 h-3.5" />
+            <span>Regenerar</span>
+          </button>
+          <button
+            onClick={handleShare}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:text-white hover:bg-texter-surface-hover transition-colors"
+          >
+            {shared ? (
+              <Check className="w-3.5 h-3.5 text-texter-emerald" />
+            ) : (
+              <Share2 className="w-3.5 h-3.5" />
+            )}
+            <span>{shared ? "¡Copiado para compartir!" : "Compartir"}</span>
+          </button>
+        </div>
       </div>
     </div>
   );

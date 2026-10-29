@@ -9,6 +9,7 @@ import { AgentStatusList } from "@/components/dashboard/AgentStatusList";
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import type { MetricItem } from "@/lib/mock-data";
 import { useAuth } from "@/context/AuthContext";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
 import { Sparkles, Building, ShieldCheck, ArrowRight } from "lucide-react";
 import Link from "next/link";
@@ -35,12 +36,20 @@ export default function DashboardPage() {
     { id: "m-invoices", label: "Facturas pendientes", value: "—", change: "", isPositive: true, timeframe: "por cobrar", iconName: "Zap" },
   ]);
 
+  const [overviewOk, setOverviewOk] = useState<boolean | null>(null);
+  const [overviewAt, setOverviewAt] = useState<string>("");
+
   useEffect(() => {
     let cancelled = false;
     fetch("/api/admin/overview")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (!d || cancelled) return;
+        if (!d || cancelled) {
+          if (!cancelled) setOverviewOk(false);
+          return;
+        }
+        setOverviewOk(true);
+        setOverviewAt(new Date().toLocaleTimeString("es-DO"));
         setMetrics([
           { id: "m-tokens", label: "Tokens procesados", value: String(d.tokens_this_month ?? 0), change: "", isPositive: true, timeframe: "mes actual", iconName: "Cpu" },
           { id: "m-clients", label: "Clientes activos", value: `${d.active_clients ?? 0}/${d.total_clients ?? 0}`, change: "", isPositive: true, timeframe: "en plataforma", iconName: "Workflow" },
@@ -48,7 +57,9 @@ export default function DashboardPage() {
           { id: "m-invoices", label: "Facturas pendientes", value: `$${Number(d.pending_invoices_amount ?? 0).toFixed(2)}`, change: "", isPositive: true, timeframe: `${d.pending_invoices_count ?? 0} por cobrar`, iconName: "Zap" },
         ]);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setOverviewOk(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -59,9 +70,9 @@ export default function DashboardPage() {
       title="Centro de Operaciones y Telemetría"
       subtitle="Monitoreo de agentes autónomos, pipelines y consumo en tiempo real"
     >
-      <div className="space-y-6">
+      <div className="space-y-6 nextex-grid-bg">
         {/* Real User Welcome Banner */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-texter-surface to-texter-surface-elevated border border-texter-border flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+        <div className="p-4 sm:p-5 rounded-2xl nextex-crystal flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <span className="text-lg sm:text-xl font-bold text-white tracking-tight">
@@ -94,6 +105,36 @@ export default function DashboardPage() {
               </button>
             </Link>
           </div>
+        </div>
+
+        {/* Live status strip: only states this page truly knows —
+            overview fetch result, RLS badge already shown in banner */}
+        <div className="flex items-center gap-2 flex-wrap rounded-xl bg-texter-surface/70 border border-texter-border px-3.5 py-2 text-xs text-texter-text-secondary">
+          <span
+            className={cn(
+              "w-2 h-2 rounded-full shrink-0",
+              overviewOk === true && "bg-texter-emerald animate-pulse",
+              overviewOk === false && "bg-texter-rose",
+              overviewOk === null && "bg-texter-text-dim animate-pulse"
+            )}
+          />
+          <span className="font-medium text-white">
+            {overviewOk === true
+              ? "Datos en vivo"
+              : overviewOk === false
+                ? "Resumen no disponible"
+                : "Cargando resumen…"}
+          </span>
+          {overviewOk === true && overviewAt && (
+            <span className="font-mono text-texter-text-muted">
+              Actualizado {overviewAt}
+            </span>
+          )}
+          <span className="text-texter-border">•</span>
+          <span className="flex items-center gap-1">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            Aislamiento RLS Activo
+          </span>
         </div>
 
         {/* Top Metric Cards Grid */}
