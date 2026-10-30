@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { ControlPlaneNav } from "@/components/control-plane/ControlPlaneNav";
 import { DecisionBadge } from "@/components/control-plane/DecisionBadge";
@@ -47,7 +47,20 @@ export default function AuditControlPage() {
   // Drawer / modal para ver detalle de evento
   const [selectedEvent, setSelectedEvent] = useState<AuditLogEvent | null>(null);
 
+  // Guardas contra respuestas fuera de orden: cada tecla del filtro dispara
+  // un fetch y, sin cancelar el anterior, una respuesta vieja (p. ej. la de
+  // un prefijo parcial sin coincidencias) podía llegar después y sobrescribir
+  // el resultado final. Eso dejaba "No se encontraron eventos" al filtrar
+  // solo por acción aunque los eventos existieran, mientras que con una
+  // decisión elegida (una sola petición) el resultado era correcto.
+  const auditAbortRef = useRef<AbortController | null>(null);
+  const auditSeqRef = useRef(0);
+
   const fetchAuditEvents = async () => {
+    auditAbortRef.current?.abort();
+    const controller = new AbortController();
+    auditAbortRef.current = controller;
+    const seq = ++auditSeqRef.current;
     try {
       setIsLoading(true);
       setError(null);
@@ -57,22 +70,27 @@ export default function AuditControlPage() {
       if (correlationFilter) params.append("correlationId", correlationFilter);
       if (decisionFilter) params.append("decision", decisionFilter);
 
-      const res = await fetch(`/api/control-plane/audit?${params.toString()}`);
+      const res = await fetch(`/api/control-plane/audit?${params.toString()}`, {
+        signal: controller.signal,
+      });
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
         throw new Error(errJson.error?.message || `HTTP Error ${res.status}`);
       }
       const data = await res.json();
+      if (seq !== auditSeqRef.current) return;
       setEvents(data.events || []);
     } catch (err: any) {
+      if (err?.name === "AbortError" || seq !== auditSeqRef.current) return;
       setError(err.message || "Error al cargar eventos de auditoría");
     } finally {
-      setIsLoading(false);
+      if (seq === auditSeqRef.current) setIsLoading(false);
     }
   };
 
   useEffect(() => {
     fetchAuditEvents();
+    return () => auditAbortRef.current?.abort();
   }, [actionFilter, correlationFilter, decisionFilter]);
 
   return (

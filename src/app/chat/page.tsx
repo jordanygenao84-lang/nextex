@@ -8,8 +8,14 @@ import { ChatInput } from "@/components/chat/ChatInput";
 import { ModelSelector } from "@/components/chat/ModelSelector";
 import { useAuth } from "@/context/AuthContext";
 import { ChatMessage as ChatMessageType } from "@/lib/mock-data";
+import { CANONICAL_MODELS } from "@/lib/omniengine/registry/models";
 import { Bot, AlertCircle, XCircle, X } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
+
+// Preferencia de interfaz: solo el id del modelo (sin claves ni secretos).
+// Se valida contra el registro canónico para ignorar ids obsoletos.
+const CHAT_MODEL_STORAGE_KEY = "nextex-chat-model";
+const DEFAULT_MODEL_ID = "nextex-simulation";
 
 export default function ChatPage() {
   const { workspace } = useAuth();
@@ -17,7 +23,24 @@ export default function ChatPage() {
   // muestra y una lista de sesiones falsas que al pulsarlas no cambiaban
   // el contenido. El historial de sesiones aún no se guarda.
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
-  const [selectedModelId, setSelectedModelId] = useState<string>("nextex-simulation");
+  // El último modelo elegido persiste en localStorage y se restaura al
+  // volver: antes el estado nacía siempre con el valor por defecto y la
+  // selección volvía a "Sandbox Simulator" al salir y entrar.
+  const [selectedModelId, setSelectedModelId] = useState<string>(() => {
+    if (typeof window === "undefined") return DEFAULT_MODEL_ID;
+    try {
+      const stored = window.localStorage.getItem(CHAT_MODEL_STORAGE_KEY);
+      if (stored && CANONICAL_MODELS.some((m) => m.id === stored)) return stored;
+    } catch {}
+    return DEFAULT_MODEL_ID;
+  });
+
+  const handleSelectModel = (modelId: string) => {
+    setSelectedModelId(modelId);
+    try {
+      window.localStorage.setItem(CHAT_MODEL_STORAGE_KEY, modelId);
+    } catch {}
+  };
   const [isGenerating, setIsGenerating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -251,7 +274,7 @@ export default function ChatPage() {
               )}
               <ModelSelector
                 selectedModelId={selectedModelId}
-                onSelectModel={setSelectedModelId}
+                onSelectModel={handleSelectModel}
               />
             </div>
           </div>

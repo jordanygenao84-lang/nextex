@@ -48,3 +48,92 @@ export function calculateErrorFingerprint(
   const raw = `${clientId}|${normType}|${normMsg}`;
   return crypto.createHash("sha256").update(raw).digest("hex");
 }
+
+/**
+ * Parámetros de URL cuyo valor nunca debe guardarse ni mostrarse: llaves
+ * embebibles, claves de sitio y credenciales que viajan como query param
+ * (p. ej. las URLs bloqueadas de reportes CSP). Patrón [REDACTED] igual que
+ * la sanitización de auditoría. Solo nombres de parámetro genéricos: aquí no
+ * se escribe ningún valor real de llave.
+ */
+const SENSITIVE_URL_PARAMS = new Set([
+  "key",
+  "embed_key",
+  "embedkey",
+  "site_key",
+  "sitekey",
+  "api_key",
+  "apikey",
+  "token",
+  "access_token",
+  "auth",
+  "secret",
+  "password",
+  "session",
+  "session_key",
+]);
+
+/** Claves de objeto cuyo valor se redacta (mismo patrón que auditoría). */
+const SENSITIVE_OBJECT_KEYS = new Set([
+  "token",
+  "secret",
+  "password",
+  "api_key",
+  "apikey",
+  "embed_key",
+  "site_key",
+  "auth",
+]);
+
+/**
+ * Redacta los parámetros sensibles de las URLs que aparezcan dentro de un
+ * texto (p. ej. una blockedURI de CSP con la llave del widget en el query).
+ * Si una URL no se puede parsear, se devuelve intacta: esta función nunca
+ * lanza excepciones.
+ */
+export function redactSensitiveUrlParams(text: string): string {
+  if (!text || typeof text !== "string") return text;
+  if (!text.includes("://") && !text.includes("?")) return text;
+  return text.replace(/https?:\/\/[^\s"'<>]+/g, (urlText) => {
+    try {
+      const parsed = new URL(urlText);
+      let changed = false;
+      for (const name of Array.from(parsed.searchParams.keys())) {
+        if (SENSITIVE_URL_PARAMS.has(name.toLowerCase())) {
+          parsed.searchParams.set(name, "[REDACTED]");
+          changed = true;
+        }
+      }
+      return changed ? parsed.toString() : urlText;
+    } catch {
+      return urlText;
+    }
+  });
+}
+
+/**
+ * Sanitiza recursivamente un valor de error (mensaje o detail) antes de
+ * guardarlo o mostrarlo: redacta parámetros sensibles de URLs y valores bajo
+ * claves sensibles, sin tocar el resto. Nunca lanza excepciones.
+ */
+export function sanitizeErrorValue(val: any): any {
+  try {
+    if (val === null || val === undefined) return val;
+    if (typeof val === "string") return redactSensitiveUrlParams(val);
+    if (Array.isArray(val)) return val.map((item) => sanitizeErrorValue(item));
+    if (typeof val === "object") {
+      const out: Record<string, any> = {};
+      for (const [k, v] of Object.entries(val)) {
+        if (SENSITIVE_OBJECT_KEYS.has(k.toLowerCase())) {
+          out[k] = "[REDACTED]";
+        } else {
+          out[k] = sanitizeErrorValue(v);
+        }
+      }
+      return out;
+    }
+    return val;
+  } catch {
+    return val;
+  }
+}

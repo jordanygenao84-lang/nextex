@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isSuperAdmin } from "@/lib/auth/roles";
+import { sanitizeErrorValue } from "@/lib/protection/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -90,9 +91,20 @@ export async function GET(req: NextRequest) {
 
     const list = Array.isArray(errors) ? errors : [];
 
+    // Redacción en la vista: los grupos viejos guardados antes de la
+    // sanitización en ingesta pueden traer URLs con parámetros de llave en
+    // mensaje/detail. No se reescribe el historial: se entrega redactado.
+    // (Los reportes nuevos ya se guardan limpios y, al reincidir, el upsert
+    // sobrescribe el detalle viejo con la versión sanitizada.)
+    const sanitizedList = list.map((item: any) => ({
+      ...item,
+      message: sanitizeErrorValue(item.message),
+      detail: sanitizeErrorValue(item.detail),
+    }));
+
     // Calcular resumen: total de grupos y ocurrencias en las últimas 24h
     const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
-    const occurrences24h = list.reduce((acc: number, item: any) => {
+    const occurrences24h = sanitizedList.reduce((acc: number, item: any) => {
       if (item.last_seen_at) {
         const itemTime = new Date(item.last_seen_at).getTime();
         if (itemTime >= cutoff24h) {
@@ -103,9 +115,9 @@ export async function GET(req: NextRequest) {
     }, 0);
 
     return NextResponse.json({
-      errors: list,
+      errors: sanitizedList,
       summary: {
-        total_groups: list.length,
+        total_groups: sanitizedList.length,
         occurrences_24h: occurrences24h,
       },
     });

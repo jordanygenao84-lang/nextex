@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { resolveClientFromSiteKey } from "@/lib/vigia/site-auth";
-import { calculateErrorFingerprint } from "@/lib/protection/errors";
+import { calculateErrorFingerprint, sanitizeErrorValue } from "@/lib/protection/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -87,12 +87,19 @@ export async function POST(req: NextRequest) {
         ? { raw: detail }
         : {};
 
-    // 3. Calcular fingerprint en el servidor
+    // 3. Calcular fingerprint en el servidor (sobre el mensaje ORIGINAL
+    // para no romper la agrupación ni el upsert de grupos existentes) y
+    // sanitizar mensaje y detalle ANTES de guardar: las URLs con
+    // parámetros de llave (p. ej. blockedURI de CSP) quedan redactadas y
+    // el próximo reporte de un grupo viejo sobrescribe su detalle con la
+    // versión limpia.
     const fingerprint = calculateErrorFingerprint(
       clientId,
       errorTypeStr,
       trimmedMsg
     );
+    const storedMsg = sanitizeErrorValue(trimmedMsg);
+    const storedDetail = sanitizeErrorValue(eventDetail);
 
     const serviceClient = createServiceClient();
 
@@ -120,8 +127,8 @@ export async function POST(req: NextRequest) {
         .update({
           occurrences: nextOccurrences,
           last_seen_at: new Date().toISOString(),
-          message: trimmedMsg,
-          detail: eventDetail,
+          message: storedMsg,
+          detail: storedDetail,
           error_type: errorTypeStr,
         })
         .eq("id", existing.id);
@@ -139,8 +146,8 @@ export async function POST(req: NextRequest) {
         client_id: clientId,
         fingerprint,
         error_type: errorTypeStr,
-        message: trimmedMsg,
-        detail: eventDetail,
+        message: storedMsg,
+        detail: storedDetail,
         occurrences: 1,
         first_seen_at: new Date().toISOString(),
         last_seen_at: new Date().toISOString(),
@@ -165,8 +172,8 @@ export async function POST(req: NextRequest) {
             .update({
               occurrences: (Number(retryExisting.occurrences) || 1) + 1,
               last_seen_at: new Date().toISOString(),
-              message: trimmedMsg,
-              detail: eventDetail,
+              message: storedMsg,
+              detail: storedDetail,
               error_type: errorTypeStr,
             })
             .eq("id", retryExisting.id);
