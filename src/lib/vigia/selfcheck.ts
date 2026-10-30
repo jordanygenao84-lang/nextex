@@ -112,9 +112,9 @@ export async function executeSelfChecks(
   // ---------------------------------------------------------------------------
   // Check 1: GET /api/health interno
   // ---------------------------------------------------------------------------
+  let appUrl = "";
   try {
     const isDev = process.env.NODE_ENV === "development";
-    let appUrl: string;
 
     if (isDev) {
       appUrl = (
@@ -159,6 +159,7 @@ export async function executeSelfChecks(
         title: "Fallo en endpoint interno de salud /api/health",
         evidence: {
           endpoint: "/api/health",
+          attempted_url: appUrl,
           http_status: healthRes.status,
           response_ok: healthRes.ok,
         },
@@ -167,15 +168,22 @@ export async function executeSelfChecks(
       });
     }
   } catch (hErr: any) {
+    const evidencePayload: Record<string, any> = {
+      endpoint: "/api/health",
+      attempted_url: appUrl,
+      error_type: hErr?.name || "FetchError",
+      error_message: hErr?.message || String(hErr),
+      unreachable: true,
+    };
+    if (hErr?.cause !== undefined && hErr?.cause !== null) {
+      evidencePayload.error_cause = String(hErr.cause);
+    }
+
     detectedFindings.set("health_endpoint_failing", {
       type: "health_endpoint_failing",
       severity: "critical",
       title: "Fallo en endpoint interno de salud /api/health",
-      evidence: {
-        endpoint: "/api/health",
-        error_type: hErr?.name || "FetchError",
-        unreachable: true,
-      },
+      evidence: evidencePayload,
       fix_prompt:
         "No se pudo conectar con el endpoint interno /api/health. Verifica la conectividad local y los logs de la aplicación.",
     });
