@@ -193,7 +193,7 @@ export default function WorkersPage() {
         )}
 
         {/* Tabla de Workers */}
-        <div className="bg-texter-surface border border-texter-border rounded-2xl overflow-hidden shadow-sm">
+        <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs font-mono border-collapse">
               <thead>

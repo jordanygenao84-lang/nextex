@@ -123,7 +123,7 @@ export default function ObservabilityDashboardPage() {
               <span className="text-xs font-medium">Trazas Analizadas</span>
               <Activity className="w-4 h-4 text-texter-cyan" />
             </div>
-            <div className="text-2xl font-bold text-white font-mono">
+            <div className="text-2xl font-bold text-white font-mono nextex-gradient-text">
               {stats?.totalUniqueTraces || traces.length}
             </div>
             <p className="text-[11px] text-texter-text-dim font-mono">
@@ -136,7 +136,7 @@ export default function ObservabilityDashboardPage() {
               <span className="text-xs font-medium">Tasa de Éxito (spans)</span>
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             </div>
-            <div className="text-2xl font-bold text-white font-mono">
+            <div className="text-2xl font-bold text-white font-mono nextex-gradient-text">
               {stats == null ? "—" : `${stats.successRate.toFixed(1)}%`}
             </div>
             <p className="text-[11px] text-texter-text-dim font-mono">
@@ -149,7 +149,7 @@ export default function ObservabilityDashboardPage() {
               <span className="text-xs font-medium">Latencia Promedio</span>
               <Clock className="w-4 h-4 text-amber-400" />
             </div>
-            <div className="text-2xl font-bold text-white font-mono">
+            <div className="text-2xl font-bold text-white font-mono nextex-gradient-text">
               {stats?.avgDurationMs || 0} ms
             </div>
             <p className="text-[11px] text-texter-text-dim font-mono">
@@ -162,7 +162,7 @@ export default function ObservabilityDashboardPage() {
               <span className="text-xs font-medium">Tokens de IA Consumidos</span>
               <Cpu className="w-4 h-4 text-texter-indigo" />
             </div>
-            <div className="text-2xl font-bold text-white font-mono">
+            <div className="text-2xl font-bold text-white font-mono nextex-gradient-text">
               {((stats?.totalTokens || 0) / 1000).toFixed(1)}k
             </div>
             <p className="text-[11px] text-texter-text-dim font-mono">

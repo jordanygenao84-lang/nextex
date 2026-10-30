@@ -94,14 +94,14 @@ export default function AgentsControlPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {agents.length === 0 ? (
-            <div className="col-span-full bg-texter-surface border border-texter-border rounded-2xl p-8 text-center text-xs font-mono text-texter-text-muted">
+            <div className="col-span-full bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-8 text-center text-xs font-mono text-texter-text-muted">
               {isLoading ? "Consultando agentes..." : "No se encontraron agentes configurados."}
             </div>
           ) : (
             agents.map((agent) => (
               <div
                 key={agent.id}
-                className="bg-texter-surface border border-texter-border rounded-2xl p-5 space-y-4 hover:border-texter-border/80 transition-all font-mono text-xs"
+                className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-5 space-y-4 hover:border-texter-border/80 transition-all font-mono text-xs"
               >
                 <div className="flex items-start justify-between gap-2 border-b border-texter-border/50 pb-3">
                   <div>

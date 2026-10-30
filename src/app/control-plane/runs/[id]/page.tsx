@@ -92,7 +92,7 @@ export default function RunDetailPage() {
 
         {/* Ficha técnica del Run */}
         {run && (
-          <div className="bg-texter-surface border border-texter-border rounded-2xl p-5 space-y-4 font-mono text-xs">
+          <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-5 space-y-4 font-mono text-xs">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2.5">
@@ -142,7 +142,7 @@ export default function RunDetailPage() {
         )}
 
         {/* Timeline de Ejecución Canónico */}
-        <div className="bg-texter-surface border border-texter-border rounded-2xl p-5 space-y-4">
+        <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-5 space-y-4">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-texter-cyan" />
             <h3 className="text-white font-semibold text-sm">Timeline Canónico de Ejecución</h3>
@@ -172,7 +172,7 @@ export default function RunDetailPage() {
 
         {/* Leases y Auditoría Inmutable */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div className="bg-texter-surface border border-texter-border rounded-2xl p-5 space-y-3 font-mono text-xs">
+          <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-5 space-y-3 font-mono text-xs">
             <div className="flex items-center gap-2">
               <Server className="w-4 h-4 text-emerald-400" />
               <h4 className="font-semibold text-white">Leases del Worker ({leases.length})</h4>
@@ -199,7 +199,7 @@ export default function RunDetailPage() {
             </div>
           </div>
 
-          <div className="bg-texter-surface border border-texter-border rounded-2xl p-5 space-y-3 font-mono text-xs">
+          <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-5 space-y-3 font-mono text-xs">
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-amber-400" />
               <h4 className="font-semibold text-white">Auditoría Append-Only ({auditEvents.length})</h4>

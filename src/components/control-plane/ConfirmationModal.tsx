@@ -39,7 +39,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-texter-surface border border-texter-border rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
+      <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel w-full max-w-lg overflow-hidden shadow-2xl">
         <div className="flex items-center justify-between px-6 py-4 border-b border-texter-border">
           <div className="flex items-center gap-2.5">
             <div

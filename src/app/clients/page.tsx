@@ -2069,7 +2069,7 @@ export default function ClientsPage() {
         {/* ENCABEZADO CON CONTADORES */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-texter-border pb-5">
           <div className="flex items-center gap-4 flex-wrap">
-            <div className="p-3.5 rounded-2xl bg-texter-surface border border-texter-border flex items-center gap-3 min-w-[140px]">
+            <div className="p-3.5 rounded-2xl nextex-panel bg-texter-surface border border-texter-border flex items-center gap-3 min-w-[140px]">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
               <div>
                 <p className="text-[11px] font-mono text-texter-text-muted uppercase tracking-wider">Activos</p>
@@ -2077,7 +2077,7 @@ export default function ClientsPage() {
               </div>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-texter-surface border border-texter-border flex items-center gap-3 min-w-[140px]">
+            <div className="p-3.5 rounded-2xl nextex-panel bg-texter-surface border border-texter-border flex items-center gap-3 min-w-[140px]">
               <span className="w-2.5 h-2.5 rounded-full bg-texter-text-dim" />
               <div>
                 <p className="text-[11px] font-mono text-texter-text-muted uppercase tracking-wider">Inactivos</p>
@@ -4008,7 +4008,7 @@ export default function ClientsPage() {
                       <span>Total Mes ({consumptionData?.month || "Actual"})</span>
                       <Zap className="w-4 h-4 text-texter-cyan" />
                     </div>
-                    <div className="text-2xl font-bold font-mono text-white">
+                    <div className="text-2xl font-bold font-mono text-white nextex-gradient-text">
                       {(consumptionData?.total_tokens ?? 0).toLocaleString()}
                     </div>
                     <p className="text-[11px] text-texter-text-dim font-mono">
@@ -4052,7 +4052,7 @@ export default function ClientsPage() {
                         <Badge variant="danger" size="sm" dot>Excedido</Badge>
                       )}
                     </div>
-                    <div className="text-2xl font-bold font-mono text-white">
+                    <div className="text-2xl font-bold font-mono text-white nextex-gradient-text">
                       {consumptionData?.budget?.cap != null ? (
                         <span>
                           {(consumptionData.budget.used ?? 0).toLocaleString()} / {(consumptionData.budget.cap).toLocaleString()}
@@ -4267,7 +4267,7 @@ export default function ClientsPage() {
                       <span>Tokens del Período ({billingEstimate?.period || "Mes actual"})</span>
                       <Zap className="w-4 h-4 text-texter-cyan" />
                     </div>
-                    <div className="text-2xl font-bold font-mono text-white">
+                    <div className="text-2xl font-bold font-mono text-white nextex-gradient-text">
                       {(billingEstimate?.tokens_total ?? 0).toLocaleString()}
                     </div>
                     <p className="text-[11px] text-texter-text-dim font-mono">

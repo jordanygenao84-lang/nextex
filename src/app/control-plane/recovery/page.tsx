@@ -107,7 +107,7 @@ export default function RecoveryControlPage() {
       <ControlPlaneNav />
 
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-texter-surface border border-texter-border rounded-2xl p-4 sm:p-5">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-4 sm:p-5">
           <div>
             <div className="flex items-center gap-2">
               <RefreshCw className="w-5 h-5 text-emerald-400" />
@@ -160,7 +160,7 @@ export default function RecoveryControlPage() {
         {/* Paneles de Monitoreo */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 font-mono text-xs">
           {/* Workers Stale o Cuarentena */}
-          <div className="bg-texter-surface border border-texter-border rounded-2xl p-5 space-y-3">
+          <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-5 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Server className="w-4 h-4 text-amber-400" />
@@ -204,7 +204,7 @@ export default function RecoveryControlPage() {
           </div>
 
           {/* Leases Expirados */}
-          <div className="bg-texter-surface border border-texter-border rounded-2xl p-5 space-y-3">
+          <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-5 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-rose-400" />
@@ -239,7 +239,7 @@ export default function RecoveryControlPage() {
         </div>
 
         {/* Timeline Canónico de Recuperación */}
-        <div className="bg-texter-surface border border-texter-border rounded-2xl p-5 space-y-4">
+        <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-5 space-y-4">
           <div className="flex items-center gap-2">
             <Radio className="w-4 h-4 text-texter-indigo" />
             <h3 className="text-white font-semibold text-sm">Flujo Canónico de Recuperación</h3>

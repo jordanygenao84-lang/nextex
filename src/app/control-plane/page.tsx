@@ -104,7 +104,7 @@ export default function ControlPlaneDashboardPage() {
 
       <div className="space-y-6">
         {/* Cabecera operacional y botón de refresco */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-texter-surface border border-texter-border rounded-2xl p-4 sm:p-5">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-4 sm:p-5">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-indigo-500/10 text-texter-indigo border border-indigo-500/20">
               <Radio className="w-5 h-5 animate-pulse" />
@@ -161,7 +161,7 @@ export default function ControlPlaneDashboardPage() {
         ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {/* 1. WORKERS */}
-          <div className="bg-texter-surface border border-texter-border rounded-2xl p-5 space-y-4 hover:border-texter-border/80 transition-all">
+          <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-5 space-y-4 hover:border-texter-border/80 transition-all">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Server className="w-4 h-4 text-texter-cyan" />
@@ -201,7 +201,7 @@ export default function ControlPlaneDashboardPage() {
           </div>
 
           {/* 2. JOBS & RUNS */}
-          <div className="bg-texter-surface border border-texter-border rounded-2xl p-5 space-y-4 hover:border-texter-border/80 transition-all">
+          <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-5 space-y-4 hover:border-texter-border/80 transition-all">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Cpu className="w-4 h-4 text-texter-indigo" />
@@ -241,7 +241,7 @@ export default function ControlPlaneDashboardPage() {
           </div>
 
           {/* 3. RECOVERY & LEASES */}
-          <div className="bg-texter-surface border border-texter-border rounded-2xl p-5 space-y-4 hover:border-texter-border/80 transition-all">
+          <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-5 space-y-4 hover:border-texter-border/80 transition-all">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <RefreshCw className="w-4 h-4 text-emerald-400" />
@@ -273,7 +273,7 @@ export default function ControlPlaneDashboardPage() {
           </div>
 
           {/* 4. GOVERNANCE & AUTORIDAD */}
-          <div className="bg-texter-surface border border-texter-border rounded-2xl p-5 space-y-4 hover:border-texter-border/80 transition-all">
+          <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-5 space-y-4 hover:border-texter-border/80 transition-all">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-amber-400" />
@@ -305,7 +305,7 @@ export default function ControlPlaneDashboardPage() {
           </div>
 
           {/* 5. CANCELLATION */}
-          <div className="bg-texter-surface border border-texter-border rounded-2xl p-5 space-y-4 hover:border-texter-border/80 transition-all">
+          <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-5 space-y-4 hover:border-texter-border/80 transition-all">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <AlertOctagon className="w-4 h-4 text-rose-400" />
@@ -337,7 +337,7 @@ export default function ControlPlaneDashboardPage() {
           </div>
 
           {/* 6. AUDITORÍA INMUTABLE */}
-          <div className="bg-texter-surface border border-texter-border rounded-2xl p-5 space-y-4 hover:border-texter-border/80 transition-all">
+          <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-5 space-y-4 hover:border-texter-border/80 transition-all">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <FileText className="w-4 h-4 text-cyan-400" />

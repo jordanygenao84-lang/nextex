@@ -11,7 +11,7 @@ export default function TerminosPage() {
           constituye asesoría legal.
         </p>
 
-        <section className="space-y-2">
+        <section className="nextex-panel rounded-2xl p-5 space-y-2">
           <h2 className="text-base font-semibold text-white">El servicio</h2>
           <p>
             nextex es una plataforma de inteligencia artificial y automatización
@@ -21,7 +21,7 @@ export default function TerminosPage() {
           </p>
         </section>
 
-        <section className="space-y-2">
+        <section className="nextex-panel rounded-2xl p-5 space-y-2">
           <h2 className="text-base font-semibold text-white">Uso aceptable</h2>
           <ul className="list-disc pl-5 space-y-1">
             <li>Usa la plataforma solo para tus propios negocios o para clientes que te hayan autorizado expresamente.</li>
@@ -31,7 +31,7 @@ export default function TerminosPage() {
           </ul>
         </section>
 
-        <section className="space-y-2">
+        <section className="nextex-panel rounded-2xl p-5 space-y-2">
           <h2 className="text-base font-semibold text-white">Cuentas y suspensión</h2>
           <p>
             Eres responsable de tu cuenta y de tus credenciales. Podemos
@@ -41,7 +41,7 @@ export default function TerminosPage() {
           </p>
         </section>
 
-        <section className="space-y-2">
+        <section className="nextex-panel rounded-2xl p-5 space-y-2">
           <h2 className="text-base font-semibold text-white">Facturación</h2>
           <p>
             Las suscripciones se facturan por periodo. La falta de pago genera
@@ -51,7 +51,7 @@ export default function TerminosPage() {
           </p>
         </section>
 
-        <section className="space-y-2">
+        <section className="nextex-panel rounded-2xl p-5 space-y-2">
           <h2 className="text-base font-semibold text-white">Contacto</h2>
           <p>
             Para dudas sobre estos términos, escribe a

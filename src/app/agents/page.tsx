@@ -669,7 +669,7 @@ export default function AgentsPage() {
       {/* MODAL CREAR AGENTE */}
       {isCreateOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-xl rounded-2xl bg-texter-surface border border-texter-border shadow-2xl overflow-hidden p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+          <div className="w-full max-w-xl rounded-2xl nextex-panel bg-texter-surface border border-texter-border shadow-2xl overflow-hidden p-6 space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-texter-border">
               <div className="flex items-center gap-2">
                 <Bot className="w-5 h-5 text-texter-indigo" />
@@ -819,7 +819,7 @@ export default function AgentsPage() {
       {/* DRAWER / MODAL DE EJECUCIÓN DEL AGENTE */}
       {activeAgent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-2xl bg-texter-surface border border-texter-border shadow-2xl p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+          <div className="w-full max-w-2xl rounded-2xl nextex-panel bg-texter-surface border border-texter-border shadow-2xl p-6 space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-texter-border">
               <div className="flex items-center gap-2">
                 <Terminal className="w-5 h-5 text-texter-cyan" />
@@ -1001,7 +1001,7 @@ export default function AgentsPage() {
       {/* MODAL EDITAR AGENTE */}
       {editingAgent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-xl rounded-2xl bg-texter-surface border border-texter-border shadow-2xl overflow-hidden p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+          <div className="w-full max-w-xl rounded-2xl nextex-panel bg-texter-surface border border-texter-border shadow-2xl overflow-hidden p-6 space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-texter-border">
               <div className="flex items-center gap-2">
                 <Pencil className="w-5 h-5 text-texter-cyan" />
@@ -1131,7 +1131,7 @@ export default function AgentsPage() {
       {/* MODAL CONFIRMAR ELIMINAR AGENTE */}
       {deletingAgent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md rounded-2xl bg-texter-surface border border-texter-border shadow-2xl p-6 space-y-4">
+          <div className="w-full max-w-md rounded-2xl nextex-panel bg-texter-surface border border-texter-border shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-texter-border">
               <div className="flex items-center gap-2 text-rose-400">
                 <Trash2 className="w-5 h-5 text-rose-400" />

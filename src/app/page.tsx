@@ -113,7 +113,7 @@ export default function LandingPage() {
                     <span>Inferencia Concurrente</span>
                     <Badge variant="cyan" size="sm">410ms p95</Badge>
                   </div>
-                  <div className="text-2xl font-bold font-mono text-white">1.42M Tokens</div>
+                  <div className="text-2xl font-bold font-mono text-white nextex-gradient-text">1.42M Tokens</div>
                   <div className="text-xs text-emerald-400 mt-1 font-mono">+18.4% eficiencia</div>
                 </div>
 
@@ -122,7 +122,7 @@ export default function LandingPage() {
                     <span>Agentes Autónomos</span>
                     <Badge variant="indigo" size="sm">4 Activos</Badge>
                   </div>
-                  <div className="text-2xl font-bold font-mono text-white">3,892 Tareas</div>
+                  <div className="text-2xl font-bold font-mono text-white nextex-gradient-text">3,892 Tareas</div>
                   <div className="text-xs text-indigo-400 mt-1 font-mono">99.2% tasa de éxito</div>
                 </div>
 
@@ -131,7 +131,7 @@ export default function LandingPage() {
                     <span>Seguridad de Datos</span>
                     <Badge variant="success" size="sm">RLS Validado</Badge>
                   </div>
-                  <div className="text-2xl font-bold font-mono text-white">Zero-Leakage</div>
+                  <div className="text-2xl font-bold font-mono text-white nextex-gradient-text">Zero-Leakage</div>
                   <div className="text-xs text-texter-text-muted mt-1 font-mono">Aislamiento por usuario</div>
                 </div>
               </div>

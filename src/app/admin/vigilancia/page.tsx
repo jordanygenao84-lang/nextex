@@ -307,7 +307,7 @@ export default function VigilanciaPage() {
         title="Acceso Restringido"
         subtitle="VIGÍA — Centro de Vigilancia"
       >
-        <div className="max-w-md mx-auto my-16 p-6 rounded-2xl bg-texter-surface border border-texter-border text-center space-y-4 shadow-texter-card">
+        <div className="max-w-md mx-auto my-16 p-6 rounded-2xl nextex-panel bg-texter-surface border border-texter-border text-center space-y-4 shadow-texter-card">
           <div className="w-12 h-12 rounded-xl bg-texter-rose/10 border border-texter-rose/30 flex items-center justify-center mx-auto text-texter-rose">
             <Lock className="w-6 h-6" />
           </div>
@@ -423,7 +423,7 @@ export default function VigilanciaPage() {
                 <span className="text-xs font-medium">Total Abiertos</span>
                 <ShieldCheck className="w-4 h-4 text-texter-text-muted" />
               </div>
-              <div className="text-2xl font-bold text-white font-mono">
+              <div className="text-2xl font-bold text-white font-mono nextex-gradient-text">
                 {findingsCount.total}
               </div>
               <p className="text-[10px] text-texter-text-muted">Hallazgos sin resolver</p>
@@ -474,7 +474,7 @@ export default function VigilanciaPage() {
           </div>
 
           {/* Lista Real de Hallazgos Accionables (VIG-6) */}
-          <div className="rounded-2xl bg-texter-surface border border-texter-border overflow-hidden shadow-sm space-y-0 divide-y divide-texter-border/50">
+          <div className="rounded-2xl nextex-panel bg-texter-surface border border-texter-border overflow-hidden shadow-sm space-y-0 divide-y divide-texter-border/50">
             {findings.length === 0 ? (
               <div className="p-8 text-center text-xs text-texter-text-muted space-y-1">
                 <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2 opacity-80" />
@@ -656,7 +656,7 @@ export default function VigilanciaPage() {
           </div>
 
           {clients.length === 0 ? (
-            <div className="p-8 rounded-2xl bg-texter-surface border border-texter-border text-center text-xs text-texter-text-muted">
+            <div className="p-8 rounded-2xl nextex-panel bg-texter-surface border border-texter-border text-center text-xs text-texter-text-muted">
               No hay clientes activos registrados en la plataforma.
             </div>
           ) : (
@@ -699,7 +699,7 @@ export default function VigilanciaPage() {
                   <div
                     key={c.client_id}
                     className={cn(
-                      "p-5 rounded-2xl bg-texter-surface border transition-all duration-200 flex flex-col justify-between space-y-4",
+                      "p-5 rounded-2xl nextex-panel bg-texter-surface border transition-all duration-200 flex flex-col justify-between space-y-4",
                       cardBorder
                     )}
                   >
@@ -802,7 +802,7 @@ export default function VigilanciaPage() {
             </span>
           </div>
 
-          <div className="rounded-2xl bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
+          <div className="rounded-2xl nextex-panel bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
             {incidents.length === 0 ? (
               <div className="p-8 text-center text-xs text-texter-text-muted space-y-1">
                 <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2 opacity-80" />
@@ -884,7 +884,7 @@ export default function VigilanciaPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-2xl rounded-2xl bg-texter-surface border border-texter-border shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+            className="w-full max-w-2xl rounded-2xl nextex-panel bg-texter-surface border border-texter-border shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
           >
             <div className="p-4 sm:p-5 border-b border-texter-border flex items-start justify-between gap-3 bg-texter-surface-subtle/50">
               <div className="space-y-1 min-w-0">

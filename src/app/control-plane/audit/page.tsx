@@ -175,7 +175,7 @@ export default function AuditControlPage() {
         )}
 
         {/* Tabla de Eventos de Auditoría */}
-        <div className="bg-texter-surface border border-texter-border rounded-2xl overflow-hidden shadow-sm font-mono text-xs">
+        <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel overflow-hidden shadow-sm font-mono text-xs">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -246,7 +246,7 @@ export default function AuditControlPage() {
       {/* Modal de Detalle de Auditoría Sanitizado */}
       {selectedEvent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-texter-surface border border-texter-border rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl">
+          <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel w-full max-w-xl overflow-hidden shadow-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-texter-border">
               <div className="flex items-center gap-2">
                 <Shield className="w-4 h-4 text-emerald-400" />

@@ -465,7 +465,7 @@ export default function AdminFacturacionPage() {
         title="Acceso Restringido"
         subtitle="Facturación — Suscripciones & Cobro Recurrente"
       >
-        <div className="max-w-md mx-auto my-16 p-6 rounded-2xl bg-texter-surface border border-texter-border text-center space-y-4 shadow-texter-card">
+        <div className="max-w-md mx-auto my-16 p-6 rounded-2xl nextex-panel bg-texter-surface border border-texter-border text-center space-y-4 shadow-texter-card">
           <div className="w-12 h-12 rounded-xl bg-texter-rose/10 border border-texter-rose/30 flex items-center justify-center mx-auto text-texter-rose">
             <Lock className="w-6 h-6" />
           </div>
@@ -626,7 +626,7 @@ export default function AdminFacturacionPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
+          <div className="rounded-2xl nextex-panel bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
             {subscriptions.length === 0 ? (
               <div className="p-12 text-center text-xs text-texter-text-muted space-y-3">
                 <CreditCard className="w-10 h-10 text-texter-indigo mx-auto opacity-70" />
@@ -812,7 +812,7 @@ export default function AdminFacturacionPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
+          <div className="rounded-2xl nextex-panel bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
             {pendingInvoices.length === 0 ? (
               <div className="p-12 text-center text-xs text-texter-text-muted space-y-2">
                 <CheckCircle2 className="w-9 h-9 text-emerald-400 mx-auto opacity-80" />
@@ -918,7 +918,7 @@ export default function AdminFacturacionPage() {
       {/* Modal Crear / Editar Suscripción */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-lg rounded-2xl bg-texter-surface border border-texter-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="w-full max-w-lg rounded-2xl nextex-panel bg-texter-surface border border-texter-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-5 border-b border-texter-border flex items-center justify-between bg-texter-surface-subtle/50">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-texter-indigo/15 border border-indigo-500/30 flex items-center justify-center text-texter-indigo">

@@ -501,7 +501,7 @@ export default function ProteccionPage() {
         title="Acceso Restringido"
         subtitle="Protección — Bóveda & Resiliencia"
       >
-        <div className="max-w-md mx-auto my-16 p-6 rounded-2xl bg-texter-surface border border-texter-border text-center space-y-4 shadow-texter-card">
+        <div className="max-w-md mx-auto my-16 p-6 rounded-2xl nextex-panel bg-texter-surface border border-texter-border text-center space-y-4 shadow-texter-card">
           <div className="w-12 h-12 rounded-xl bg-texter-rose/10 border border-texter-rose/30 flex items-center justify-center mx-auto text-texter-rose">
             <Lock className="w-6 h-6" />
           </div>
@@ -618,7 +618,7 @@ export default function ProteccionPage() {
               <span className="text-xs font-medium">Total</span>
               <KeyRound className="w-4 h-4 text-texter-indigo" />
             </div>
-            <div className="text-2xl font-bold text-white font-mono">{stats.total}</div>
+            <div className="text-2xl font-bold text-white font-mono nextex-gradient-text">{stats.total}</div>
             <p className="text-[10px] text-texter-text-muted">Credenciales registradas</p>
           </div>
 
@@ -707,7 +707,7 @@ export default function ProteccionPage() {
           </div>
 
           {/* Tabla de Credenciales */}
-          <div className="rounded-2xl bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
+          <div className="rounded-2xl nextex-panel bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
             {credentials.length === 0 ? (
               <div className="p-12 text-center text-xs text-texter-text-muted space-y-3">
                 <KeyRound className="w-10 h-10 text-texter-indigo mx-auto opacity-70" />
@@ -872,7 +872,7 @@ export default function ProteccionPage() {
                 <span className="text-xs font-medium">Grupos Totales</span>
                 <Bug className="w-4 h-4 text-texter-rose" />
               </div>
-              <div className="text-2xl font-bold text-white font-mono">
+              <div className="text-2xl font-bold text-white font-mono nextex-gradient-text">
                 {errorSummary.total_groups}
               </div>
               <p className="text-[10px] text-texter-text-muted">Tipos de error únicos agrupados</p>
@@ -891,7 +891,7 @@ export default function ProteccionPage() {
           </div>
 
           {/* Lista de Errores */}
-          <div className="rounded-2xl bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
+          <div className="rounded-2xl nextex-panel bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
             {errors.length === 0 ? (
               <div className="p-12 text-center text-xs text-texter-text-muted space-y-2">
                 <div className="text-3xl mb-1">🎉</div>
@@ -1010,7 +1010,7 @@ export default function ProteccionPage() {
           </div>
 
           {/* Tarjetas / Tabla por cliente */}
-          <div className="rounded-2xl bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
+          <div className="rounded-2xl nextex-panel bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
             <div className="p-4 border-b border-texter-border/80 bg-texter-surface-subtle/50 flex items-center justify-between">
               <span className="text-xs font-semibold text-white uppercase tracking-wider font-mono">
                 Satélites & Proyectos ({backupClients.length})
@@ -1168,7 +1168,7 @@ export default function ProteccionPage() {
               <span>Historial de Corridas Recientes ({backupRecentRuns.length})</span>
             </h4>
 
-            <div className="rounded-2xl bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
+            <div className="rounded-2xl nextex-panel bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
               {backupRecentRuns.length === 0 ? (
                 <div className="p-8 text-center text-xs text-texter-text-muted">
                   No hay corridas de respaldo registradas en el historial.
@@ -1247,7 +1247,7 @@ export default function ProteccionPage() {
       {/* Modal Crear / Editar Credencial */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-lg rounded-2xl bg-texter-surface border border-texter-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="w-full max-w-lg rounded-2xl nextex-panel bg-texter-surface border border-texter-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             {/* Cabecera del modal */}
             <div className="p-5 border-b border-texter-border flex items-center justify-between bg-texter-surface-subtle/50">
               <div className="flex items-center gap-2.5">
@@ -1427,7 +1427,7 @@ export default function ProteccionPage() {
       {/* Modal Configuración de Respaldo (NIV1-5) */}
       {isConfigModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-lg rounded-2xl bg-texter-surface border border-texter-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="w-full max-w-lg rounded-2xl nextex-panel bg-texter-surface border border-texter-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-5 border-b border-texter-border flex items-center justify-between bg-texter-surface-subtle/50">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-texter-cyan/15 border border-cyan-500/30 flex items-center justify-center text-texter-cyan">

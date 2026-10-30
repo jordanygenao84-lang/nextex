@@ -11,7 +11,7 @@ export default function PrivacidadPage() {
           constituye asesoría legal.
         </p>
 
-        <section className="space-y-2">
+        <section className="nextex-panel rounded-2xl p-5 space-y-2">
           <h2 className="text-base font-semibold text-white">Qué datos recogemos</h2>
           <ul className="list-disc pl-5 space-y-1">
             <li>Datos de contacto de los negocios clientes (nombre, correo, teléfono) para operar su cuenta.</li>
@@ -21,7 +21,7 @@ export default function PrivacidadPage() {
           </ul>
         </section>
 
-        <section className="space-y-2">
+        <section className="nextex-panel rounded-2xl p-5 space-y-2">
           <h2 className="text-base font-semibold text-white">Qué datos NO recogemos ni guardamos</h2>
           <ul className="list-disc pl-5 space-y-1">
             <li>Contraseñas: solo las gestiona el proveedor de autenticación, nunca en texto plano.</li>
@@ -30,7 +30,7 @@ export default function PrivacidadPage() {
           </ul>
         </section>
 
-        <section className="space-y-2">
+        <section className="nextex-panel rounded-2xl p-5 space-y-2">
           <h2 className="text-base font-semibold text-white">Dónde se guardan y por cuánto tiempo</h2>
           <p>
             Los datos viven en Supabase y Vercel, con respaldos semanales
@@ -40,7 +40,7 @@ export default function PrivacidadPage() {
           </p>
         </section>
 
-        <section className="space-y-2">
+        <section className="nextex-panel rounded-2xl p-5 space-y-2">
           <h2 className="text-base font-semibold text-white">Tus derechos</h2>
           <p>
             Puedes pedir acceso, rectificación o supresión de tus datos

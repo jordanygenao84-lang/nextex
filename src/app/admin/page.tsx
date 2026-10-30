@@ -95,7 +95,7 @@ export default function AdminOverviewPage() {
         title="Acceso Restringido"
         subtitle="Área administrativa de NEXTEХ"
       >
-        <div className="max-w-md mx-auto my-16 p-6 rounded-2xl bg-texter-surface border border-texter-border text-center space-y-4">
+        <div className="max-w-md mx-auto my-16 p-6 rounded-2xl nextex-panel bg-texter-surface border border-texter-border text-center space-y-4">
           <div className="w-12 h-12 rounded-xl bg-texter-rose/10 border border-texter-rose/30 flex items-center justify-center mx-auto text-texter-rose">
             <Lock className="w-6 h-6" />
           </div>
@@ -154,7 +154,7 @@ export default function AdminOverviewPage() {
               <span className="text-xs font-medium">Clientes Activos</span>
               <Users className="w-4 h-4 text-texter-cyan" />
             </div>
-            <div className="text-2xl font-bold text-white font-mono">
+            <div className="text-2xl font-bold text-white font-mono nextex-gradient-text">
               {metrics?.active_clients ?? 0}
               <span className="text-xs text-texter-text-muted font-normal ml-1.5">
                 / {metrics?.total_clients ?? 0} totales
@@ -167,7 +167,7 @@ export default function AdminOverviewPage() {
               <span className="text-xs font-medium">Conversaciones Hoy</span>
               <MessageSquare className="w-4 h-4 text-texter-indigo" />
             </div>
-            <div className="text-2xl font-bold text-white font-mono">
+            <div className="text-2xl font-bold text-white font-mono nextex-gradient-text">
               {metrics?.conversations_today ?? 0}
             </div>
             <div className="text-[11px] text-texter-text-muted">
@@ -204,14 +204,14 @@ export default function AdminOverviewPage() {
 
         {/* Consumo y Conversaciones Recientes */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="p-5 rounded-2xl bg-texter-surface border border-texter-border space-y-4">
+          <div className="p-5 rounded-2xl nextex-panel bg-texter-surface border border-texter-border space-y-4">
             <h3 className="text-sm font-semibold text-white flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-texter-indigo" />
               <span>Consumo Global del Mes</span>
             </h3>
             <div className="p-4 rounded-xl bg-texter-surface-subtle border border-texter-border space-y-2">
               <div className="text-xs text-texter-text-muted">Tokens procesados este mes</div>
-              <div className="text-3xl font-bold text-white font-mono">
+              <div className="text-3xl font-bold text-white font-mono nextex-gradient-text">
                 {(metrics?.tokens_this_month ?? 0).toLocaleString()}
               </div>
               <p className="text-[11px] text-texter-text-muted">
@@ -220,7 +220,7 @@ export default function AdminOverviewPage() {
             </div>
           </div>
 
-          <div className="p-5 rounded-2xl bg-texter-surface border border-texter-border space-y-4">
+          <div className="p-5 rounded-2xl nextex-panel bg-texter-surface border border-texter-border space-y-4">
             <h3 className="text-sm font-semibold text-white flex items-center gap-2">
               <MessageSquare className="w-4 h-4 text-texter-cyan" />
               <span>Últimas Conversaciones</span>

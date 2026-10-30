@@ -88,7 +88,7 @@ export default function JobDetailPage() {
 
         {/* Ficha técnica del Job */}
         {job && (
-          <div className="bg-texter-surface border border-texter-border rounded-2xl p-5 space-y-4">
+          <div className="bg-texter-surface border border-texter-border rounded-2xl nextex-panel p-5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-white font-bold text-lg">{job.name}</h2>

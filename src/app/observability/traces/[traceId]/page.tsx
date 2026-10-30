@@ -201,7 +201,7 @@ export default function TraceDetailPage() {
 
         {/* Desglose de Tiempos */}
         {traceData?.timing && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-texter-surface p-4 rounded-2xl border border-texter-border text-xs font-mono">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-texter-surface p-4 rounded-2xl nextex-panel border border-texter-border text-xs font-mono">
             <div>
               <span className="text-texter-text-dim block text-[10px]">Wall-Clock Global</span>
               <span className="text-white text-base font-bold">

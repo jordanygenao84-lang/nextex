@@ -171,7 +171,7 @@ export default function AdminAnaliticaPage() {
         title="Acceso Restringido"
         subtitle="Analítica — Inteligencia Central de Negocio"
       >
-        <div className="max-w-md mx-auto my-16 p-6 rounded-2xl bg-texter-surface border border-texter-border text-center space-y-4 shadow-texter-card">
+        <div className="max-w-md mx-auto my-16 p-6 rounded-2xl nextex-panel bg-texter-surface border border-texter-border text-center space-y-4 shadow-texter-card">
           <div className="w-12 h-12 rounded-xl bg-texter-rose/10 border border-texter-rose/30 flex items-center justify-center mx-auto text-texter-rose">
             <Lock className="w-6 h-6" />
           </div>
@@ -347,7 +347,7 @@ export default function AdminAnaliticaPage() {
               </span>
               <TrendingUp className="w-4 h-4 text-texter-cyan" />
             </div>
-            <div className="text-2xl font-bold text-white font-mono">
+            <div className="text-2xl font-bold text-white font-mono nextex-gradient-text">
               {activeSubsCount}
             </div>
             <p className="text-[10px] text-texter-text-muted">
@@ -384,7 +384,7 @@ export default function AdminAnaliticaPage() {
             </button>
           </div>
 
-          <div className="rounded-2xl bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
+          <div className="rounded-2xl nextex-panel bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
             {clientRows.length === 0 ? (
               <div className="p-12 text-center text-xs text-texter-text-muted">
                 No hay clientes registrados para mostrar analítica.
@@ -561,7 +561,7 @@ export default function AdminAnaliticaPage() {
             </p>
           </div>
 
-          <div className="rounded-2xl bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
+          <div className="rounded-2xl nextex-panel bg-texter-surface border border-texter-border overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>

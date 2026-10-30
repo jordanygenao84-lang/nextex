@@ -20,11 +20,11 @@ export const Card = React.forwardRef<HTMLDivElement, CardProps>(
     ref
   ) => {
     const variantStyles = {
-      default: "bg-texter-surface border border-texter-border",
-      elevated: "bg-texter-surface-elevated border border-texter-border shadow-texter-card",
+      default: "nextex-panel",
+      elevated: "nextex-panel",
       subtle: "bg-texter-surface-subtle border border-texter-border-subtle",
       interactive:
-        "bg-texter-surface border border-texter-border hover:border-texter-border-hover hover:bg-texter-surface-hover cursor-pointer transition-all duration-200 active:scale-[0.995]",
+        "nextex-panel nextex-interactive cursor-pointer active:scale-[0.995]",
     };
 
     const glowStyles = {
