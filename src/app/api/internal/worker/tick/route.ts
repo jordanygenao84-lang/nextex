@@ -7,6 +7,7 @@ import { checkCredentialExpirations } from "@/lib/protection/credentials";
 import { executeScheduledBackups } from "@/lib/protection/backups";
 import { processSubscriptions } from "@/lib/billing/subscriptions";
 import { executeDomainChecks } from "@/lib/domains/check";
+import { executeSelfChecks } from "@/lib/vigia/selfcheck";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -100,6 +101,14 @@ export async function POST(req: NextRequest) {
       console.error("[DOMAINS] Error en chequeo de dominios durante tick:", domErr);
     }
 
+    // 7. Autodiagnóstico interno VIGÍA (selfcheck, puerta interna de 15 min)
+    let selfcheckResult: any = null;
+    try {
+      selfcheckResult = await executeSelfChecks(supabase);
+    } catch (selfErr) {
+      console.error("[SELFCHECK] Error en autodiagnóstico durante tick:", selfErr);
+    }
+
     return NextResponse.json({
       success: true,
       timestamp: new Date().toISOString(),
@@ -110,6 +119,7 @@ export async function POST(req: NextRequest) {
       scheduled_backups: scheduledBackups,
       subscriptions: subscriptionsResult,
       domains: domainsResult,
+      selfcheck: selfcheckResult,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Internal Worker Error" }, { status: 500 });
