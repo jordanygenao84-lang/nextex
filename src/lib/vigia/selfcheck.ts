@@ -113,13 +113,32 @@ export async function executeSelfChecks(
   // Check 1: GET /api/health interno
   // ---------------------------------------------------------------------------
   try {
-    const appUrl = (
-      process.env.NEXT_PUBLIC_APP_URL ||
-      process.env.APP_URL ||
-      "http://localhost:3000"
-    )
-      .trim()
-      .replace(/\/+$/, "");
+    const isDev = process.env.NODE_ENV === "development";
+    let appUrl: string;
+
+    if (isDev) {
+      appUrl = (
+        process.env.NEXT_PUBLIC_APP_URL ||
+        process.env.APP_URL ||
+        "http://localhost:3000"
+      ).trim();
+    } else {
+      const vercelUrl = process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL.trim()}`
+        : null;
+      appUrl = (
+        process.env.NEXT_PUBLIC_APP_URL ||
+        process.env.APP_URL ||
+        vercelUrl ||
+        "https://nextex-seven.vercel.app"
+      ).trim();
+
+      if (appUrl.includes("localhost") || appUrl.includes("127.0.0.1")) {
+        appUrl = vercelUrl || "https://nextex-seven.vercel.app";
+      }
+    }
+
+    appUrl = appUrl.replace(/\/+$/, "");
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 6000);
