@@ -123,18 +123,14 @@ export async function executeSelfChecks(
         "http://localhost:3000"
       ).trim();
     } else {
-      const vercelUrl = process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL.trim()}`
-        : null;
       appUrl = (
         process.env.NEXT_PUBLIC_APP_URL ||
         process.env.APP_URL ||
-        vercelUrl ||
         "https://nextex-seven.vercel.app"
       ).trim();
 
       if (appUrl.includes("localhost") || appUrl.includes("127.0.0.1")) {
-        appUrl = vercelUrl || "https://nextex-seven.vercel.app";
+        appUrl = "https://nextex-seven.vercel.app";
       }
     }
 
