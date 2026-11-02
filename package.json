@@ -21,7 +21,7 @@
     "audit:integrations": "node scripts/audit-integrations.mjs"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.5.2",
+    "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.45.4",
     "cheerio": "^1.2.0",
     "lucide-react": "^0.453.0",
