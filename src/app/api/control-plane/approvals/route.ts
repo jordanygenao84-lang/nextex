@@ -155,25 +155,49 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Ejecutar transición autorizada
-    const newStatus = action === "approve" ? "approved" : "rejected";
-    const { data: updated, error: updateErr } = await (supabase.from("approval_requests") as any)
-      .update({
-        status: newStatus,
-        approver_id: user.id,
-        comment: comment || null,
-        resolved_at: new Date().toISOString(),
-      })
-      .eq("id", approval.id)
-      .select()
-      .single();
+    // Ejecutar transición autorizada vía RPC transaccional
+    // (Lote 1, H-007): el trigger protect_approval_transition rechaza el
+    // UPDATE directo pending→approved/rejected; solo
+    // claim_agent_step_approval_v2 puede resolver la solicitud. La RPC es
+    // SECURITY DEFINER y valida approver_id = auth.uid(), así que corre
+    // con el cliente del usuario, no con service client.
+    const rpcResult = await (supabase as any).rpc("claim_agent_step_approval_v2", {
+      p_approval_id: approval.id,
+      p_expected_hash: payloadHash || approval.payload_hash,
+      p_decision: action === "approve" ? "approved" : "rejected",
+      p_comment: comment || null,
+    });
 
-    if (updateErr) throw updateErr;
+    if (rpcResult.error) throw rpcResult.error;
+
+    if (!rpcResult.data?.success) {
+      const errorCode = rpcResult.data?.error_code || "TOOL_APPROVAL_INVALID";
+      const statusCode = errorCode === "TOOL_APPROVAL_REPLAY" ? 409 : 403;
+      return NextResponse.json(
+        {
+          decision: "deny",
+          error: {
+            code: errorCode,
+            message:
+              rpcResult.data?.error_message || "La aprobación fue denegada por la base de datos.",
+            statusCode,
+          },
+        },
+        { status: statusCode }
+      );
+    }
+
+    // Re-leer la fila resuelta (SELECT permitido por RLS) para conservar
+    // la forma de éxito que espera la página.
+    const { data: updated } = await (supabase.from("approval_requests") as any)
+      .select("*")
+      .eq("id", approval.id)
+      .maybeSingle();
 
     return NextResponse.json({
       success: true,
       decision: "allow",
-      approval: updated,
+      approval: updated ?? null,
     });
   } catch (err: any) {
     return NextResponse.json(
