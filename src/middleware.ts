@@ -52,6 +52,7 @@ export async function middleware(request: NextRequest) {
     if (isProtectedPath) {
       const redirectUrl = new URL("/login", request.url);
       redirectUrl.searchParams.set("redirect", pathname);
+      redirectUrl.searchParams.set("reason", "auth_config_missing");
       return NextResponse.redirect(redirectUrl);
     }
     return new NextResponse("Servicio no disponible: configuración de autenticación incompleta.", {
@@ -114,6 +115,7 @@ export async function middleware(request: NextRequest) {
       }
       const redirectUrl = new URL("/login", request.url);
       redirectUrl.searchParams.set("redirect", pathname);
+      redirectUrl.searchParams.set("reason", "profile_unavailable");
       return NextResponse.redirect(redirectUrl);
     }
 
@@ -156,6 +158,7 @@ export async function middleware(request: NextRequest) {
       }
       const redirectUrl = new URL("/login", request.url);
       redirectUrl.searchParams.set("redirect", pathname);
+      redirectUrl.searchParams.set("reason", "profile_unavailable");
       return NextResponse.redirect(redirectUrl);
     }
 
@@ -166,9 +169,24 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Redirigir a dashboard si usuario autenticado intenta entrar a login/register
+  // Redirigir a dashboard si usuario autenticado intenta entrar a login/register,
+  // SALVO que venga de una denegación del middleware (reason=suspended /
+  // profile_unavailable / auth_config_missing): en ese caso la página de
+  // login debe RENDERIZAR para mostrar el aviso correspondiente. Sin esta
+  // excepción, el usuario denegado entra en bucle /dashboard ↔ /login
+  // (ERR_TOO_MANY_REDIRECTS, verificado en vivo en N6a del Lote 3): el
+  // middleware lo manda a /login y esta regla lo devuelve a /dashboard.
+  // El aviso de suspendido ya existía en la página de login
+  // (suspendedNotice) pero era código muerto por este bucle.
   if (isAuthPath && user) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    const reason = request.nextUrl.searchParams.get("reason");
+    const denialReason =
+      reason === "suspended" ||
+      reason === "profile_unavailable" ||
+      reason === "auth_config_missing";
+    if (!denialReason) {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
   }
 
   return response;

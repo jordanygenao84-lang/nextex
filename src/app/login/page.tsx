@@ -40,6 +40,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const redirectPath = sanitizeRedirectPath(searchParams.get("redirect"));
   const suspendedNotice = searchParams.get("reason") === "suspended";
+  const profileNotice = searchParams.get("reason") === "profile_unavailable";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -162,6 +163,13 @@ function LoginForm() {
             <div className="mb-5 p-3 rounded-xl bg-texter-amber/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
               <span>Tu cuenta está suspendida. Contacta al administrador.</span>
+            </div>
+          )}
+
+          {profileNotice && (
+            <div className="mb-5 p-3 rounded-xl bg-texter-amber/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+              <span>No se pudo verificar tu perfil. Cierra sesión e inténtalo de nuevo o contacta al administrador.</span>
             </div>
           )}
 
