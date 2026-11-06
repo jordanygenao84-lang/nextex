@@ -1,6 +1,8 @@
 /**
  * NEXTEХ OmniEngine — Gestor de Políticas de Cuota y Consumo
  * Control de límites por plan (Free, Pro, Enterprise) y auditoría de uso.
+ * NOTA: Los límites maxAgents nacen en null (sin límite configurado);
+ * los números definitivos los define JC y quedan pendientes de asignación.
  */
 
 import { PlanQuotaPolicy } from "../types";
@@ -21,6 +23,7 @@ export const PLAN_POLICIES: Record<"free" | "pro" | "enterprise", PlanQuotaPolic
     allowVision: true,
     allowToolCalling: true,
     concurrencyLimit: 2,
+    maxAgents: null,
   },
   pro: {
     plan: "pro",
@@ -31,6 +34,7 @@ export const PLAN_POLICIES: Record<"free" | "pro" | "enterprise", PlanQuotaPolic
     allowVision: true,
     allowToolCalling: true,
     concurrencyLimit: 10,
+    maxAgents: null,
   },
   enterprise: {
     plan: "enterprise",
@@ -41,6 +45,7 @@ export const PLAN_POLICIES: Record<"free" | "pro" | "enterprise", PlanQuotaPolic
     allowVision: true,
     allowToolCalling: true,
     concurrencyLimit: 50,
+    maxAgents: null,
   },
 };
 

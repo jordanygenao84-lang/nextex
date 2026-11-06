@@ -3,6 +3,9 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { AuditManager } from "@/lib/control-plane";
 import { AgentErrorCodes } from "@/lib/agents/types/errors";
 import { CreateAgentDTO } from "@/lib/agents/types";
+import { defaultPermissionEngine } from "@/lib/agents/governance/permissions";
+import { defaultQuotaManager } from "@/lib/omniengine/quotas/quota-manager";
+import { defaultToolRegistry } from "@/lib/agents/tools/registry";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +35,21 @@ export async function GET(req: NextRequest) {
       .neq("status", "archived");
 
     if (workspaceId) {
+      // H-012: Validar membresía real en workspace_members antes de filtrar
+      const { data: member, error: memberErr } = await (supabase
+        .from("workspace_members") as any)
+        .select("role")
+        .eq("workspace_id", workspaceId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (memberErr || !member) {
+        return NextResponse.json(
+          { error: { code: "PERMISSION_DENIED", message: "No eres miembro de ese workspace." } },
+          { status: 403 }
+        );
+      }
+
       query = query.eq("workspace_id", workspaceId);
     }
 
@@ -109,6 +127,99 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // H-012: Validar membresía real en targetWorkspaceId antes del insert
+    const { data: member, error: memberErr } = await (supabase
+      .from("workspace_members") as any)
+      .select("role")
+      .eq("workspace_id", targetWorkspaceId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (memberErr || !member) {
+      return NextResponse.json(
+        { error: { code: "PERMISSION_DENIED", message: "No eres miembro de ese workspace." } },
+        { status: 403 }
+      );
+    }
+
+    // H-013 a: Exigir permiso agents.create
+    const canCreate = await defaultPermissionEngine.can(user.id, targetWorkspaceId, "agents.create", { supabaseClient: supabase });
+    if (!canCreate.allowed) {
+      return NextResponse.json(
+        { error: { code: "PERMISSION_DENIED", message: canCreate.reason } },
+        { status: 403 }
+      );
+    }
+
+    // H-013 b: Estado activo del usuario en profiles (fail-closed)
+    const { data: userProfile, error: profileErr } = await (supabase
+      .from("profiles") as any)
+      .select("status, plan")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profileErr || !userProfile || userProfile.status !== "active") {
+      return NextResponse.json(
+        { error: { code: "ACCOUNT_SUSPENDED", message: "Cuenta suspendida o perfil no verificado." } },
+        { status: 403 }
+      );
+    }
+
+    // H-013 c: Estado activo de la empresa si existe fila en clients
+    const { data: clientRow } = await (supabase
+      .from("clients") as any)
+      .select("status")
+      .eq("workspace_id", targetWorkspaceId)
+      .maybeSingle();
+
+    if (clientRow && clientRow.status !== "active") {
+      return NextResponse.json(
+        { error: { code: "ACCOUNT_SUSPENDED", message: "El servicio del workspace está suspendido." } },
+        { status: 403 }
+      );
+    }
+
+    // H-013 d: Límites de plan (maxAgents)
+    const planPolicy = defaultQuotaManager.getPolicy((userProfile.plan as any) || "free");
+    if (typeof planPolicy.maxAgents === "number") {
+      const { count, error: countErr } = await (supabase
+        .from("agents") as any)
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", targetWorkspaceId)
+        .neq("status", "archived");
+
+      if (!countErr && count !== null && count >= planPolicy.maxAgents) {
+        return NextResponse.json(
+          {
+            error: {
+              code: AgentErrorCodes.AGENT_LIMIT_EXCEEDED,
+              message: "Has alcanzado el límite de agentes de tu plan.",
+            },
+          },
+          { status: 429 }
+        );
+      }
+    }
+
+    // H-014 a: Validar tool_ids contra el registro antes de insertar
+    if (body.tool_ids && Array.isArray(body.tool_ids) && body.tool_ids.length > 0) {
+      for (const toolId of body.tool_ids) {
+        const tool = defaultToolRegistry.getTool(toolId);
+        if (!tool) {
+          return NextResponse.json(
+            {
+              error: {
+                code: AgentErrorCodes.TOOL_NOT_FOUND,
+                message: `Herramienta desconocida o no registrada: '${toolId}'.`,
+                statusCode: 400,
+              },
+            },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
     // 1. Insertar agente
     const { data: agent, error: agentErr } = await ((supabase
       .from("agents") as any)
@@ -132,7 +243,7 @@ export async function POST(req: NextRequest) {
       throw agentErr || new Error("Fallo al crear agente en la base de datos.");
     }
 
-    // 2. Asociar herramientas autorizadas si se especificaron
+    // 2. Asociar herramientas autorizadas si se especificaron (H-014 b: compensación ante error)
     if (body.tool_ids && Array.isArray(body.tool_ids) && body.tool_ids.length > 0) {
       const toolsToInsert = body.tool_ids.map((toolId) => ({
         agent_id: agent.id,
@@ -140,7 +251,30 @@ export async function POST(req: NextRequest) {
         enabled: true,
       }));
 
-      await (supabase.from("agent_tools") as any).insert(toolsToInsert);
+      const { error: toolsErr } = await (supabase.from("agent_tools") as any).insert(toolsToInsert);
+      if (toolsErr) {
+        const { error: deleteErr } = await (supabase.from("agents") as any).delete().eq("id", agent.id);
+        if (deleteErr) {
+          return NextResponse.json(
+            {
+              error: {
+                code: "AGENT_TOOLS_FAILED",
+                message: `El agente se creó pero no se pudieron asociar sus herramientas, y la compensación falló. Quedó un agente huérfano con id '${agent.id}' para limpieza manual. Error de herramientas: ${toolsErr.message}`,
+              },
+            },
+            { status: 500 }
+          );
+        }
+        return NextResponse.json(
+          {
+            error: {
+              code: "AGENT_TOOLS_FAILED",
+              message: "El agente se creó pero no se pudieron asociar sus herramientas; se eliminó para no dejarlo huérfano.",
+            },
+          },
+          { status: 500 }
+        );
+      }
     }
 
     // 3. Auditoría: el ciclo de vida de agentes no se veía en el panel de

@@ -68,21 +68,7 @@ export default function SettingsPage() {
         if (memberRows && memberRows.length > 0) {
           setMembers(memberRows);
         } else {
-          // Fallback con usuario activo
-          setMembers([
-            {
-              id: "mem-owner-1",
-              user_id: user?.id || "u-1",
-              role: "owner",
-              email: user?.email || "Jordanygenao84@gmail.com",
-              full_name: profile?.full_name || "Jordany Genao",
-              status: "active",
-              profiles: {
-                full_name: profile?.full_name || "Jordany Genao",
-                plan: profile?.plan || "pro",
-              },
-            },
-          ]);
+          setMembers([]);
         }
 
         // Cargar overrides
@@ -206,9 +192,9 @@ export default function SettingsPage() {
     }
   };
 
-  const userPlan = (profile?.plan || "free").toUpperCase();
-  const userStatus = profile?.status || "active";
-  const isOwner = members.find((m) => m.user_id === user?.id)?.role === "owner" || true;
+  const userPlan = profile?.plan ? profile.plan.toUpperCase() : "SIN VERIFICAR";
+  const userStatus = profile?.status || "SIN VERIFICAR";
+  const isOwner = members.find((m) => m.user_id === user?.id)?.role === "owner";
 
   return (
     <DashboardShell

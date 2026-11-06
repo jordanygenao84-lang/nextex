@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { AuditManager } from "@/lib/control-plane";
 import { AgentErrorCodes } from "@/lib/agents/types/errors";
 import { UpdateAgentDTO } from "@/lib/agents/types";
+import { defaultToolRegistry } from "@/lib/agents/tools/registry";
 
 export const dynamic = "force-dynamic";
 
@@ -97,14 +98,82 @@ export async function PATCH(
 
     // Actualizar tools si se especificaron
     if (body.tool_ids && Array.isArray(body.tool_ids)) {
-      await (supabase.from("agent_tools") as any).delete().eq("agent_id", params.id);
+      // 1. Validar tool_ids contra el registro
+      for (const toolId of body.tool_ids) {
+        const tool = defaultToolRegistry.getTool(toolId);
+        if (!tool) {
+          return NextResponse.json(
+            {
+              error: {
+                code: AgentErrorCodes.TOOL_NOT_FOUND,
+                message: `Herramienta desconocida o no registrada: '${toolId}'.`,
+                statusCode: 400,
+              },
+            },
+            { status: 400 }
+          );
+        }
+      }
+
+      // 2. Leer herramientas actuales para poder restaurar si falla el insert
+      const { data: previousTools } = await (supabase.from("agent_tools") as any)
+        .select("tool_id, enabled")
+        .eq("agent_id", params.id);
+
+      const { error: deleteErr } = await (supabase.from("agent_tools") as any).delete().eq("agent_id", params.id);
+      if (deleteErr) {
+        return NextResponse.json(
+          {
+            error: {
+              code: AgentErrorCodes.INTERNAL_AGENT_ERROR,
+              message: `Error al limpiar herramientas anteriores del agente: ${deleteErr.message}`,
+              statusCode: 500,
+            },
+          },
+          { status: 500 }
+        );
+      }
+
       if (body.tool_ids.length > 0) {
         const toolsToInsert = body.tool_ids.map((toolId) => ({
           agent_id: params.id,
           tool_id: toolId,
           enabled: true,
         }));
-        await (supabase.from("agent_tools") as any).insert(toolsToInsert);
+        const { error: insertErr } = await (supabase.from("agent_tools") as any).insert(toolsToInsert);
+        if (insertErr) {
+          // Intentar restaurar herramientas anteriores
+          if (previousTools && previousTools.length > 0) {
+            const rollbackTools = previousTools.map((t: any) => ({
+              agent_id: params.id,
+              tool_id: t.tool_id,
+              enabled: t.enabled ?? true,
+            }));
+            const { error: restoreErr } = await (supabase.from("agent_tools") as any).insert(rollbackTools);
+            if (restoreErr) {
+              return NextResponse.json(
+                {
+                  error: {
+                    code: "AGENT_TOOLS_FAILED",
+                    message: `Error al asociar nuevas herramientas y falló la restauración de las anteriores. Las herramientas del agente con id '${params.id}' quedaron en estado desconocido. Error: ${insertErr.message}. Error restauración: ${restoreErr.message}`,
+                    statusCode: 500,
+                  },
+                },
+                { status: 500 }
+              );
+            }
+          }
+          return NextResponse.json(
+            {
+              error: {
+                code: "AGENT_TOOLS_FAILED",
+                message: `Error al asociar herramientas al agente; se restauraron las herramientas anteriores. Error: ${insertErr.message}`,
+                statusCode: 500,
+              },
+            },
+            { status: 500 }
+          );
+        }
       }
     }
 

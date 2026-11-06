@@ -43,29 +43,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       // 1. Obtener perfil
-      const { data: profileData } = await supabase
+      const { data: profileData, error: profileErr } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", currentUser.id)
         .single();
 
-      if (profileData) {
+      if (!profileErr && profileData) {
         setProfile(profileData as Profile);
       } else {
-        // Fallback profile derivado de metadata
-        setProfile({
-          id: currentUser.id,
-          full_name: currentUser.user_metadata?.full_name || currentUser.email?.split("@")[0] || "Usuario NEXTEХ",
-          avatar_url: null,
-          plan: "free",
-          status: "active",
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
+        setProfile(null);
       }
 
-      // 2. Obtener workspace personal
-      const { data: workspaceData } = await supabase
+      // 2. Obtener workspace personal y verificar membresía real en workspace_members (fail-closed)
+      const { data: workspaceData, error: wsErr } = await supabase
         .from("workspaces")
         .select("*")
         .eq("owner_id", currentUser.id)
@@ -73,11 +64,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .limit(1)
         .maybeSingle();
 
-      if (workspaceData) {
-        setWorkspace(workspaceData as Workspace);
+      if (!wsErr && workspaceData) {
+        const ws = workspaceData as Workspace;
+        const { data: memberData, error: memberErr } = await (supabase
+          .from("workspace_members") as any)
+          .select("role")
+          .eq("workspace_id", ws.id)
+          .eq("user_id", currentUser.id)
+          .maybeSingle();
+
+        if (!memberErr && memberData) {
+          setWorkspace(workspaceData as Workspace);
+        } else {
+          setWorkspace(null);
+        }
+      } else {
+        setWorkspace(null);
       }
     } catch (err) {
       console.error("Error al cargar datos del perfil:", err);
+      setProfile(null);
+      setWorkspace(null);
     } finally {
       setIsLoading(false);
     }

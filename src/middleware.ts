@@ -81,13 +81,12 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // SEC-003: enforcear suspensión de usuario. Solo se bloquea cuando el
-  // status es explícitamente 'suspended' o 'pending'; cualquier otro valor,
-  // perfil ausente o error de lectura permite el paso (fail-open ante
-  // errores transitorios para no bloquear a todos los usuarios).
+  // SEC-003: enforcear suspensión y verificación de usuario (fail-closed).
+  // Si el perfil no puede verificarse (error o ausente), o su status es 'suspended'/'pending',
+  // se deniega el acceso a rutas protegidas y APIs autenticadas.
   // No aplica a intakes públicos de máquina (widget, vigía, errores,
-  // analítica, soporte, webhooks, loterías, salud), que autentican por
-  // llave de sitio y no por sesión de usuario.
+  // analítica, soporte, webhooks, loterías, salud, modelos), que autentican por
+  // llave de sitio o son públicos por diseño.
   const isPublicApi =
     pathname.startsWith("/api/widget/") ||
     pathname === "/api/vigia/events" ||
@@ -100,11 +99,24 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/health") ||
     pathname === "/api/ai/models";
   if (user && (isProtectedPath || pathname.startsWith("/api/")) && !isPublicApi) {
-    const { data: profile } = await supabase
+    const { data: profile, error: profileErr } = await supabase
       .from("profiles")
       .select("status")
       .eq("id", user.id)
       .maybeSingle();
+
+    if (profileErr || !profile) {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json(
+          { error: { code: "PROFILE_UNAVAILABLE", message: "No se pudo verificar el perfil." } },
+          { status: 401 }
+        );
+      }
+      const redirectUrl = new URL("/login", request.url);
+      redirectUrl.searchParams.set("redirect", pathname);
+      return NextResponse.redirect(redirectUrl);
+    }
+
     const status = (profile as { status?: string } | null)?.status;
     if (status === "suspended" || status === "pending") {
       if (pathname.startsWith("/api/")) {
@@ -131,11 +143,22 @@ export async function middleware(request: NextRequest) {
   // (nextLevel aal2) pero su sesión actual es aal1, exigir el reto TOTP
   // antes de entrar a rutas protegidas. Sin factores, nextLevel es aal1
   // y no hay redirección. La página /mfa-challenge no está protegida, así
-  // que no hay bucle. Ante un error del chequeo se permite el paso
-  // (fail-open ante errores transitorios, igual que el chequeo de perfil):
-  // un error no es una sesión aal1 confirmada.
+  // que no hay bucle. Ante un error del chequeo (fail-closed), se deniega el
+  // paso a rutas protegidas redirigiendo a /login o 401 en API.
   if (user && isProtectedPath) {
-    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    const { data: aal, error: mfaErr } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (mfaErr) {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json(
+          { error: { code: "PROFILE_UNAVAILABLE", message: "No se pudo verificar el perfil." } },
+          { status: 401 }
+        );
+      }
+      const redirectUrl = new URL("/login", request.url);
+      redirectUrl.searchParams.set("redirect", pathname);
+      return NextResponse.redirect(redirectUrl);
+    }
+
     if (aal?.nextLevel === "aal2" && aal?.currentLevel !== "aal2") {
       const challengeUrl = new URL("/mfa-challenge", request.url);
       challengeUrl.searchParams.set("redirect", pathname);

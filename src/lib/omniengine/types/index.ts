@@ -132,4 +132,5 @@ export interface PlanQuotaPolicy {
   allowVision: boolean;
   allowToolCalling: boolean;
   concurrencyLimit: number;
+  maxAgents: number | null;
 }
