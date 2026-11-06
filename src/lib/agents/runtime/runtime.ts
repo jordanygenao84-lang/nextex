@@ -24,6 +24,17 @@ import {
   ExecuteAgentRunDTO,
 } from "../types";
 import { AgentError, AgentErrorCodes } from "../types/errors";
+import { createServiceClient } from "@/lib/supabase/server";
+let runWriteClientInstance: any = null;
+
+function getRunWriteClient(callerClient?: any): any {
+  if (!callerClient) return null;
+  if (!runWriteClientInstance) {
+    runWriteClientInstance = createServiceClient();
+  }
+  return runWriteClientInstance;
+}
+
 
 export interface ExecutionResult {
   run: AgentRun;
@@ -215,7 +226,7 @@ export class AgentRuntime {
       };
 
       if (dto.job_run_id) {
-        await (supabase.from("agent_runs") as any)
+        await (getRunWriteClient(supabase).from("agent_runs") as any)
           .update({ job_run_id: dto.job_run_id })
           .eq("id", run.id);
       }
@@ -476,7 +487,7 @@ export class AgentRuntime {
             // Persistir paso en agent_run_steps. Un fallo aquí NO puede
             // tragarse en silencio: sin paso persistido el run quedaría en
             // espera para siempre sin solicitud aprobable.
-            const { error: approvalStepErr } = await (supabase.from("agent_run_steps") as any).insert({
+            const { error: approvalStepErr } = await (getRunWriteClient(supabase).from("agent_run_steps") as any).insert({
               id: approvalStep.id,
               run_id: approvalStep.run_id,
               workspace_id: approvalStep.workspace_id,
@@ -531,7 +542,7 @@ export class AgentRuntime {
               });
             }
 
-            await (supabase.from("agent_runs") as any)
+            await (getRunWriteClient(supabase).from("agent_runs") as any)
               .update({
                 status: run.status,
                 output: run.output,
@@ -606,7 +617,7 @@ export class AgentRuntime {
       run.updated_at = new Date().toISOString();
 
       if (supabase) {
-        await (supabase.from("agent_runs") as any)
+        await (getRunWriteClient(supabase).from("agent_runs") as any)
           .update({
             status: run.status,
             output: run.output,
@@ -690,7 +701,7 @@ export class AgentRuntime {
         run.updated_at = new Date().toISOString();
 
         if (supabase) {
-          await (supabase.from("agent_runs") as any)
+          await (getRunWriteClient(supabase).from("agent_runs") as any)
             .update({
               status: run.status,
               updated_at: run.updated_at,
@@ -721,7 +732,7 @@ export class AgentRuntime {
       run.updated_at = new Date().toISOString();
 
       if (supabase) {
-        await (supabase.from("agent_runs") as any)
+        await (getRunWriteClient(supabase).from("agent_runs") as any)
           .update({
             status: run.status,
             error_code: run.error_code,
@@ -816,7 +827,7 @@ export class AgentRuntime {
 
       if (decision === "reject") {
         const finalOutput = `[ACCION DENEGADA]: El operador humano rechazó la ejecución de la herramienta '${toolId}'. Motivo: ${comment || "Sin comentario adicional"}.`;
-        const { data: updatedRun } = await (supabase.from("agent_runs") as any)
+        const { data: updatedRun } = await (getRunWriteClient(supabase).from("agent_runs") as any)
           .update({
             status: "completed",
             output: finalOutput,
@@ -854,7 +865,7 @@ export class AgentRuntime {
         });
       } catch (execErr: any) {
         // Si la herramienta falla tras la aprobación, el step pasa a failed
-        await (supabase.from("agent_run_steps") as any)
+        await (getRunWriteClient(supabase).from("agent_run_steps") as any)
           .update({
             status: "failed",
             error_code: execErr?.code || AgentErrorCodes.TOOL_EXECUTION_FAILED,
@@ -866,7 +877,7 @@ export class AgentRuntime {
       }
 
       // Ejecución física concluida: sella step como completed
-      await (supabase.from("agent_run_steps") as any)
+      await (getRunWriteClient(supabase).from("agent_run_steps") as any)
         .update({
           status: "completed",
           completed_at: new Date().toISOString(),
@@ -876,7 +887,7 @@ export class AgentRuntime {
 
       const finalOutput = `[AUTORIZADO]: La herramienta '${toolId}@${toolVersion}' fue aprobada y ejecutada exitosamente.\n\nResultado:\n${JSON.stringify(execOutcome.data, null, 2)}`;
 
-      const { data: completedRun } = await (supabase.from("agent_runs") as any)
+      const { data: completedRun } = await (getRunWriteClient(supabase).from("agent_runs") as any)
         .update({
           status: "completed",
           output: finalOutput,
@@ -896,7 +907,7 @@ export class AgentRuntime {
     }
 
     // Fallback de retrocompatibilidad directa
-    const { data: updatedStep, error: updateErr } = await (supabase.from("agent_run_steps") as any)
+    const { data: updatedStep, error: updateErr } = await (getRunWriteClient(supabase).from("agent_run_steps") as any)
       .update({
         status: decision === "approve" ? "running" : "failed",
         completed_at: decision === "reject" ? new Date().toISOString() : null,
@@ -923,7 +934,7 @@ export class AgentRuntime {
 
     if (decision === "reject") {
       const finalOutput = `[ACCION DENEGADA]: El operador humano rechazó la ejecución de la herramienta '${toolId}'.`;
-      const { data: updatedRun } = await (supabase.from("agent_runs") as any)
+      const { data: updatedRun } = await (getRunWriteClient(supabase).from("agent_runs") as any)
         .update({ status: "completed", output: finalOutput, completed_at: new Date().toISOString() })
         .eq("id", runId)
         .select()
@@ -953,7 +964,7 @@ export class AgentRuntime {
       workerId: run.worker_id || undefined,
     });
 
-    await (supabase.from("agent_run_steps") as any)
+    await (getRunWriteClient(supabase).from("agent_run_steps") as any)
       .update({
         status: "completed",
         completed_at: new Date().toISOString(),
@@ -962,7 +973,7 @@ export class AgentRuntime {
       .eq("id", stepId);
 
     const finalOutput = `[AUTORIZADO]: La herramienta '${toolId}@${toolVersion}' fue ejecutada.\n\nResultado:\n${JSON.stringify(execOutcome.data, null, 2)}`;
-    const { data: completedRun } = await (supabase.from("agent_runs") as any)
+    const { data: completedRun } = await (getRunWriteClient(supabase).from("agent_runs") as any)
       .update({
         status: "completed",
         output: finalOutput,
@@ -1045,7 +1056,7 @@ export class AgentRuntime {
     if (runRecord.status === "queued") {
       runRecord.status = "running";
       runRecord.updated_at = new Date().toISOString();
-      await (supabase.from("agent_runs") as any)
+      await (getRunWriteClient(supabase).from("agent_runs") as any)
         .update({
           status: "running",
           updated_at: runRecord.updated_at,
@@ -1127,7 +1138,7 @@ export class AgentRuntime {
           lastStep.step_type = "TOOL_RESULT";
           lastStep.output = ledgerEntry.result;
           lastStep.completed_at = ledgerEntry.created_at;
-          await (supabase.from("agent_run_steps") as any)
+          await (getRunWriteClient(supabase).from("agent_run_steps") as any)
             .update({ status: "completed", step_type: "TOOL_RESULT", output: lastStep.output, completed_at: lastStep.completed_at })
             .eq("id", lastStep.id);
         } else {
@@ -1152,14 +1163,14 @@ export class AgentRuntime {
           lastStep.step_type = "TOOL_RESULT";
           lastStep.completed_at = new Date().toISOString();
           lastStep.output = execOutcome.data;
-          await (supabase.from("agent_run_steps") as any)
+          await (getRunWriteClient(supabase).from("agent_run_steps") as any)
             .update({ status: "completed", step_type: "TOOL_RESULT", output: lastStep.output, completed_at: lastStep.completed_at })
             .eq("id", lastStep.id);
         }
       } else if (lastStep.step_type === "AI_REQUEST") {
         if (lastStep.output && (lastStep.output as any).content) {
           lastStep.status = "completed";
-          await (supabase.from("agent_run_steps") as any)
+          await (getRunWriteClient(supabase).from("agent_run_steps") as any)
             .update({ status: "completed" })
             .eq("id", lastStep.id);
         } else {
@@ -1194,7 +1205,7 @@ export class AgentRuntime {
           lastStep.completed_at = new Date().toISOString();
           lastStep.output = { content: aiResponse.content, usage: aiResponse.usage };
 
-          await (supabase.from("agent_run_steps") as any)
+          await (getRunWriteClient(supabase).from("agent_run_steps") as any)
             .update({
               status: "completed",
               completed_at: lastStep.completed_at,
@@ -1286,7 +1297,7 @@ export class AgentRuntime {
           };
 
           steps.push(approvalStep);
-          const { error: approvalStepErr2 } = await (supabase.from("agent_run_steps") as any).insert({
+          const { error: approvalStepErr2 } = await (getRunWriteClient(supabase).from("agent_run_steps") as any).insert({
             id: approvalStep.id,
             run_id: approvalStep.run_id,
             workspace_id: approvalStep.workspace_id,
@@ -1341,7 +1352,7 @@ export class AgentRuntime {
           }
 
           const waitingOutput = `[HUMAN-IN-THE-LOOP]: El agente solicita aprobación para ejecutar la herramienta '${tool.name}@${tool.version}' (Riesgo: ${tool.riskLevel.toUpperCase()}).`;
-          await (supabase.from("agent_runs") as any)
+          await (getRunWriteClient(supabase).from("agent_runs") as any)
             .update({
               status: "waiting_approval",
               output: waitingOutput,
@@ -1390,7 +1401,7 @@ export class AgentRuntime {
         toolStep.output = execOutcome.data;
         steps.push(toolStep);
 
-        await (supabase.from("agent_run_steps") as any).insert({
+        await (getRunWriteClient(supabase).from("agent_run_steps") as any).insert({
           id: toolStep.id,
           run_id: toolStep.run_id,
           workspace_id: toolStep.workspace_id,
@@ -1425,7 +1436,7 @@ export class AgentRuntime {
     runRecord.updated_at = new Date().toISOString();
     runRecord.steps_count = steps.length;
 
-    await (supabase.from("agent_runs") as any)
+    await (getRunWriteClient(supabase).from("agent_runs") as any)
       .update({
         status: "completed",
         output: runRecord.output,
@@ -1447,7 +1458,7 @@ export class AgentRuntime {
         runRecord.status = "queued";
         runRecord.updated_at = new Date().toISOString();
         if (supabase) {
-          await (supabase.from("agent_runs") as any)
+          await (getRunWriteClient(supabase).from("agent_runs") as any)
             .update({
               status: "queued",
               updated_at: runRecord.updated_at,
@@ -1492,7 +1503,7 @@ export class AgentRuntime {
       runRecord.updated_at = new Date().toISOString();
 
       if (supabase) {
-        await (supabase.from("agent_runs") as any)
+        await (getRunWriteClient(supabase).from("agent_runs") as any)
           .update({
             status: runRecord.status,
             error_code: runRecord.error_code,
